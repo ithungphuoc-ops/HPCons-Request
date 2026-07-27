@@ -29,6 +29,10 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
       >
         {children}
+        {/* Bong bóng góp ý/báo lỗi xuyên suốt hệ sinh thái (27/07/2026) — file
+            phục vụ từ app tổng, đọc cookie SSO .hpcore.vn có sẵn để xác
+            thực, không cần code riêng ở đây ngoài đúng 1 dòng này. */}
+        <script src="https://account.hpcore.vn/feedback-widget.js" data-app="Đề xuất" async />
       </body>
     </html>
   );
