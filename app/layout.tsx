@@ -33,6 +33,10 @@ export default function RootLayout({
             phục vụ từ app tổng, đọc cookie SSO .hpcore.vn có sẵn để xác
             thực, không cần code riêng ở đây ngoài đúng 1 dòng này. */}
         <script src="https://account.hpcore.vn/feedback-widget.js" data-app="Đề xuất" async />
+        {/* Bong bóng AI hướng dẫn (thí điểm, 27/07/2026) — widget RIÊNG, tách
+            biệt hoàn toàn với feedback-widget.js phía trên (xem change
+            cross-app-ai-guide-widget ở repo hpcons-portal). */}
+        <script src="https://account.hpcore.vn/ai-guide-widget.js" data-app="Đề xuất" async />
       </body>
     </html>
   );
