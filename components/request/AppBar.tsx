@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { BarChart3, Grid3x3, HelpCircle, Home, Menu, Moon, Search, Settings, Sun } from "lucide-react";
+import { BarChart3, BellRing, Grid3x3, HelpCircle, Home, Menu, Moon, Search, Settings, Sun } from "lucide-react";
 import AppLauncher from "@/components/request/AppLauncher";
 import NotificationBell from "@/components/request/NotificationBell";
 import { useRequestContext } from "@/context/RequestContext";
@@ -69,6 +69,15 @@ export default function AppBar() {
         </Link>
 
         <NotificationBell />
+
+        <Link
+          href="/request/settings/notifications"
+          title="Cài đặt thông báo"
+          aria-label="Cài đặt thông báo"
+          className="flex h-12 w-12 items-center justify-center rounded-xl text-[var(--color-appbar-text)] hover:bg-white/10 hover:text-[var(--color-appbar-text-active)]"
+        >
+          <BellRing size={20} strokeWidth={1.75} />
+        </Link>
 
         {iconItems.slice(1).map((item) => (
           <Link

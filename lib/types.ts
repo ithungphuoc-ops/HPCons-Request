@@ -335,6 +335,21 @@ export type ListLoadStatus = "loading" | "loaded" | "empty" | "error";
 
 export type RequestListScope = "all" | "sent-to-me" | "mine" | "following" | "group";
 
+/**
+ * 5 loại thông báo mà chuông (NotificationBell) có thể hiển thị — mỗi user tự
+ * bật/tắt riêng từng loại, xem lib/server/notificationSettings.ts. Không có
+ * collection notifications riêng: mỗi loại tương ứng 1 scope tính lại từ dữ
+ * liệu requests (xem app/api/requests/route.ts).
+ */
+export type NotificationCategory =
+  | "approver_pending"
+  | "own_decided"
+  | "mentioned"
+  | "following"
+  | "manager_bypassed";
+
+export type NotificationSettings = Record<NotificationCategory, boolean>;
+
 export interface GroupHistoryChange {
   field: string;
   before: string;

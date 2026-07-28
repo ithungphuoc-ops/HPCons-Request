@@ -13,12 +13,14 @@ import {
   generateGroupRequestCode,
   generateRequestCode,
   resolveApproverSteps,
+  resolveDirectManagerId,
   toProposalGroup,
 } from "@/lib/server/requests";
 import { requireSession } from "@/lib/session";
 import type {
   ApprovalFlowType,
   ProposalField,
+  ProposalGroup,
   RequestInstance,
   TaggedUser,
 } from "@/lib/types";
@@ -72,6 +74,46 @@ export async function GET(request: Request) {
         .map((doc) => ({ id: doc.id, ...doc.data() }) as RequestInstance)
         .filter((r) => !r.deletedAt)
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+      return NextResponse.json({ requests });
+    }
+
+    if (scope === "manager-bypassed") {
+      // Quản lý trực tiếp thấy thông báo khi bị "qua mặt": nhóm bật
+      // notifyManager, có bước submitter_manager, người gửi hiện có quản lý
+      // trực tiếp (departmentId → leaderId), quản lý đó CHÍNH LÀ session.uid,
+      // và KHÔNG có mặt trong approversSnapshot (bị chọn người khác thay).
+      // Tính lại lúc đọc (không lưu sẵn lúc gửi) — xem design.md.
+      const snap = await adminDb.collection("requests").get();
+      const candidates = snap.docs
+        .map((doc) => ({ id: doc.id, ...doc.data() }) as RequestInstance)
+        .filter((r) => !r.deletedAt && r.groupId);
+
+      const groupCache = new Map<string, ProposalGroup | null>();
+      const managerCache = new Map<string, string | null>();
+      const requests: RequestInstance[] = [];
+
+      for (const r of candidates) {
+        const groupId = r.groupId!;
+        if (!groupCache.has(groupId)) {
+          const gSnap = await adminDb.collection("groups").doc(groupId).get();
+          groupCache.set(groupId, gSnap.exists ? toProposalGroup(gSnap.id, gSnap.data()!) : null);
+        }
+        const group = groupCache.get(groupId) ?? null;
+        if (!group || !group.notifyManager) continue;
+        if (!group.approverSteps.some((s) => s.kind === "submitter_manager")) continue;
+
+        const submitterUid = r.submittedBy.uid;
+        if (!managerCache.has(submitterUid)) {
+          managerCache.set(submitterUid, await resolveDirectManagerId(submitterUid));
+        }
+        const leaderId = managerCache.get(submitterUid) ?? null;
+        if (!leaderId || leaderId === submitterUid || leaderId !== session.uid) continue;
+        if (r.approversSnapshot.some((a) => a.id === leaderId)) continue;
+
+        requests.push(r);
+      }
+
+      requests.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
       return NextResponse.json({ requests });
     }
 

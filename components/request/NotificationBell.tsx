@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { Bell } from "lucide-react";
-import type { RequestInstance } from "@/lib/types";
+import type { NotificationSettings, RequestInstance } from "@/lib/types";
 
 interface NotificationItem {
   id: string;
@@ -17,57 +17,79 @@ function buildNotifications(
   mine: RequestInstance[],
   mentioned: RequestInstance[],
   following: RequestInstance[],
+  managerBypassed: RequestInstance[],
+  settings: NotificationSettings | null,
 ): NotificationItem[] {
   const items: NotificationItem[] = [];
+  const enabled = (key: keyof NotificationSettings) => settings?.[key] !== false;
 
-  for (const r of inbox) {
-    const lastEntry = r.history[r.history.length - 1];
-    const forwardedToMe = lastEntry?.action === "Đã chuyển tiếp";
-    items.push({
-      id: `inbox-${r.id}`,
-      requestId: r.id,
-      text: forwardedToMe
-        ? `Bạn được chuyển tiếp đề xuất "${r.groupNameSnapshot}"`
-        : `"${r.groupNameSnapshot}" đang chờ bạn duyệt`,
-      at: lastEntry?.at ?? r.submittedAt,
-    });
+  if (enabled("approver_pending")) {
+    for (const r of inbox) {
+      const lastEntry = r.history[r.history.length - 1];
+      const forwardedToMe = lastEntry?.action === "Đã chuyển tiếp";
+      items.push({
+        id: `inbox-${r.id}`,
+        requestId: r.id,
+        text: forwardedToMe
+          ? `Bạn được chuyển tiếp đề xuất "${r.groupNameSnapshot}"`
+          : `"${r.groupNameSnapshot}" đang chờ bạn duyệt`,
+        at: lastEntry?.at ?? r.submittedAt,
+      });
+    }
   }
 
   // Người theo dõi (followers của nhóm đề xuất) — báo khi có đề xuất mới
   // thuộc nhóm họ theo dõi, không phân biệt đã "đọc" hay chưa (giống các
   // nguồn khác trong hàm này, xem ghi chú "mentioned" bên dưới).
-  for (const r of following) {
-    items.push({
-      id: `following-${r.id}`,
-      requestId: r.id,
-      text: `Đề xuất bạn đang theo dõi "${r.groupNameSnapshot}" vừa được gửi`,
-      at: r.submittedAt,
-    });
+  if (enabled("following")) {
+    for (const r of following) {
+      items.push({
+        id: `following-${r.id}`,
+        requestId: r.id,
+        text: `Đề xuất bạn đang theo dõi "${r.groupNameSnapshot}" vừa được gửi`,
+        at: r.submittedAt,
+      });
+    }
   }
 
-  for (const r of mine) {
-    if (r.status !== "approved" && r.status !== "rejected") continue;
-    const lastEntry = r.history[r.history.length - 1];
-    items.push({
-      id: `mine-${r.id}`,
-      requestId: r.id,
-      text: `Đề xuất "${r.groupNameSnapshot}" của bạn đã ${
-        r.status === "approved" ? "được chấp thuận" : "bị từ chối"
-      }`,
-      at: lastEntry?.at ?? r.submittedAt,
-    });
+  if (enabled("own_decided")) {
+    for (const r of mine) {
+      if (r.status !== "approved" && r.status !== "rejected") continue;
+      const lastEntry = r.history[r.history.length - 1];
+      items.push({
+        id: `mine-${r.id}`,
+        requestId: r.id,
+        text: `Đề xuất "${r.groupNameSnapshot}" của bạn đã ${
+          r.status === "approved" ? "được chấp thuận" : "bị từ chối"
+        }`,
+        at: lastEntry?.at ?? r.submittedAt,
+      });
+    }
   }
 
   // Không có khái niệm "đã đọc" riêng cho mục này — giống 2 nguồn trên
   // (tính lại từ dữ liệu mỗi lần tải, xem design.md của change
   // add-comment-mentions-realtime).
-  for (const r of mentioned) {
-    items.push({
-      id: `mentioned-${r.id}`,
-      requestId: r.id,
-      text: `Bạn được nhắc tới trong đề xuất "${r.groupNameSnapshot}"`,
-      at: r.updatedAt,
-    });
+  if (enabled("mentioned")) {
+    for (const r of mentioned) {
+      items.push({
+        id: `mentioned-${r.id}`,
+        requestId: r.id,
+        text: `Bạn được nhắc tới trong đề xuất "${r.groupNameSnapshot}"`,
+        at: r.updatedAt,
+      });
+    }
+  }
+
+  if (enabled("manager_bypassed")) {
+    for (const r of managerBypassed) {
+      items.push({
+        id: `manager-bypassed-${r.id}`,
+        requestId: r.id,
+        text: `Đề xuất "${r.groupNameSnapshot}" đã chọn người khác duyệt thay bạn`,
+        at: r.updatedAt,
+      });
+    }
   }
 
   return items.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime()).slice(0, 8);
@@ -85,21 +107,29 @@ export default function NotificationBell() {
       fetch("/api/requests?scope=mine").then((res) => (res.ok ? res.json() : { requests: [] })),
       fetch("/api/requests?scope=mentioned").then((res) => (res.ok ? res.json() : { requests: [] })),
       fetch("/api/requests?scope=following").then((res) => (res.ok ? res.json() : { requests: [] })),
+      fetch("/api/requests?scope=manager-bypassed").then((res) => (res.ok ? res.json() : { requests: [] })),
+      fetch("/api/notification-settings").then((res) => (res.ok ? res.json() : { settings: null })),
     ])
       .then(
-        ([inboxData, mineData, mentionedData, followingData]: [
+        ([inboxData, mineData, mentionedData, followingData, managerBypassedData, settingsData]: [
           { requests: RequestInstance[] },
           { requests: RequestInstance[] },
           { requests: RequestInstance[] },
           { requests: RequestInstance[] },
+          { requests: RequestInstance[] },
+          { settings: NotificationSettings | null },
         ]) => {
-          setPendingCount(inboxData.requests?.length ?? 0);
+          const settings = settingsData.settings ?? null;
+          const inboxRequests = settings?.approver_pending === false ? [] : (inboxData.requests ?? []);
+          setPendingCount(inboxRequests.length);
           setItems(
             buildNotifications(
               inboxData.requests ?? [],
               mineData.requests ?? [],
               mentionedData.requests ?? [],
               followingData.requests ?? [],
+              managerBypassedData.requests ?? [],
+              settings,
             ),
           );
         },

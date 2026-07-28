@@ -166,6 +166,21 @@ async function resolveSubmitterManager(submitterUid: string): Promise<TaggedUser
 }
 
 /**
+ * Tra `leaderId` của phòng ban người gửi — KHÔNG throw (khác resolveSubmitterManager),
+ * trả `null` nếu thiếu departmentId/leaderId. Dùng cho scope=manager-bypassed
+ * (chỉ cần biết ai là quản lý trực tiếp HIỆN TẠI để so sánh, không chặn gì cả).
+ */
+export async function resolveDirectManagerId(submitterUid: string): Promise<string | null> {
+  const userSnap = await getHpcoreDb().collection("users").doc(submitterUid).get();
+  const departmentId = userSnap.data()?.departmentId as string | null | undefined;
+  if (!departmentId) return null;
+
+  const deptSnap = await getHpcoreDb().collection("departments").doc(departmentId).get();
+  const leaderId = deptSnap.data()?.leaderId as string | null | undefined;
+  return leaderId ?? null;
+}
+
+/**
  * Xác thực 1 lựa chọn thủ công cho bước "quản lý trực tiếp" — CHỈ chấp nhận
  * nếu id đó đang thực sự là leaderId của ≥1 phòng ban (KHÔNG tin nguyên giá
  * trị client gửi, tự query lại y hệt /api/directory/managers). Trả null nếu
