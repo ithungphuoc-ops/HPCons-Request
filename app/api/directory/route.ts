@@ -14,12 +14,14 @@ export async function GET() {
     await requireSession();
     const snap = await getHpcoreDb().collection("users").where("isActive", "==", true).get();
     const directory: TaggedUser[] = snap.docs.map((doc) => {
-      const data = doc.data() as { fullName?: string; email?: string };
+      const data = doc.data() as { fullName?: string; email?: string; username?: string | null };
       const name = data.fullName?.trim() || data.email?.split("@")[0] || doc.id;
+      // Ưu tiên username ngắn kiểu "phucBM" (sinh ở hpcons-portal, 28/07/2026)
+      // — người tạo trước khi có tính năng này fallback về email như cũ.
       return {
         id: doc.id,
         name,
-        username: data.email?.split("@")[0] ?? doc.id,
+        username: data.username || data.email?.split("@")[0] || doc.id,
         avatarInitial: name.charAt(0).toUpperCase(),
       };
     });

@@ -24,13 +24,16 @@ export async function listMentionableEntries(): Promise<MentionableEntry[]> {
   ]);
 
   const users: MentionableEntry[] = usersSnap.docs.map((doc) => {
-    const data = doc.data() as { fullName?: string; email?: string };
+    const data = doc.data() as { fullName?: string; email?: string; username?: string | null };
     const name = data.fullName?.trim() || data.email?.split("@")[0] || doc.id;
+    // Ưu tiên username ngắn kiểu "phucBM" (sinh ở hpcons-portal, xem
+    // lib/username.ts bên đó, 28/07/2026) — người tạo trước khi có tính năng
+    // này chưa có field này, fallback về phần trước "@" của email như cũ.
     return {
       kind: "user",
       id: doc.id,
       name,
-      username: data.email?.split("@")[0] ?? doc.id,
+      username: data.username || data.email?.split("@")[0] || doc.id,
       avatarInitial: name.charAt(0).toUpperCase(),
     };
   });
