@@ -24,6 +24,10 @@ export interface TaggedUser {
    * xem lib/server/mentions.ts) — thiếu field = người (mặc định, tương thích
    * ngược với usedFor/approverSteps/followers hiện có). */
   kind?: "user" | "group";
+  /** Chức danh phụ hiện dưới tên (vd "Trưởng phòng Hành chính Nhân sự") —
+   * chỉ /api/directory/managers trả field này, các nguồn danh bạ khác để
+   * trống. */
+  title?: string;
 }
 
 export interface ProposalField {

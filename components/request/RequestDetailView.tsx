@@ -621,7 +621,7 @@ function FileValueView({
   attachments: RequestAttachment[];
 }) {
   if (attachments.length === 0) {
-    return <p className="font-medium text-gray-800">—</p>;
+    return <p className="text-[13px] text-gray-400">Chưa có tệp nào</p>;
   }
   return (
     <ul className="mt-1 flex flex-col gap-1">

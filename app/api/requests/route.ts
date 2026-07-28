@@ -149,6 +149,10 @@ interface SubmitBody {
   description?: string;
   approvers?: TaggedUser[];
   followers?: TaggedUser[];
+  // Lựa chọn thủ công quản lý trực tiếp cho bước "submitter_manager", theo
+  // index của bước trong approverSteps — xem lib/server/requests.ts
+  // resolveApproverSteps(). Server tự xác thực lại, không tin nguyên giá trị.
+  managerOverrides?: Record<number, string>;
 }
 
 export async function POST(request: Request) {
@@ -209,7 +213,13 @@ export async function POST(request: Request) {
       approversSnapshot = isDraft
         ? []
         : dedupeApprovers(
-            await resolveApproverSteps(group.approverSteps, session.uid, body.values ?? {}, group.fields),
+            await resolveApproverSteps(
+              group.approverSteps,
+              session.uid,
+              body.values ?? {},
+              group.fields,
+              body.managerOverrides ?? {},
+            ),
           );
       // Người gửi có thể thêm người theo dõi ngoài danh sách mặc định của
       // nhóm (giống UI Base) — client luôn khởi tạo từ group.followers rồi

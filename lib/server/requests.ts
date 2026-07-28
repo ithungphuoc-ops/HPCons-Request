@@ -166,19 +166,97 @@ async function resolveSubmitterManager(submitterUid: string): Promise<TaggedUser
 }
 
 /**
+ * Xác thực 1 lựa chọn thủ công cho bước "quản lý trực tiếp" — CHỈ chấp nhận
+ * nếu id đó đang thực sự là leaderId của ≥1 phòng ban (KHÔNG tin nguyên giá
+ * trị client gửi, tự query lại y hệt /api/directory/managers). Trả null nếu
+ * không hợp lệ để nơi gọi rơi về auto-resolve như hành vi cũ.
+ */
+async function resolveManagerOverride(userId: string): Promise<TaggedUser | null> {
+  const deptsSnap = await getHpcoreDb().collection("departments").where("leaderId", "==", userId).limit(1).get();
+  if (deptsSnap.empty) return null;
+
+  const userSnap = await getHpcoreDb().collection("users").doc(userId).get();
+  const userData = userSnap.data();
+  if (!userSnap.exists || !userData) return null;
+
+  const fullName = (userData.fullName as string | undefined)?.trim() || userId;
+  const email = (userData.email as string | undefined) ?? "";
+  return {
+    id: userId,
+    name: fullName,
+    username: email ? email.split("@")[0] : userId,
+    avatarInitial: fullName.charAt(0).toUpperCase(),
+  };
+}
+
+export interface ResolvedApproverStep {
+  index: number;
+  kind: ApproverStepDef["kind"];
+  user: TaggedUser | null;
+  error?: string;
+}
+
+/**
+ * Phân giải danh sách bước duyệt của nhóm thành CHI TIẾT từng bước — "fixed"
+ * giữ nguyên, "submitter_manager" ưu tiên `managerOverrides[index]` (nếu hợp
+ * lệ, xem resolveManagerOverride), rồi mới auto-resolve theo phòng ban người
+ * gửi. KHÔNG throw khi 1 bước lỗi — set `error` ở đúng phần tử đó, để nơi gọi
+ * (preview UI) hiện được lỗi đúng vị trí thay vì lỗi chung cho cả request.
+ * Bước có `condition` không thoả mãn bị lọc bỏ hoàn toàn khỏi kết quả trả về.
+ */
+export async function resolveApproverStepsDetailed(
+  steps: ApproverStepDef[] | undefined,
+  submitterUid: string,
+  values: Record<string, unknown> = {},
+  fields: ProposalField[] = [],
+  managerOverrides: Record<number, string> = {},
+): Promise<ResolvedApproverStep[]> {
+  const applicableSteps = filterApplicableSteps(steps ?? [], values, fields);
+  const results: ResolvedApproverStep[] = [];
+
+  for (let i = 0; i < applicableSteps.length; i++) {
+    const step = applicableSteps[i];
+    if (step.kind === "fixed") {
+      results.push({ index: i, kind: "fixed", user: step.user });
+      continue;
+    }
+
+    const overrideUserId = managerOverrides[i];
+    const overrideUser = overrideUserId ? await resolveManagerOverride(overrideUserId) : null;
+    if (overrideUser) {
+      results.push({ index: i, kind: "submitter_manager", user: overrideUser });
+      continue;
+    }
+
+    try {
+      const user = await resolveSubmitterManager(submitterUid);
+      results.push({ index: i, kind: "submitter_manager", user });
+    } catch (err) {
+      results.push({
+        index: i,
+        kind: "submitter_manager",
+        user: null,
+        error: err instanceof Error ? err.message : "Không xác định được người duyệt.",
+      });
+    }
+  }
+
+  return results;
+}
+
+/**
  * Phân giải danh sách bước duyệt của nhóm thành danh sách người duyệt cụ thể
- * tại thời điểm gửi đề xuất — "fixed" giữ nguyên, "submitter_manager" tra
- * cứu lại theo phòng ban của người gửi (kết quả SNAPSHOT vào đề xuất, không
- * tự đổi nếu trưởng đơn vị đổi sau này). Bước duyệt có `condition` bị BỎ QUA
- * nếu điều kiện không thoả mãn với `values`/`fields` của đề xuất đang gửi —
- * nếu sau khi lọc không còn bước duyệt nào, ném MissingApproverError thay vì
- * tạo đề xuất không có người duyệt.
+ * tại thời điểm gửi đề xuất (kết quả SNAPSHOT vào đề xuất, không tự đổi nếu
+ * trưởng đơn vị đổi sau này) — wrapper giữ NGUYÊN hành vi cũ (throw
+ * MissingApproverError khi thiếu người duyệt) trên nền resolveApproverStepsDetailed(),
+ * cộng thêm hỗ trợ managerOverrides tuỳ chọn cho bước submitter_manager.
  */
 export async function resolveApproverSteps(
   steps: ApproverStepDef[] | undefined,
   submitterUid: string,
   values: Record<string, unknown> = {},
   fields: ProposalField[] = [],
+  managerOverrides: Record<number, string> = {},
 ): Promise<TaggedUser[]> {
   const applicableSteps = filterApplicableSteps(steps ?? [], values, fields);
   if ((steps ?? []).length > 0 && applicableSteps.length === 0) {
@@ -187,9 +265,10 @@ export async function resolveApproverSteps(
     );
   }
 
-  const resolved: TaggedUser[] = [];
-  for (const step of applicableSteps) {
-    resolved.push(step.kind === "fixed" ? step.user : await resolveSubmitterManager(submitterUid));
+  const detailed = await resolveApproverStepsDetailed(steps, submitterUid, values, fields, managerOverrides);
+  const failed = detailed.find((d) => d.error || !d.user);
+  if (failed) {
+    throw new MissingApproverError(failed.error ?? "Không xác định được người duyệt.");
   }
-  return resolved;
+  return detailed.map((d) => d.user!);
 }

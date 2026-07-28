@@ -23,6 +23,15 @@ const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024; // 10MB
 
 type FieldValues = Record<string, unknown>;
 
+/** Khớp ResolvedApproverStep ở lib/server/requests.ts (không import trực
+ * tiếp vì file đó có "server-only", chỉ dùng được ở route handler). */
+type ApproverStepPreview = {
+  index: number;
+  kind: "fixed" | "submitter_manager";
+  user: TaggedUser | null;
+  error?: string;
+};
+
 function isEmptyValue(value: unknown): boolean {
   if (value === undefined || value === null) return true;
   if (typeof value === "string") return value.trim() === "";
@@ -46,8 +55,14 @@ export default function SubmitRequestPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null);
   const [approverPreview, setApproverPreview] = useState<
-    { status: "loading" } | { status: "ok"; approvers: TaggedUser[] } | { status: "error"; message: string }
+    | { status: "loading" }
+    | { status: "ok"; approvers: TaggedUser[]; steps: ApproverStepPreview[] }
+    | { status: "error"; message: string }
   >({ status: "loading" });
+  // Lựa chọn thủ công "quản lý trực tiếp" theo index của bước duyệt — chỉ áp
+  // dụng cho bước kind "submitter_manager", ghi đè lên kết quả auto-resolve.
+  const [managerOverrides, setManagerOverrides] = useState<Record<number, TaggedUser>>({});
+  const [editingStepIndex, setEditingStepIndex] = useState<number | null>(null);
 
   useEffect(() => {
     if (!draftId) return;
@@ -65,9 +80,13 @@ export default function SubmitRequestPage() {
     setApproverPreview({ status: "loading" });
     fetch(`/api/groups/${group.id}/approver-preview`)
       .then(async (res) => {
-        const body = (await res.json()) as { approvers?: TaggedUser[]; error?: string };
+        const body = (await res.json()) as {
+          approvers?: TaggedUser[];
+          steps?: ApproverStepPreview[];
+          error?: string;
+        };
         if (!res.ok) throw new Error(body.error ?? "Không xác định được người duyệt.");
-        setApproverPreview({ status: "ok", approvers: body.approvers ?? [] });
+        setApproverPreview({ status: "ok", approvers: body.approvers ?? [], steps: body.steps ?? [] });
       })
       .catch((err) =>
         setApproverPreview({
@@ -148,6 +167,21 @@ export default function SubmitRequestPage() {
       return;
     }
 
+    // Bước "quản lý trực tiếp" auto-resolve thất bại và chưa được chọn tay ->
+    // chặn gửi rõ ràng ở đây thay vì để server trả lỗi chung chung.
+    if (
+      approverPreview.status === "ok" &&
+      approverPreview.steps.some((s) => s.kind === "submitter_manager" && s.error && !managerOverrides[s.index])
+    ) {
+      setSubmitError("Vui lòng chọn quản lý trực tiếp trước khi gửi đề xuất.");
+      return;
+    }
+
+    const managerOverridesPayload: Record<number, string> = {};
+    for (const [index, user] of Object.entries(managerOverrides)) {
+      managerOverridesPayload[Number(index)] = user.id;
+    }
+
     setErrors({});
     setSubmitting(true);
     setSubmitError(null);
@@ -157,12 +191,22 @@ export default function SubmitRequestPage() {
         ? await fetch(`/api/requests/${draftId}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ values: payloadValues, followers, isDraft: false }),
+            body: JSON.stringify({
+              values: payloadValues,
+              followers,
+              isDraft: false,
+              managerOverrides: managerOverridesPayload,
+            }),
           })
         : await fetch("/api/requests", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ groupId: group.id, values: payloadValues, followers }),
+            body: JSON.stringify({
+              groupId: group.id,
+              values: payloadValues,
+              followers,
+              managerOverrides: managerOverridesPayload,
+            }),
           });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}) as { error?: string });
@@ -232,22 +276,63 @@ export default function SubmitRequestPage() {
               {approverPreview.status === "error" && (
                 <p className="text-[13px] text-[var(--color-danger-red)]">{approverPreview.message}</p>
               )}
-              {approverPreview.status === "ok" && approverPreview.approvers.length === 0 && (
+              {approverPreview.status === "ok" && approverPreview.steps.length === 0 && (
                 <p className="text-[13px] text-gray-400">Nhóm này chưa cấu hình người duyệt.</p>
               )}
-              {approverPreview.status === "ok" && approverPreview.approvers.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {approverPreview.approvers.map((a, i) => (
-                    <span
-                      key={`${a.id}-${i}`}
-                      className="flex items-center gap-1.5 rounded-full bg-gray-100 py-0.5 pl-1 pr-2.5 text-[12px] text-gray-700"
-                    >
-                      <span className="flex h-4 w-4 items-center justify-center rounded-full bg-[var(--color-action-blue)] text-[9px] font-semibold text-white">
-                        {a.avatarInitial}
-                      </span>
-                      {group.approvalFlow === "sequential" ? `${i + 1}. ${a.name}` : a.name}
-                    </span>
-                  ))}
+              {approverPreview.status === "ok" && approverPreview.steps.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  {approverPreview.steps.map((step, i) => {
+                    const displayUser = managerOverrides[step.index] ?? step.user ?? undefined;
+                    const label = group.approvalFlow === "sequential" ? `${i + 1}. ` : "";
+
+                    if (step.kind === "submitter_manager" && (editingStepIndex === step.index || (!displayUser && step.error))) {
+                      return (
+                        <div key={step.index} className="flex flex-col gap-1">
+                          <TagUserInput
+                            value={displayUser ? [displayUser] : []}
+                            onChange={(users) => {
+                              setManagerOverrides((prev) => {
+                                const next = { ...prev };
+                                if (users[0]) next[step.index] = users[0];
+                                else delete next[step.index];
+                                return next;
+                              });
+                              setEditingStepIndex(null);
+                            }}
+                            placeholder="Sử dụng @ để tag quản lý trực tiếp"
+                            directoryUrl="/api/directory/managers"
+                            browseAllLabel="Chọn quản lý trực tiếp"
+                          />
+                          {step.error && !managerOverrides[step.index] && (
+                            <p className="text-[12px] text-[var(--color-danger-red)]">{step.error}</p>
+                          )}
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div key={step.index} className="flex items-center gap-2">
+                        <span className="flex items-center gap-1.5 rounded-full bg-gray-100 py-0.5 pl-1 pr-2.5 text-[12px] text-gray-700">
+                          {displayUser && (
+                            <span className="flex h-4 w-4 items-center justify-center rounded-full bg-[var(--color-action-blue)] text-[9px] font-semibold text-white">
+                              {displayUser.avatarInitial}
+                            </span>
+                          )}
+                          {label}
+                          {displayUser?.name ?? "—"}
+                        </span>
+                        {step.kind === "submitter_manager" && (
+                          <button
+                            type="button"
+                            onClick={() => setEditingStepIndex(step.index)}
+                            className="text-[12px] font-medium text-[var(--color-action-blue)] hover:underline"
+                          >
+                            Đổi
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>

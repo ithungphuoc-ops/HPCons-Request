@@ -12,6 +12,11 @@ interface TagUserInputProps {
    * approverSteps/followers). Truyền `/api/directory/mentionable` để gồm cả
    * nhóm thành viên/phòng ban (mention bình luận). */
   directoryUrl?: string;
+  /** Nếu truyền, hiện 1 link text dưới ô nhập (vd "Chọn quản lý trực tiếp");
+   * bấm vào mở dropdown với TOÀN BỘ danh bạ đã tải, không cần gõ ký tự nào
+   * trước — dùng cho picker duyệt nhanh 1 danh sách ngắn (vd nhóm quản lý
+   * trực tiếp), khác với hành vi mặc định (chỉ gợi ý khi có query). */
+  browseAllLabel?: string;
 }
 
 export default function TagUserInput({
@@ -19,6 +24,7 @@ export default function TagUserInput({
   onChange,
   placeholder = "Gõ @ để tìm người dùng",
   directoryUrl = "/api/directory",
+  browseAllLabel,
 }: TagUserInputProps) {
   const [query, setQuery] = useState("");
   const [directory, setDirectory] = useState<TaggedUser[]>([]);
@@ -78,6 +84,12 @@ export default function TagUserInput({
     setResults([]);
   };
 
+  const browseAll = () => {
+    const selectedIds = new Set(value.map((u) => u.id));
+    setResults(directory.filter((u) => !selectedIds.has(u.id)));
+    setOpen(true);
+  };
+
   const removeUser = (id: string) => {
     onChange(value.filter((u) => u.id !== id));
   };
@@ -97,7 +109,10 @@ export default function TagUserInput({
             >
               {u.avatarInitial}
             </span>
-            {u.name}
+            <span>
+              {u.name}
+              {u.title && <span className="ml-1 text-gray-400">· {u.title}</span>}
+            </span>
             <button
               type="button"
               onClick={() => removeUser(u.id)}
@@ -120,6 +135,16 @@ export default function TagUserInput({
         />
       </div>
 
+      {browseAllLabel && (
+        <button
+          type="button"
+          onClick={browseAll}
+          className="mt-1 text-[12px] font-medium text-[var(--color-action-blue)] hover:underline"
+        >
+          {browseAllLabel}
+        </button>
+      )}
+
       {open && results.length > 0 && (
         <div className="absolute left-0 right-0 top-full z-10 mt-1 max-h-[180px] overflow-y-auto rounded border border-[var(--color-border)] bg-white shadow-lg">
           {results.map((u) => (
@@ -141,6 +166,7 @@ export default function TagUserInput({
                 {u.kind === "group" && (
                   <span className="ml-1 text-[10px] text-teal-600">(nhóm/phòng ban)</span>
                 )}
+                {u.title && <span className="block text-[11px] text-gray-400">{u.title}</span>}
               </span>
             </button>
           ))}

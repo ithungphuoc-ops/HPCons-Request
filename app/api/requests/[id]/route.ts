@@ -49,6 +49,8 @@ interface UpdateDraftBody {
   followers?: TaggedUser[];
   /** true (mặc định) = vẫn lưu nháp; false = gửi chính thức, chuyển sang "pending". */
   isDraft?: boolean;
+  // Xem app/api/requests/route.ts SubmitBody.managerOverrides.
+  managerOverrides?: Record<number, string>;
 }
 
 export async function PATCH(
@@ -124,7 +126,13 @@ export async function PATCH(
       // dedupeApprovers: người trùng nhiều bước duyệt chỉ tính 1 lần theo
       // vai trò xuất hiện sau cùng — xem lib/approval-logic.ts.
       approversSnapshot = dedupeApprovers(
-        await resolveApproverSteps(group.approverSteps, session.uid, values, group.fields),
+        await resolveApproverSteps(
+          group.approverSteps,
+          session.uid,
+          values,
+          group.fields,
+          body.managerOverrides ?? {},
+        ),
       );
       const deadlineAt = computeDeadline(group.slaHours, new Date(), group.slaByWorkCalendar === true);
       const nowIso = new Date().toISOString();
