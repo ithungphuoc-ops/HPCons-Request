@@ -105,27 +105,36 @@ export default function ApproverStepsEditor({
             Bước {index + 1}
           </span>
           <div className="flex min-w-0 flex-1 flex-col gap-2">
-            <select
-              className={selectClass}
-              value={step.kind}
-              onChange={(e) => setKind(index, e.target.value as DraftApproverStep["kind"])}
-            >
-              <option value="fixed">Người cố định</option>
-              <option value="submitter_manager">Quản lý phòng ban của người gửi</option>
-            </select>
-
-            {step.kind === "fixed" ? (
-              <TagUserInput
-                value={step.user ? [step.user] : []}
-                onChange={(users) => setFixedUser(index, users.slice(-1)[0])}
-                placeholder="Gõ @ để chọn người duyệt"
-              />
-            ) : (
-              <p className="flex items-center gap-1.5 text-[12px] text-gray-500">
-                <Users size={13} />
-                Tự động: trưởng đơn vị của người gửi (tra tại thời điểm gửi đề xuất).
-              </p>
-            )}
+            <div className="flex items-center gap-2">
+              <div className="min-w-0 flex-1">
+                {step.kind === "fixed" ? (
+                  <TagUserInput
+                    value={step.user ? [step.user] : []}
+                    onChange={(users) => setFixedUser(index, users.slice(-1)[0])}
+                    placeholder="Gõ @ để thêm người duyệt"
+                  />
+                ) : (
+                  <p className="flex h-[36px] items-center gap-1.5 rounded border border-[var(--color-border)] bg-gray-50 px-3 text-[12px] text-gray-500">
+                    <Users size={13} className="shrink-0" />
+                    Tự động: trưởng đơn vị của người gửi (tra tại thời điểm gửi đề xuất)
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() =>
+                  setKind(index, step.kind === "submitter_manager" ? "fixed" : "submitter_manager")
+                }
+                title="Tự động lấy quản lý trực tiếp của người gửi thay vì chọn 1 người cố định"
+                className={`h-[36px] shrink-0 whitespace-nowrap rounded border px-2.5 text-[12px] font-medium ${
+                  step.kind === "submitter_manager"
+                    ? "border-[var(--color-action-blue)] bg-[var(--color-action-blue)]/10 text-[var(--color-action-blue)]"
+                    : "border-[var(--color-border)] text-gray-600 hover:bg-gray-50"
+                }`}
+              >
+                Quản lý trực tiếp
+              </button>
+            </div>
 
             {(step.code || step.condition) && (
               <p className="text-[11px] text-gray-400">
