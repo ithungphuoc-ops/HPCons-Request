@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import type { CategoryGroup, ProposalField, ProposalGroup } from "@/lib/types";
+import { reportActivity } from "@/lib/reportActivity";
 
 export type StatusFilter = "all" | "active" | "closed";
 
@@ -177,6 +178,7 @@ export function RequestProvider({ children }: { children: React.ReactNode }) {
         throw new Error(body.error ?? "Không thể tạo nhóm đề xuất.");
       }
       const { group } = (await res.json()) as { group: ProposalGroup };
+      reportActivity({ action: "Tạo nhóm đề xuất", entityType: "proposal_group", entityId: group.id, detail: `Tạo nhóm "${group.name}"` });
       // Danh mục mới (nếu có) do server tạo — nạp lại toàn bộ để đồng bộ chính xác.
       await refetchGroups();
       setCreateGroupOpen(false);
@@ -199,6 +201,12 @@ export function RequestProvider({ children }: { children: React.ReactNode }) {
   const updateGroup = useCallback(
     (groupId: string, patch: Partial<ProposalGroup>) => {
       mutateGroup(groupId, (g) => ({ ...g, ...patch }));
+      reportActivity({
+        action: "Sửa cấu hình nhóm đề xuất",
+        entityType: "proposal_group",
+        entityId: groupId,
+        detail: `Cập nhật: ${Object.keys(patch).join(", ")}`,
+      });
       patchGroupRequest(groupId, patch).then((group) => {
         // Đồng bộ lại giá trị thật từ server (ví dụ category đã được chuẩn hoá).
         mutateGroup(groupId, () => group);
@@ -236,6 +244,7 @@ export function RequestProvider({ children }: { children: React.ReactNode }) {
 
       mutateGroup(groupId, (g) => ({ ...g, fields: orderedFields }));
       setAddFieldModalGroupId(null);
+      reportActivity({ action: "Thêm trường tuỳ chỉnh", entityType: "proposal_field", entityId: newField.id, detail: `Nhóm ${groupId}: thêm trường "${field.name}"` });
       patchGroupRequest(groupId, { fields: orderedFields }).catch(() => {
         mutateGroup(groupId, (g) => ({ ...g, fields: group.fields }));
       });
@@ -254,6 +263,7 @@ export function RequestProvider({ children }: { children: React.ReactNode }) {
       mutateGroup(groupId, (g) => ({ ...g, fields: nextFields }));
       setAddFieldModalGroupId(null);
       setEditingField(null);
+      reportActivity({ action: "Sửa trường tuỳ chỉnh", entityType: "proposal_field", entityId: fieldId, detail: `Nhóm ${groupId}: sửa trường "${patch.name}"` });
       patchGroupRequest(groupId, { fields: nextFields }).catch(() => {
         mutateGroup(groupId, (g) => ({ ...g, fields: group.fields }));
       });
@@ -265,9 +275,11 @@ export function RequestProvider({ children }: { children: React.ReactNode }) {
     (groupId: string, fieldId: string) => {
       const group = getGroupById(groupId);
       if (!group) return;
+      const removed = group.fields.find((f) => f.id === fieldId);
       const nextFields = group.fields.filter((f) => f.id !== fieldId);
 
       mutateGroup(groupId, (g) => ({ ...g, fields: nextFields }));
+      reportActivity({ action: "Xoá trường tuỳ chỉnh", entityType: "proposal_field", entityId: fieldId, detail: `Nhóm ${groupId}: xoá trường "${removed?.name ?? fieldId}"` });
       patchGroupRequest(groupId, { fields: nextFields }).catch(() => {
         mutateGroup(groupId, (g) => ({ ...g, fields: group.fields }));
       });
