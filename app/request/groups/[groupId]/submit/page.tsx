@@ -76,6 +76,19 @@ export default function SubmitRequestPage() {
       .catch(() => setSubmitError("Không tải được bản nháp."));
   }, [draftId]);
 
+  // `group` (từ RequestContext) tải bất đồng bộ — lúc submit page mount lần
+  // đầu, danh sách nhóm thường CHƯA tải xong nên group=undefined, khiến
+  // useState(group?.followers ?? []) ở trên khởi tạo rỗng và KHÔNG BAO GIỜ tự
+  // cập nhật lại khi group tải xong sau đó (đây chính là bug: người theo dõi
+  // mặc định của nhóm không hiện ra dù đã cấu hình sẵn). Đồng bộ lại ở đây
+  // ngay khi group sẵn sàng — bỏ qua nếu đang tải nháp (nháp tự có followers
+  // riêng từ effect trên, ưu tiên hơn mặc định của nhóm).
+  useEffect(() => {
+    if (!group || draftId) return;
+    setFollowers(group.followers);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- chỉ cần chạy lại khi đổi nhóm, không phải mọi lần group đổi tham chiếu.
+  }, [group?.id]);
+
   useEffect(() => {
     if (!group) return;
     setApproverPreview({ status: "loading" });
