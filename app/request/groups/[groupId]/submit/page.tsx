@@ -266,78 +266,98 @@ export default function SubmitRequestPage() {
               />
             ))}
 
-          <div className="flex flex-col gap-2 sm:flex-row sm:gap-4">
-            <label className="shrink-0 pt-1.5 text-[13px] font-semibold text-gray-700 sm:w-[220px]">
-              Người duyệt
-            </label>
-            <div className="min-w-0 flex-1 pt-1.5">
-              {approverPreview.status === "loading" && (
-                <p className="text-[13px] text-gray-400">Đang xác định người duyệt...</p>
-              )}
-              {approverPreview.status === "error" && (
-                <p className="text-[13px] text-[var(--color-danger-red)]">{approverPreview.message}</p>
-              )}
-              {approverPreview.status === "ok" && approverPreview.steps.length === 0 && (
-                <p className="text-[13px] text-gray-400">Nhóm này chưa cấu hình người duyệt.</p>
-              )}
-              {approverPreview.status === "ok" && approverPreview.steps.length > 0 && (
-                <div className="flex flex-col gap-2">
-                  {approverPreview.steps.map((step, i) => {
-                    const displayUser = managerOverrides[step.index] ?? step.user ?? undefined;
-                    const label = group.approvalFlow === "sequential" ? `${i + 1}. ` : "";
+          {approverPreview.status === "loading" && (
+            <div className="flex flex-col gap-2 sm:flex-row sm:gap-4">
+              <label className="shrink-0 pt-1.5 text-[13px] font-semibold text-gray-700 sm:w-[220px]">Người duyệt</label>
+              <p className="pt-1.5 text-[13px] text-gray-400">Đang xác định người duyệt...</p>
+            </div>
+          )}
+          {approverPreview.status === "error" && (
+            <div className="flex flex-col gap-2 sm:flex-row sm:gap-4">
+              <label className="shrink-0 pt-1.5 text-[13px] font-semibold text-gray-700 sm:w-[220px]">Người duyệt</label>
+              <p className="pt-1.5 text-[13px] text-[var(--color-danger-red)]">{approverPreview.message}</p>
+            </div>
+          )}
+          {approverPreview.status === "ok" && approverPreview.steps.length === 0 && (
+            <div className="flex flex-col gap-2 sm:flex-row sm:gap-4">
+              <label className="shrink-0 pt-1.5 text-[13px] font-semibold text-gray-700 sm:w-[220px]">Người duyệt</label>
+              <p className="pt-1.5 text-[13px] text-gray-400">Nhóm này chưa cấu hình người duyệt.</p>
+            </div>
+          )}
+          {approverPreview.status === "ok" &&
+            approverPreview.steps.map((step) => {
+              const displayUser = managerOverrides[step.index] ?? step.user ?? undefined;
+              const editing = step.kind === "submitter_manager" && (editingStepIndex === step.index || (!displayUser && step.error));
+              // "fixed": nhãn là CHỨC DANH người được gán (vd "Trưởng phòng Kỹ
+              // thuật Thi công Khối 2"), không phải tên suông — khớp cách
+              // Base.vn thật hiển thị, tra qua users/{uid}.title lúc gửi (xem
+              // withTitle() ở lib/server/requests.ts). Không có chức danh thì
+              // dùng tạm tên.
+              const rowLabel =
+                step.kind === "submitter_manager" ? "Quản lý trực tiếp" : (displayUser?.title ?? displayUser?.name ?? "Người duyệt");
 
-                    if (step.kind === "submitter_manager" && (editingStepIndex === step.index || (!displayUser && step.error))) {
-                      return (
-                        <div key={step.index} className="flex flex-col gap-1">
-                          <TagUserInput
-                            value={displayUser ? [displayUser] : []}
-                            onChange={(users) => {
-                              setManagerOverrides((prev) => {
-                                const next = { ...prev };
-                                if (users[0]) next[step.index] = users[0];
-                                else delete next[step.index];
-                                return next;
-                              });
-                              setEditingStepIndex(null);
-                            }}
-                            placeholder="Sử dụng @ để tag quản lý trực tiếp"
-                            directoryUrl="/api/directory/managers"
-                            browseAllLabel="Chọn quản lý trực tiếp"
-                          />
-                          {step.error && !managerOverrides[step.index] && (
-                            <p className="text-[12px] text-[var(--color-danger-red)]">{step.error}</p>
-                          )}
-                        </div>
-                      );
-                    }
-
-                    return (
-                      <div key={step.index} className="flex items-center gap-2">
+              return (
+                <div key={step.index} className="flex flex-col gap-1 sm:flex-row sm:gap-4">
+                  <div className="shrink-0 sm:w-[220px]">
+                    <label className="pt-1.5 text-[13px] font-semibold text-gray-700 block">
+                      {rowLabel}
+                      {step.kind === "submitter_manager" && " *"}
+                    </label>
+                    {step.kind === "submitter_manager" && (
+                      <p className="text-[12px] text-gray-400">
+                        Bạn phải thông báo cho người quản lý trực tiếp của mình về đề xuất này
+                      </p>
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1 pt-1.5">
+                    {step.kind === "fixed" ? (
+                      <p className="text-[13px] text-gray-400">
+                        Người duyệt được tạo tự động dựa trên điều kiện đã thiết lập
+                      </p>
+                    ) : editing ? (
+                      <div className="flex flex-col gap-1">
+                        <TagUserInput
+                          value={displayUser ? [displayUser] : []}
+                          onChange={(users) => {
+                            setManagerOverrides((prev) => {
+                              const next = { ...prev };
+                              if (users[0]) next[step.index] = users[0];
+                              else delete next[step.index];
+                              return next;
+                            });
+                            setEditingStepIndex(null);
+                          }}
+                          placeholder="Sử dụng @ để tag quản lý trực tiếp"
+                          directoryUrl="/api/directory/managers"
+                          browseAllLabel="Chọn quản lý trực tiếp"
+                        />
+                        {step.error && !managerOverrides[step.index] && (
+                          <p className="text-[12px] text-[var(--color-danger-red)]">{step.error}</p>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
                         <span className="flex items-center gap-1.5 rounded-full bg-gray-100 py-0.5 pl-1 pr-2.5 text-[12px] text-gray-700">
                           {displayUser && (
                             <span className="flex h-4 w-4 items-center justify-center rounded-full bg-[var(--color-action-blue)] text-[9px] font-semibold text-white">
                               {displayUser.avatarInitial}
                             </span>
                           )}
-                          {label}
                           {displayUser?.name ?? "—"}
                         </span>
-                        {step.kind === "submitter_manager" && (
-                          <button
-                            type="button"
-                            onClick={() => setEditingStepIndex(step.index)}
-                            className="text-[12px] font-medium text-[var(--color-action-blue)] hover:underline"
-                          >
-                            Đổi
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => setEditingStepIndex(step.index)}
+                          className="text-[12px] font-medium text-[var(--color-action-blue)] hover:underline"
+                        >
+                          Đổi
+                        </button>
                       </div>
-                    );
-                  })}
+                    )}
+                  </div>
                 </div>
-              )}
-            </div>
-          </div>
+              );
+            })}
 
           <div className="flex flex-col gap-2 sm:flex-row sm:gap-4">
             <label className="shrink-0 pt-1.5 text-[13px] font-semibold text-gray-700 sm:w-[220px]">

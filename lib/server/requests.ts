@@ -204,6 +204,23 @@ async function resolveManagerOverride(userId: string): Promise<TaggedUser | null
   };
 }
 
+/**
+ * Bổ sung `title` (chức danh, vd "Trưởng phòng Kỹ thuật Thi công Khối 2")
+ * cho người duyệt CỐ ĐỊNH (kind "fixed") — hiển thị chức danh thay vì tên
+ * suông trên form gửi đề xuất, giống Base.vn thật. `step.user` snapshot lúc
+ * cấu hình không có field này nên phải tra lại users/{uid}.title tại thời
+ * điểm gửi; không có/lỗi thì bỏ qua, giữ nguyên user gốc.
+ */
+async function withTitle(user: TaggedUser): Promise<TaggedUser> {
+  try {
+    const snap = await getHpcoreDb().collection("users").doc(user.id).get();
+    const title = (snap.data()?.title as string | undefined)?.trim();
+    return title ? { ...user, title } : user;
+  } catch {
+    return user;
+  }
+}
+
 export interface ResolvedApproverStep {
   index: number;
   kind: ApproverStepDef["kind"];
@@ -232,7 +249,7 @@ export async function resolveApproverStepsDetailed(
   for (let i = 0; i < applicableSteps.length; i++) {
     const step = applicableSteps[i];
     if (step.kind === "fixed") {
-      results.push({ index: i, kind: "fixed", user: step.user });
+      results.push({ index: i, kind: "fixed", user: await withTitle(step.user) });
       continue;
     }
 
