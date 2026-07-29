@@ -182,13 +182,15 @@ export async function resolveDirectManagerId(submitterUid: string): Promise<stri
 
 /**
  * Xác thực 1 lựa chọn thủ công cho bước "quản lý trực tiếp" — CHỈ chấp nhận
- * nếu id đó đang thực sự là leaderId của ≥1 phòng ban (KHÔNG tin nguyên giá
- * trị client gửi, tự query lại y hệt /api/directory/managers). Trả null nếu
- * không hợp lệ để nơi gọi rơi về auto-resolve như hành vi cũ.
+ * nếu id đó đang thực sự là managerId của ≥1 "Nhóm thành viên" (collection
+ * memberGroups ở app tổng — KHÔNG còn dùng departments.leaderId nữa, xem
+ * /api/directory/managers). KHÔNG tin nguyên giá trị client gửi, tự query
+ * lại y hệt endpoint đó. Trả null nếu không hợp lệ để nơi gọi rơi về
+ * auto-resolve như hành vi cũ.
  */
 async function resolveManagerOverride(userId: string): Promise<TaggedUser | null> {
-  const deptsSnap = await getHpcoreDb().collection("departments").where("leaderId", "==", userId).limit(1).get();
-  if (deptsSnap.empty) return null;
+  const groupsSnap = await getHpcoreDb().collection("memberGroups").where("managerId", "==", userId).limit(1).get();
+  if (groupsSnap.empty) return null;
 
   const userSnap = await getHpcoreDb().collection("users").doc(userId).get();
   const userData = userSnap.data();
