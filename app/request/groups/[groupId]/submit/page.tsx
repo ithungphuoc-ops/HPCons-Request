@@ -349,8 +349,9 @@ export default function SubmitRequestPage() {
                             setEditingStepIndex(null);
                           }}
                           placeholder="Sử dụng @ để tag quản lý trực tiếp"
-                          directoryUrl="/api/directory/managers"
+                          directoryUrl="/api/directory"
                           browseAllLabel="Chọn quản lý trực tiếp"
+                          browseAllDirectoryUrl="/api/directory/managers"
                         />
                         {managerOverrides[step.index] && (
                           <button

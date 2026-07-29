@@ -13,10 +13,16 @@ interface TagUserInputProps {
    * nhóm thành viên/phòng ban (mention bình luận). */
   directoryUrl?: string;
   /** Nếu truyền, hiện 1 link text dưới ô nhập (vd "Chọn quản lý trực tiếp");
-   * bấm vào mở dropdown với TOÀN BỘ danh bạ đã tải, không cần gõ ký tự nào
-   * trước — dùng cho picker duyệt nhanh 1 danh sách ngắn (vd nhóm quản lý
-   * trực tiếp), khác với hành vi mặc định (chỉ gợi ý khi có query). */
+   * bấm vào mở dropdown với TOÀN BỘ danh bạ RIÊNG (xem browseAllDirectoryUrl,
+   * mặc định dùng chung directoryUrl nếu không truyền), không cần gõ ký tự
+   * nào trước — dùng cho picker duyệt nhanh 1 danh sách ngắn (vd nhóm quản
+   * lý trực tiếp), khác với hành vi mặc định (chỉ gợi ý khi có query). */
   browseAllLabel?: string;
+  /** Nguồn RIÊNG cho nút "browse all" — khác `directoryUrl` khi cần: gõ @ tìm
+   * trong TOÀN BỘ công ty (vd để tag người khác duyệt thay khi quản lý trực
+   * tiếp không xử lý), nhưng nút "Chọn..." chỉ gợi ý 1 danh sách hẹp hơn (vd
+   * quản lý nhóm). Không truyền thì browse-all dùng lại directoryUrl như cũ. */
+  browseAllDirectoryUrl?: string;
 }
 
 export default function TagUserInput({
@@ -25,9 +31,11 @@ export default function TagUserInput({
   placeholder = "Gõ @ để tìm người dùng",
   directoryUrl = "/api/directory",
   browseAllLabel,
+  browseAllDirectoryUrl,
 }: TagUserInputProps) {
   const [query, setQuery] = useState("");
   const [directory, setDirectory] = useState<TaggedUser[]>([]);
+  const [browseDirectory, setBrowseDirectory] = useState<TaggedUser[]>([]);
   const [results, setResults] = useState<TaggedUser[]>([]);
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -46,6 +54,22 @@ export default function TagUserInput({
       cancelled = true;
     };
   }, [directoryUrl]);
+
+  useEffect(() => {
+    if (!browseAllDirectoryUrl) return;
+    let cancelled = false;
+    fetch(browseAllDirectoryUrl)
+      .then((res) => (res.ok ? res.json() : { directory: [] }))
+      .then((data: { directory: TaggedUser[] }) => {
+        if (!cancelled) setBrowseDirectory(data.directory ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setBrowseDirectory([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [browseAllDirectoryUrl]);
 
   useEffect(() => {
     const term = query.replace("@", "").trim().toLowerCase();
@@ -86,7 +110,8 @@ export default function TagUserInput({
 
   const browseAll = () => {
     const selectedIds = new Set(value.map((u) => u.id));
-    setResults(directory.filter((u) => !selectedIds.has(u.id)));
+    const source = browseAllDirectoryUrl ? browseDirectory : directory;
+    setResults(source.filter((u) => !selectedIds.has(u.id)));
     setOpen(true);
   };
 

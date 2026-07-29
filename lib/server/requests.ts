@@ -181,17 +181,17 @@ export async function resolveDirectManagerId(submitterUid: string): Promise<stri
 }
 
 /**
- * Xác thực 1 lựa chọn thủ công cho bước "quản lý trực tiếp" — CHỈ chấp nhận
- * nếu id đó đang thực sự là managerId của ≥1 "Nhóm thành viên" (collection
- * memberGroups ở app tổng — KHÔNG còn dùng departments.leaderId nữa, xem
- * /api/directory/managers). KHÔNG tin nguyên giá trị client gửi, tự query
- * lại y hệt endpoint đó. Trả null nếu không hợp lệ để nơi gọi rơi về
- * auto-resolve như hành vi cũ.
+ * Xác thực 1 lựa chọn thủ công cho bước "quản lý trực tiếp" — chấp nhận BẤT
+ * KỲ nhân viên hợp lệ nào trong hồ sơ app tổng (KHÔNG còn giới hạn phải là
+ * managerId của memberGroups — Sếp cần chọn người KHÁC quản lý trực tiếp
+ * "chính thức" duyệt thay trong 1 số trường hợp thực tế, vd nút "Chọn quản
+ * lý trực tiếp" chỉ gợi ý nhanh managerId của Nhóm thành viên, nhưng gõ @
+ * vẫn phải tag được BẤT KỲ ai trong toàn công ty — xem TagUserInput
+ * browseAllDirectoryUrl ở submit/page.tsx). KHÔNG tin nguyên giá trị client
+ * gửi, tự query lại users/{uid} để xác nhận tồn tại thật. Trả null nếu
+ * không hợp lệ để nơi gọi rơi về auto-resolve như hành vi cũ.
  */
 async function resolveManagerOverride(userId: string): Promise<TaggedUser | null> {
-  const groupsSnap = await getHpcoreDb().collection("memberGroups").where("managerId", "==", userId).limit(1).get();
-  if (groupsSnap.empty) return null;
-
   const userSnap = await getHpcoreDb().collection("users").doc(userId).get();
   const userData = userSnap.data();
   if (!userSnap.exists || !userData) return null;
