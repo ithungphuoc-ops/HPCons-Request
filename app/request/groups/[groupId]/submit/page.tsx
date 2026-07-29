@@ -8,6 +8,7 @@ import { HPCORE_MEMBER_GROUPS_API } from "@/lib/constants";
 import { deserializeTableRows, toWireTableRows } from "@/lib/table-field";
 import { evaluateCondition } from "@/lib/server/conditions";
 import TagUserInput from "@/components/shared/TagUserInput";
+import DatePicker from "@/components/ui/DatePicker";
 import {
   cancelButtonClass,
   confirmButtonClass,
@@ -481,11 +482,10 @@ function FieldControl({
       );
     case "date":
       return (
-        <input
-          type="date"
+        <DatePicker
           className={inputClass}
           value={(value as string) ?? ""}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(v) => onChange(v)}
         />
       );
     case "datetime":

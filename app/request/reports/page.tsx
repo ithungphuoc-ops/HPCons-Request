@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Download } from "lucide-react";
 import RequireAdminRole from "@/components/request/RequireAdminRole";
+import DatePicker from "@/components/ui/DatePicker";
 import type { ListLoadStatus, RequestInstance } from "@/lib/types";
 
 export default function ReportsPage() {
@@ -190,20 +191,18 @@ function ReportsPageInner() {
       <div className="mt-5 grid grid-cols-2 gap-3 rounded-[3px] border border-[var(--color-border)] bg-white p-4 sm:grid-cols-3 lg:grid-cols-6">
         <div>
           <label className="mb-1 block text-[11px] text-gray-400">Từ ngày</label>
-          <input
-            type="date"
+          <DatePicker
             value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
-            className="h-8 w-full rounded border border-[var(--color-border)] px-2 text-[12px] outline-none focus:border-[var(--color-action-blue)]"
+            onChange={setDateFrom}
+            className="h-8 w-full rounded border border-[var(--color-border)] px-2 text-left text-[12px] outline-none focus:border-[var(--color-action-blue)]"
           />
         </div>
         <div>
           <label className="mb-1 block text-[11px] text-gray-400">Đến ngày</label>
-          <input
-            type="date"
+          <DatePicker
             value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
-            className="h-8 w-full rounded border border-[var(--color-border)] px-2 text-[12px] outline-none focus:border-[var(--color-action-blue)]"
+            onChange={setDateTo}
+            className="h-8 w-full rounded border border-[var(--color-border)] px-2 text-left text-[12px] outline-none focus:border-[var(--color-action-blue)]"
           />
         </div>
         <div>

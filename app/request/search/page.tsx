@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import RequestStatusBadge from "@/components/request/RequestStatusBadge";
 import { inputClass, selectClass } from "@/components/shared/form-styles";
+import DatePicker from "@/components/ui/DatePicker";
 import { useRequestContext } from "@/context/RequestContext";
 import type { ListLoadStatus, RequestInstance, RequestStatus } from "@/lib/types";
 
@@ -106,20 +107,18 @@ function SearchPageInner() {
         </div>
         <div>
           <label className="mb-1 block text-[11px] text-gray-400">Từ ngày</label>
-          <input
-            type="date"
-            className={`${inputClass} w-[150px]`}
+          <DatePicker
+            className={`${inputClass} w-[150px] text-left`}
             value={from}
-            onChange={(e) => setFrom(e.target.value)}
+            onChange={setFrom}
           />
         </div>
         <div>
           <label className="mb-1 block text-[11px] text-gray-400">Đến ngày</label>
-          <input
-            type="date"
-            className={`${inputClass} w-[150px]`}
+          <DatePicker
+            className={`${inputClass} w-[150px] text-left`}
             value={to}
-            onChange={(e) => setTo(e.target.value)}
+            onChange={setTo}
           />
         </div>
         <button
