@@ -329,15 +329,16 @@ export default function SubmitRequestPage() {
                       </p>
                     ) : editing ? (
                       <div className="flex flex-col gap-1">
+                        {/* value luôn rỗng lúc sửa — TagUserInput vốn multi-select, nếu
+                            truyền sẵn người đang có thì gõ tên mới chỉ THÊM chứ không
+                            THAY (đã gặp lỗi thật: gõ "@hau" không thay được Cẩm Thu vì
+                            chị vẫn còn là 1 thẻ đã chọn). Chọn 1 người mới ở đây luôn có
+                            nghĩa là "thay thế", không cần dọn thẻ cũ trước. */}
                         <TagUserInput
-                          value={displayUser ? [displayUser] : []}
+                          value={[]}
                           onChange={(users) => {
-                            setManagerOverrides((prev) => {
-                              const next = { ...prev };
-                              if (users[0]) next[step.index] = users[0];
-                              else delete next[step.index];
-                              return next;
-                            });
+                            if (!users[0]) return;
+                            setManagerOverrides((prev) => ({ ...prev, [step.index]: users[0] }));
                             setEditingStepIndex(null);
                           }}
                           placeholder="Sử dụng @ để tag quản lý trực tiếp"
@@ -346,6 +347,15 @@ export default function SubmitRequestPage() {
                         />
                         {step.error && !managerOverrides[step.index] && (
                           <p className="text-[12px] text-[var(--color-danger-red)]">{step.error}</p>
+                        )}
+                        {displayUser && (
+                          <button
+                            type="button"
+                            onClick={() => setEditingStepIndex(null)}
+                            className="self-start text-[12px] font-medium text-gray-400 hover:underline"
+                          >
+                            Huỷ, giữ nguyên {displayUser.name}
+                          </button>
                         )}
                       </div>
                     ) : (
