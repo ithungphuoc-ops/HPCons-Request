@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Download } from "lucide-react";
 import RequireAdminRole from "@/components/request/RequireAdminRole";
 import DatePicker from "@/components/ui/DatePicker";
-import type { ListLoadStatus, RequestInstance } from "@/lib/types";
+import type { ListLoadStatus, RequestInstance, TaggedUser } from "@/lib/types";
 
 export default function ReportsPage() {
   return (
@@ -74,6 +74,10 @@ function downloadCsv(filename: string, rows: (string | number)[][]) {
 function ReportsPageInner() {
   const [requests, setRequests] = useState<RequestInstance[]>([]);
   const [status, setStatus] = useState<ListLoadStatus>("loading");
+  // uid -> username, tra sống từ danh bạ (không lưu snapshot trên request) để
+  // tìm theo @username hoạt động được cho CẢ đề xuất cũ (gửi trước khi có
+  // username) lẫn mới — xem lib/username.ts ở hpcons-portal.
+  const [usernameByUid, setUsernameByUid] = useState<Map<string, string>>(new Map());
 
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -91,6 +95,13 @@ function ReportsPageInner() {
         setStatus("loaded");
       })
       .catch(() => setStatus("error"));
+
+    fetch("/api/directory")
+      .then((res) => (res.ok ? res.json() : { directory: [] }))
+      .then((data: { directory: TaggedUser[] }) => {
+        setUsernameByUid(new Map((data.directory ?? []).map((u) => [u.id, u.username])));
+      })
+      .catch(() => {});
   }, []);
 
   const groupNames = useMemo(
@@ -104,16 +115,22 @@ function ReportsPageInner() {
   }, [requests]);
 
   const filtered = useMemo(() => {
+    const creatorQuery = creatorFilter.toLowerCase().replace(/^@/, "");
     return requests.filter((r) => {
       if (dateFrom && r.submittedAt < dateFrom) return false;
       if (dateTo && r.submittedAt > `${dateTo}T23:59:59`) return false;
       if (groupFilter && r.groupNameSnapshot !== groupFilter) return false;
-      if (creatorFilter && !r.submittedBy.name.toLowerCase().includes(creatorFilter.toLowerCase())) return false;
+      if (creatorQuery) {
+        const username = usernameByUid.get(r.submittedBy.uid);
+        const matchesName = r.submittedBy.name.toLowerCase().includes(creatorQuery);
+        const matchesUsername = username?.toLowerCase().includes(creatorQuery);
+        if (!matchesName && !matchesUsername) return false;
+      }
       if (approverFilter && !r.approversSnapshot.some((a) => a.name === approverFilter)) return false;
       if (statusFilter && r.status !== statusFilter) return false;
       return true;
     });
-  }, [requests, dateFrom, dateTo, groupFilter, creatorFilter, approverFilter, statusFilter]);
+  }, [requests, dateFrom, dateTo, groupFilter, creatorFilter, approverFilter, statusFilter, usernameByUid]);
 
   const overall = useMemo(() => computeStat("all", filtered), [filtered]);
 
@@ -223,7 +240,7 @@ function ReportsPageInner() {
           <input
             value={creatorFilter}
             onChange={(e) => setCreatorFilter(e.target.value)}
-            placeholder="Tìm tên"
+            placeholder="Tìm tên hoặc @username"
             className="h-8 w-full rounded border border-[var(--color-border)] px-2 text-[12px] outline-none focus:border-[var(--color-action-blue)]"
           />
         </div>
