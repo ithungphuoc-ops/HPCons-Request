@@ -181,11 +181,12 @@ export default function SubmitRequestPage() {
       return;
     }
 
-    // Bước "quản lý trực tiếp" auto-resolve thất bại và chưa được chọn tay ->
-    // chặn gửi rõ ràng ở đây thay vì để server trả lỗi chung chung.
+    // Ô "Quản lý trực tiếp" LUÔN bắt chọn tay (không tự điền sẵn, khớp đúng
+    // hành vi Base.vn thật) — chặn gửi nếu còn bước submitter_manager nào
+    // chưa được chọn.
     if (
       approverPreview.status === "ok" &&
-      approverPreview.steps.some((s) => s.kind === "submitter_manager" && s.error && !managerOverrides[s.index])
+      approverPreview.steps.some((s) => s.kind === "submitter_manager" && !managerOverrides[s.index])
     ) {
       setSubmitError("Vui lòng chọn quản lý trực tiếp trước khi gửi đề xuất.");
       return;
@@ -299,8 +300,14 @@ export default function SubmitRequestPage() {
           )}
           {approverPreview.status === "ok" &&
             approverPreview.steps.map((step) => {
-              const displayUser = managerOverrides[step.index] ?? step.user ?? undefined;
-              const editing = step.kind === "submitter_manager" && (editingStepIndex === step.index || (!displayUser && step.error));
+              // "submitter_manager": KHÔNG tự điền sẵn giá trị auto-resolve —
+              // ảnh chụp thật từ request.base.vn (Base.vn gốc) cho thấy ô này
+              // LUÔN để trống, bắt người gửi tự tag tay mỗi lần, dù server vẫn
+              // có auto-resolve theo department.leaderId làm lưới an toàn lúc
+              // gửi nếu người dùng bỏ trống (xem lib/server/requests.ts). "fixed"
+              // thì luôn hiện đúng người server trả về (không có gì để "chọn").
+              const displayUser = step.kind === "fixed" ? step.user : managerOverrides[step.index];
+              const editing = step.kind === "submitter_manager" && (editingStepIndex === step.index || !displayUser);
               // "fixed": nhãn là CHỨC DANH người được gán (vd "Trưởng phòng Kỹ
               // thuật Thi công Khối 2"), không phải tên suông — khớp cách
               // Base.vn thật hiển thị, tra qua users/{uid}.title lúc gửi (xem
@@ -329,11 +336,11 @@ export default function SubmitRequestPage() {
                       </p>
                     ) : editing ? (
                       <div className="flex flex-col gap-1">
-                        {/* value luôn rỗng lúc sửa — TagUserInput vốn multi-select, nếu
-                            truyền sẵn người đang có thì gõ tên mới chỉ THÊM chứ không
-                            THAY (đã gặp lỗi thật: gõ "@hau" không thay được Cẩm Thu vì
-                            chị vẫn còn là 1 thẻ đã chọn). Chọn 1 người mới ở đây luôn có
-                            nghĩa là "thay thế", không cần dọn thẻ cũ trước. */}
+                        {/* value luôn rỗng — TagUserInput vốn multi-select, nếu truyền
+                            sẵn người đang có thì gõ tên mới chỉ THÊM chứ không THAY
+                            (đã gặp lỗi thật: gõ "@hau" không thay được Cẩm Thu vì chị
+                            vẫn còn là 1 thẻ đã chọn). Chọn 1 người ở đây luôn có nghĩa
+                            là "chọn/thay", không cần dọn thẻ cũ trước. */}
                         <TagUserInput
                           value={[]}
                           onChange={(users) => {
@@ -345,16 +352,13 @@ export default function SubmitRequestPage() {
                           directoryUrl="/api/directory/managers"
                           browseAllLabel="Chọn quản lý trực tiếp"
                         />
-                        {step.error && !managerOverrides[step.index] && (
-                          <p className="text-[12px] text-[var(--color-danger-red)]">{step.error}</p>
-                        )}
-                        {displayUser && (
+                        {managerOverrides[step.index] && (
                           <button
                             type="button"
                             onClick={() => setEditingStepIndex(null)}
                             className="self-start text-[12px] font-medium text-gray-400 hover:underline"
                           >
-                            Huỷ, giữ nguyên {displayUser.name}
+                            Huỷ, giữ nguyên {managerOverrides[step.index].name}
                           </button>
                         )}
                       </div>
