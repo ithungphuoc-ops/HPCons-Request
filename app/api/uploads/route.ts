@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
-import { getAttachmentsBucket } from "@/lib/firebase/admin";
+import { putObject } from "@/lib/r2";
 import { apiErrorResponse } from "@/lib/http";
 import { requireSession } from "@/lib/session";
 import type { RequestAttachment } from "@/lib/types";
 
-// Cần Node runtime (không phải Edge) để dùng firebase-admin/storage.
 export const runtime = "nodejs";
 
 const MAX_FILES = 6;
@@ -38,14 +37,11 @@ export async function POST(request: Request) {
       }
     }
 
-    const bucket = getAttachmentsBucket();
     const uploaded: RequestAttachment[] = [];
     for (const file of files) {
       const path = `requests/${session.uid}/${Date.now()}-${sanitizeFileName(file.name)}`;
       const buffer = Buffer.from(await file.arrayBuffer());
-      await bucket.file(path).save(buffer, {
-        contentType: file.type || "application/octet-stream",
-      });
+      await putObject(path, buffer, file.type || "application/octet-stream");
       uploaded.push({ name: file.name, path, size: file.size });
     }
 

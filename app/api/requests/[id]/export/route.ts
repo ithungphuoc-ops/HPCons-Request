@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { adminDb, getAttachmentsBucket } from "@/lib/firebase/admin";
+import { adminDb } from "@/lib/firebase/admin";
+import { downloadObject } from "@/lib/r2";
 import { apiErrorResponse } from "@/lib/http";
 import { renderPrintTemplate } from "@/lib/server/print-engine";
 import { logPrintExport } from "@/lib/server/print-exports";
@@ -68,7 +69,7 @@ export async function GET(
 
     let resultBuffer: Buffer;
     try {
-      const [templateBuffer] = await getAttachmentsBucket().file(template.path).download();
+      const templateBuffer = await downloadObject(template.path);
       resultBuffer = renderPrintTemplate(templateBuffer, group, found);
     } catch (renderError) {
       await logPrintExport({

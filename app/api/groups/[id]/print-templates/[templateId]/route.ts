@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { adminDb, getAttachmentsBucket } from "@/lib/firebase/admin";
+import { adminDb } from "@/lib/firebase/admin";
+import { downloadObject, putObject } from "@/lib/r2";
 import { apiErrorResponse } from "@/lib/http";
 import { scanTemplateVariables } from "@/lib/server/print-engine";
 import {
@@ -13,7 +14,6 @@ import {
 import { requireWriteAccess } from "@/lib/session";
 import type { ProposalGroup } from "@/lib/types";
 
-// Cần Node runtime (không phải Edge) để dùng firebase-admin/storage.
 export const runtime = "nodejs";
 
 const MAX_TEMPLATE_SIZE = 5 * 1024 * 1024; // 5MB
@@ -55,7 +55,7 @@ export async function PATCH(
         return NextResponse.json({ error: "Không tìm thấy nhóm đề xuất." }, { status: 404 });
       }
       const group = { id: groupSnap.id, ...groupSnap.data() } as ProposalGroup;
-      const [buffer] = await getAttachmentsBucket().file(existing.path).download();
+      const buffer = await downloadObject(existing.path);
       const scan = scanTemplateVariables(buffer, group);
       await updatePrintTemplateValidation(id, templateId, {
         detectedVariables: scan.detectedVariables,
@@ -113,9 +113,7 @@ export async function PUT(
     const path = `print-templates/${id}/${Date.now()}-${sanitizeFileName(file.name)}`;
     const buffer = Buffer.from(await file.arrayBuffer());
     try {
-      await getAttachmentsBucket().file(path).save(buffer, {
-        contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      });
+      await putObject(path, buffer, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
     } catch {
       return NextResponse.json(
         { error: "Không đọc được file — có thể file bị hỏng hoặc không phải .docx hợp lệ." },

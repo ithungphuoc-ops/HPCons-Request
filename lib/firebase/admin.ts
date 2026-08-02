@@ -2,7 +2,6 @@ import "server-only";
 import { cert, getApps, initializeApp, type App } from "firebase-admin/app";
 import { getAuth, type Auth } from "firebase-admin/auth";
 import { getFirestore, type Firestore } from "firebase-admin/firestore";
-import { getStorage } from "firebase-admin/storage";
 
 /**
  * App Admin SDK MẶC ĐỊNH của base-request-app (Firestore nghiệp vụ: groups,
@@ -75,14 +74,3 @@ function getAdminAuthInstance(): Auth {
  * add-comment-mentions-realtime.
  */
 export const adminAuth: Auth = lazyProxy(getAdminAuthInstance);
-
-/**
- * Bucket Firebase Storage cho tài liệu đính kèm — tên bucket lấy từ
- * FIREBASE_STORAGE_BUCKET (đọc ở đầu trang Storage trên Firebase Console,
- * dạng "gs://<tên-bucket>", chỉ lấy phần tên, bỏ "gs://"). Cần Sếp bật
- * Storage cho project trước khi biến này có giá trị dùng được.
- */
-export function getAttachmentsBucket() {
-  const bucketName = process.env.FIREBASE_STORAGE_BUCKET;
-  return getStorage(getAdminApp()).bucket(bucketName);
-}

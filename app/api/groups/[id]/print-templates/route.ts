@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { adminDb, getAttachmentsBucket } from "@/lib/firebase/admin";
+import { adminDb } from "@/lib/firebase/admin";
+import { putObject } from "@/lib/r2";
 import { apiErrorResponse } from "@/lib/http";
 import { scanTemplateVariables } from "@/lib/server/print-engine";
 import { createPrintTemplate, listPrintTemplates } from "@/lib/server/print-templates";
 import { requireSession, requireWriteAccess } from "@/lib/session";
 import type { ProposalGroup } from "@/lib/types";
 
-// Cần Node runtime (không phải Edge) để dùng firebase-admin/storage.
 export const runtime = "nodejs";
 
 const MAX_TEMPLATE_SIZE = 5 * 1024 * 1024; // 5MB
@@ -55,9 +55,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const path = `print-templates/${id}/${Date.now()}-${sanitizeFileName(file.name)}`;
     const buffer = Buffer.from(await file.arrayBuffer());
     try {
-      await getAttachmentsBucket().file(path).save(buffer, {
-        contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      });
+      await putObject(path, buffer, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
     } catch {
       return NextResponse.json(
         { error: "Không đọc được file — có thể file bị hỏng hoặc không phải .docx hợp lệ." },

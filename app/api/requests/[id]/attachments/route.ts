@@ -1,11 +1,10 @@
 import { NextResponse } from "next/server";
-import { getAttachmentsBucket } from "@/lib/firebase/admin";
+import { createSignedReadUrl } from "@/lib/r2";
 import { apiErrorResponse } from "@/lib/http";
 import { canView, loadRequest } from "@/lib/server/requests";
 import { requireSession } from "@/lib/session";
 import type { RequestAttachment } from "@/lib/types";
 
-// Cần Node runtime (không phải Edge) để dùng firebase-admin/storage.
 export const runtime = "nodejs";
 
 /** Chỉ cho tải về đúng path đang thật sự nằm trong values của đề xuất này —
@@ -45,9 +44,7 @@ export async function GET(
       return NextResponse.json({ error: "Không tìm thấy tệp đính kèm." }, { status: 404 });
     }
 
-    const [signedUrl] = await getAttachmentsBucket()
-      .file(path)
-      .getSignedUrl({ action: "read", expires: Date.now() + 5 * 60 * 1000 });
+    const signedUrl = await createSignedReadUrl(path);
 
     return NextResponse.redirect(signedUrl);
   } catch (error) {

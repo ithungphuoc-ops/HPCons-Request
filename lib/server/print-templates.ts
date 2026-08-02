@@ -1,5 +1,6 @@
 import "server-only";
-import { adminDb, getAttachmentsBucket } from "@/lib/firebase/admin";
+import { adminDb } from "@/lib/firebase/admin";
+import { deleteObject } from "@/lib/r2";
 import type { PrintTemplate } from "@/lib/types";
 
 function templatesRef(groupId: string) {
@@ -154,10 +155,7 @@ export async function replacePrintTemplateFile(
   // vào Storage trước khi hàm này chạy), rồi mới xoá file CŨ — tránh cửa sổ
   // hở khi 1 request khác đang xuất file đọc path cũ nhưng file đã bị xoá.
   await ref.update(patch);
-  await getAttachmentsBucket()
-    .file(current.path)
-    .delete()
-    .catch(() => {});
+  await deleteObject(current.path);
   return { id: templateId, ...current, ...patch };
 }
 
@@ -171,10 +169,7 @@ export async function deletePrintTemplate(groupId: string, templateId: string): 
   // Xoá Firestore TRƯỚC để request khác lập tức thấy mẫu đã biến mất (404)
   // thay vì còn đọc được metadata trỏ tới file sắp bị xoá ở Storage.
   await ref.delete();
-  await getAttachmentsBucket()
-    .file(data.path)
-    .delete()
-    .catch(() => {});
+  await deleteObject(data.path);
 
   if (data.isDefault) {
     const remaining = await templatesRef(groupId).orderBy("createdAt").limit(1).get();
