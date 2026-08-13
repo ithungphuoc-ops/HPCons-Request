@@ -566,11 +566,11 @@ function FieldControl({
       );
     case "datetime":
       return (
-        <input
-          type="datetime-local"
+        <DatePicker
           className={inputClass}
           value={(value as string) ?? ""}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(v) => onChange(v)}
+          withTime
         />
       );
     case "department_select":
