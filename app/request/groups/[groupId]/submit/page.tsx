@@ -331,9 +331,16 @@ export default function SubmitRequestPage() {
                   </div>
                   <div className="min-w-0 flex-1 pt-1.5">
                     {step.kind === "fixed" ? (
-                      <p className="text-[13px] text-gray-400">
-                        Người duyệt được tạo tự động dựa trên điều kiện đã thiết lập
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <span className="flex items-center gap-1.5 rounded-full bg-gray-100 py-0.5 pl-1 pr-2.5 text-[12px] text-gray-700">
+                          {displayUser && (
+                            <span className="flex h-4 w-4 items-center justify-center rounded-full bg-[var(--color-action-blue)] text-[9px] font-semibold text-white">
+                              {displayUser.avatarInitial}
+                            </span>
+                          )}
+                          {displayUser?.name ?? "—"}
+                        </span>
+                      </div>
                     ) : editing ? (
                       <div className="flex flex-col gap-1">
                         {/* value luôn rỗng — TagUserInput vốn multi-select, nếu truyền
@@ -547,6 +554,8 @@ function FieldControl({
       );
     case "department_select":
       return <DepartmentSelectControl value={value} onChange={onChange} />;
+    case "user_select":
+      return <UserSelectControl value={value as TaggedUser | null} onChange={onChange} />;
     case "single_choice":
       return (
         <select
@@ -780,6 +789,22 @@ function FileFieldControl({
       </p>
       {error && <p className="text-[12px] text-[var(--color-danger-red)]">{error}</p>}
     </div>
+  );
+}
+
+function UserSelectControl({
+  value,
+  onChange,
+}: {
+  value: TaggedUser | null;
+  onChange: (value: unknown) => void;
+}) {
+  return (
+    <TagUserInput
+      value={value ? [value] : []}
+      onChange={(users) => onChange(users.slice(-1)[0] ?? null)}
+      placeholder="Gõ @ để chọn người dùng"
+    />
   );
 }
 
