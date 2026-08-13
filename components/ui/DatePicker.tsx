@@ -150,6 +150,25 @@ export default function DatePicker({
               ›
             </button>
           </div>
+
+          {withTime && (
+            <div className="mb-3 flex items-center justify-between gap-2 border-b border-gray-100 pb-3">
+              <input
+                type="time"
+                value={timePart || '00:00'}
+                onChange={(e) => changeTime(e.target.value)}
+                className="h-8 flex-1 rounded border border-[var(--color-border)] px-2 text-[13px] outline-none focus:border-[var(--color-action-blue)]"
+              />
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="shrink-0 text-[12px] font-medium text-[var(--color-action-blue)] hover:underline"
+              >
+                Xong
+              </button>
+            </div>
+          )}
+
           <div className="grid grid-cols-7 gap-1 text-center text-[11px] text-gray-400 mb-1">
             {WEEKDAYS.map((w) => (
               <div key={w}>{w}</div>
@@ -177,24 +196,6 @@ export default function DatePicker({
               ),
             )}
           </div>
-
-          {withTime && (
-            <div className="mt-3 flex items-center justify-between gap-2 border-t border-gray-100 pt-3">
-              <input
-                type="time"
-                value={timePart || '00:00'}
-                onChange={(e) => changeTime(e.target.value)}
-                className="h-8 flex-1 rounded border border-[var(--color-border)] px-2 text-[13px] outline-none focus:border-[var(--color-action-blue)]"
-              />
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                className="shrink-0 text-[12px] font-medium text-[var(--color-action-blue)] hover:underline"
-              >
-                Xong
-              </button>
-            </div>
-          )}
         </div>
       )}
     </div>
