@@ -89,10 +89,31 @@ export default function SubmitRequestPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- chỉ cần chạy lại khi đổi nhóm, không phải mọi lần group đổi tham chiếu.
   }, [group?.id]);
 
+  // Chỉ những field được ít nhất 1 bước duyệt dùng làm điều kiện mới ảnh
+  // hưởng preview — gộp giá trị các field đó thành 1 khoá ổn định để effect
+  // dưới đây KHÔNG chạy lại mỗi lần gõ phím ở field khác (vd văn bản tự do),
+  // chỉ chạy lại khi giá trị THỰC SỰ liên quan tới điều kiện đổi.
+  const conditionFieldIds = group
+    ? new Set(
+        group.approverSteps
+          .map((s) => s.condition?.fieldCode)
+          .filter((code): code is string => !!code)
+          .map((code) => group.fields.find((f) => f.code === code)?.id)
+          .filter((id): id is string => !!id),
+      )
+    : new Set<string>();
+  const relevantValuesKey = JSON.stringify(
+    Object.fromEntries(Object.entries(values).filter(([id]) => conditionFieldIds.has(id))),
+  );
+
   useEffect(() => {
     if (!group) return;
     setApproverPreview({ status: "loading" });
-    fetch(`/api/groups/${group.id}/approver-preview`)
+    fetch(`/api/groups/${group.id}/approver-preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ values }),
+    })
       .then(async (res) => {
         const body = (await res.json()) as {
           approvers?: TaggedUser[];
@@ -108,8 +129,8 @@ export default function SubmitRequestPage() {
           message: err instanceof Error ? err.message : "Không xác định được người duyệt.",
         }),
       );
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- chỉ cần chạy lại khi đổi nhóm, không phải mọi lần group đổi tham chiếu.
-  }, [group?.id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- chỉ cần chạy lại khi đổi nhóm hoặc giá trị field liên quan điều kiện đổi, không phải mọi lần values đổi tham chiếu.
+  }, [group?.id, relevantValuesKey]);
 
   if (!group) return null;
 
