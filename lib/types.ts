@@ -72,7 +72,8 @@ export type FieldDataType =
   | "formula"
   | "base_table"
   | "section_title"
-  | "department_select";
+  | "department_select"
+  | "user_select";
 
 export const fieldDataTypeLabels: Record<FieldDataType, string> = {
   integer: "Số nguyên",
@@ -90,6 +91,7 @@ export const fieldDataTypeLabels: Record<FieldDataType, string> = {
   base_table: "Base Table",
   section_title: "Tiêu đề phân đoạn",
   department_select: "Chọn bộ phận (tự động từ Nhóm thành viên)",
+  user_select: "Chọn người dùng (@)",
 };
 
 /**

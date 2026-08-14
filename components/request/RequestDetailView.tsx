@@ -456,6 +456,7 @@ export default function RequestDetailView({
                 .map((field, index) => {
                   const isTable = field.dataType === "table" || field.dataType === "base_table";
                   const isFile = field.dataType === "file";
+                  const isUser = field.dataType === "user_select";
                   return (
                     <div key={field.id}>
                       <dt className="text-gray-400">
@@ -474,6 +475,8 @@ export default function RequestDetailView({
                           requestId={request.id}
                           attachments={(request.values[field.id] as RequestAttachment[]) ?? []}
                         />
+                      ) : isUser ? (
+                        <UserValueView user={request.values[field.id] as TaggedUser | null} />
                       ) : (
                         <dd className="font-medium text-gray-800">
                           {formatValue(request.values[field.id])}
@@ -610,6 +613,18 @@ export default function RequestDetailView({
         />
       )}
     </div>
+  );
+}
+
+function UserValueView({ user }: { user: TaggedUser | null }) {
+  if (!user) return <p className="font-medium text-gray-800">—</p>;
+  return (
+    <span className="mt-1 flex items-center gap-1.5 text-[13px] text-gray-800">
+      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--color-action-blue)] text-[10px] font-semibold text-white">
+        {user.avatarInitial}
+      </span>
+      {user.name}
+    </span>
   );
 }
 

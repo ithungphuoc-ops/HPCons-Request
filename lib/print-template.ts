@@ -108,6 +108,9 @@ function formatFieldValueForPrint(field: ProposalField, value: unknown): string 
     }
     return (value as string[]).join(", ");
   }
+  if (field.dataType === "user_select" && typeof value === "object") {
+    return (value as { name?: string }).name ?? "";
+  }
   return String(value);
 }
 
