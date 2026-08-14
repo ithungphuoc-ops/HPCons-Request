@@ -10,6 +10,7 @@ import { adminDb } from "@/lib/firebase/admin";
 import { apiErrorResponse } from "@/lib/http";
 import { requireSession } from "@/lib/session";
 import type { RequestInstance, TaggedUser } from "@/lib/types";
+import { guiSangQlkCtr, trichXuatPayload } from "@/lib/qlkctr-sync";
 
 interface DecisionBody {
   decision: "approved" | "rejected" | "forwarded" | "returned";
@@ -150,6 +151,29 @@ export async function POST(
       history,
       updatedAt: nowIso,
     };
+
+    // Đồng bộ sang QLK CTR (app quản lý kho công trình) khi duyệt xong hoàn toàn — xem
+    // openspec/changes/add-qlkctr-sync-webhook. Bọc try/catch riêng, tuyệt đối không được để lỗi
+    // ở đây làm hỏng response duyệt đề xuất chính (đề xuất vẫn đã duyệt xong dù đồng bộ lỗi).
+    if (status === "approved") {
+      try {
+        const payload = trichXuatPayload(updated);
+        if (payload) {
+          const ketQua = await guiSangQlkCtr(payload);
+          const syncEntry = {
+            at: new Date().toISOString(),
+            actor: "Hệ thống",
+            action: ketQua.ok ? "Đã đồng bộ sang QLK CTR" : "Đồng bộ QLK CTR thất bại",
+            note: ketQua.ok ? `Công trình: ${ketQua.congTrinh ?? "chờ xác nhận"}` : ketQua.error,
+          };
+          updated.history = [...updated.history, syncEntry];
+          await ref.update({ history: updated.history });
+        }
+      } catch (syncError) {
+        console.error("Đồng bộ QLK CTR lỗi (không ảnh hưởng thao tác duyệt):", syncError);
+      }
+    }
+
     return NextResponse.json({ request: updated });
   } catch (error) {
     return apiErrorResponse(error);
