@@ -29,7 +29,7 @@
 - [x] 4.2 Bọc mỗi rule đơn cũ tìm thấy thành `{ conjunction: "all", rules: [rule] }`, ghi lại Firestore
 - [x] 4.3 Log ra số lượng field/bước duyệt/follower đã migrate theo từng nhóm để đối chiếu tay
 - [x] 4.4 Chạy thử script ở chế độ dry-run (chỉ log, không ghi) trước khi chạy thật — ĐÃ CHẠY THẬT trên dữ liệu production thật (chỉ đọc): phát hiện 2/15 nhóm cần migrate, 6 field `visibleWhen` (khớp đúng ví dụ "Thiết bị..." trong code gốc), 0 bước duyệt/follower cần migrate. Phát sinh phụ: phải cài thêm `server-only` làm devDependency + chạy với `NODE_OPTIONS="--conditions=react-server"` thì script (và cả `seed-groups.ts` có sẵn) mới chạy được qua tsx — đây là gap có sẵn từ trước, không phải do thay đổi của change này.
-- [ ] 4.5 Backup dữ liệu Firestore liên quan trước khi chạy migration thật trên production — **CHƯA CHẠY MIGRATION THẬT (ghi dữ liệu)**, chỉ mới dry-run xác nhận script đúng. Cần Sếp xác nhận rõ ràng trước khi chạy lệnh ghi thật (bỏ `--dry-run`), vì đây là thao tác ghi trực tiếp vào dữ liệu production đang có người dùng thật.
+- [x] 4.5 Backup dữ liệu Firestore liên quan trước khi chạy migration thật trên production — đã backup 15 nhóm ra JSON (ngoài repo) trước khi ghi. **ĐÃ CHẠY MIGRATION THẬT** (Sếp xác nhận 15/08/2026): 2/15 nhóm, 6 field `visibleWhen` đã chuyển đúng sang `ConditionGroup`. Xác nhận bằng: (a) dry-run lại sau đó ra 0/15 thay đổi còn sót, (b) đọc trực tiếp 1 nhóm ("1. PDN Thiết Bị IT") thấy đúng 4 field "Thiết bị..." đã có `visibleWhen: {conjunction:"all", rules:[...]}` khớp ví dụ gốc trong code.
 
 ## 5. Validate API khi lưu nhóm
 
