@@ -6,6 +6,21 @@ import { Layers, Search } from "lucide-react";
 import Modal from "@/components/shared/Modal";
 import { useRequestContext } from "@/context/RequestContext";
 
+/** Tô sáng phần chữ khớp với từ khoá tìm kiếm — plain-match, khớp đúng luật lọc ở trên. */
+function HighlightMatch({ text, query }: { text: string; query: string }) {
+  const q = query.trim();
+  if (!q) return <>{text}</>;
+  const index = text.toLowerCase().indexOf(q.toLowerCase());
+  if (index === -1) return <>{text}</>;
+  return (
+    <>
+      {text.slice(0, index)}
+      <mark className="rounded bg-green-100 px-0.5 font-semibold text-green-800">{text.slice(index, index + q.length)}</mark>
+      {text.slice(index + q.length)}
+    </>
+  );
+}
+
 /**
  * Cửa sổ chọn nhóm khi bấm "Tạo đề xuất" — xem
  * openspec/changes/add-core-request-flow-and-hpcore-sso/design.md Decision 10.
@@ -82,9 +97,9 @@ export default function GroupPickerModal({ onClose }: { onClose: () => void }) {
                   onClick={() => goToGroup(g.id)}
                   className="flex w-full flex-col rounded px-3 py-2.5 text-left hover:bg-gray-50"
                 >
-                  <span className="text-[13px] font-medium text-gray-800">{g.name}</span>
+                  <span className="text-[13px] font-medium text-gray-800"><HighlightMatch text={g.name} query={query} /></span>
                   {g.description && (
-                    <span className="truncate text-[12px] text-gray-400">{g.description}</span>
+                    <span className="truncate text-[12px] text-gray-400"><HighlightMatch text={g.description} query={query} /></span>
                   )}
                 </button>
               ))}

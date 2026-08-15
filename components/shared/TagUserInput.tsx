@@ -4,6 +4,21 @@ import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import type { TaggedUser } from "@/lib/types";
 
+/** Tô sáng phần chữ khớp với từ khoá tìm kiếm — plain-match, khớp đúng luật lọc ở trên. */
+function HighlightMatch({ text, query }: { text: string; query: string }) {
+  const q = query.trim();
+  if (!q) return <>{text}</>;
+  const index = text.toLowerCase().indexOf(q.toLowerCase());
+  if (index === -1) return <>{text}</>;
+  return (
+    <>
+      {text.slice(0, index)}
+      <mark className="rounded bg-green-100 px-0.5 font-semibold text-green-800">{text.slice(index, index + q.length)}</mark>
+      {text.slice(index + q.length)}
+    </>
+  );
+}
+
 interface TagUserInputProps {
   value: TaggedUser[];
   onChange: (users: TaggedUser[]) => void;
@@ -187,7 +202,8 @@ export default function TagUserInput({
                 {u.avatarInitial}
               </span>
               <span>
-                {u.name} <span className="text-gray-400">@{u.username}</span>
+                <HighlightMatch text={u.name} query={query.replace("@", "").trim()} />{" "}
+                <span className="text-gray-400">@<HighlightMatch text={u.username} query={query.replace("@", "").trim()} /></span>
                 {u.kind === "group" && (
                   <span className="ml-1 text-[10px] text-teal-600">(nhóm/phòng ban)</span>
                 )}
