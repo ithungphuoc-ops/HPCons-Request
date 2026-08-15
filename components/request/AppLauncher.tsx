@@ -51,12 +51,11 @@ type RemoteApp = {
   description?: string;
   iconKey?: string;
   color: string;
+  category?: "ops" | "business";
   image?: string | null;
   href?: string | null;
   comingSoon?: boolean;
 };
-
-const isBiz = (name: string) => name.startsWith("HPC ");
 
 /**
  * app.color trong dữ liệu trả về từ API là chuỗi Tailwind (vd "bg-blue-500") đọc lúc CHẠY,
@@ -95,12 +94,12 @@ export default function AppLauncher({ onClose }: { onClose: () => void }) {
     {
       title: "Nhân sự & Vận hành",
       subtitle: "Chấm công, đơn từ, đặt phòng, báo cáo...",
-      apps: list.filter((a) => !isBiz(a.name)),
+      apps: list.filter((a) => a.category !== "business"),
     },
     {
       title: "Ứng dụng nghiệp vụ",
       subtitle: "Kinh doanh, kho, tài sản, quy trình...",
-      apps: list.filter((a) => isBiz(a.name)),
+      apps: list.filter((a) => a.category === "business"),
     },
   ].filter((g) => g.apps.length > 0);
 
