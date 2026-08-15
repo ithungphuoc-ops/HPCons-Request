@@ -64,15 +64,25 @@ export async function PATCH(
     if (!found) {
       return NextResponse.json({ error: "Không tìm thấy đề xuất." }, { status: 404 });
     }
-    const isOwnEditable = found.status === "draft" || found.status === "returned";
+    // "pending" (15/08/2026, Sếp chốt): cho sửa cả khi đang chờ duyệt, không
+    // chỉ nháp/bị trả lại — nhưng KHÔNG có khái niệm "lưu nháp" nữa ở trạng
+    // thái này (chỉ có "sửa & gửi lại", luôn reset duyệt — xem nhánh dưới).
+    const isOwnEditable =
+      found.status === "draft" || found.status === "returned" || found.status === "pending";
     if (!isOwnEditable || found.submittedBy.uid !== session.uid) {
       return NextResponse.json(
-        { error: "Chỉ chủ đề xuất mới sửa được nháp hoặc đề xuất bị trả lại của chính mình." },
+        { error: "Chỉ chủ đề xuất mới sửa được nháp, đề xuất bị trả lại, hoặc đề xuất đang chờ duyệt của chính mình." },
         { status: 403 },
       );
     }
-
     const body = (await request.json()) as UpdateDraftBody;
+    const isEditingPending = found.status === "pending";
+    if (isEditingPending && body.isDraft !== false) {
+      return NextResponse.json(
+        { error: "Đề xuất đang chờ duyệt — sửa xong phải gửi lại (không lưu nháp được ở trạng thái này)." },
+        { status: 400 },
+      );
+    }
     const wantsSubmit = body.isDraft === false;
 
     const values = body.values !== undefined ? { ...body.values } : found.values;
@@ -164,7 +174,11 @@ export async function PATCH(
           {
             at: nowIso,
             actor: session.name,
-            action: found.status === "returned" ? "Đã gửi lại đề xuất" : "Đã gửi đề xuất",
+            action: isEditingPending
+              ? "Đã chỉnh sửa đề xuất — duyệt lại từ đầu"
+              : found.status === "returned"
+                ? "Đã gửi lại đề xuất"
+                : "Đã gửi đề xuất",
           },
         ],
       };

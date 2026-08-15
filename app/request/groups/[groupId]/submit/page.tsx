@@ -48,6 +48,10 @@ export default function SubmitRequestPage() {
   const group = getGroupById(params.groupId);
 
   const [draftId, setDraftId] = useState<string | null>(searchParams.get("draftId"));
+  // Trạng thái GỐC của đề xuất đang sửa (null = đang tạo mới, không phải sửa
+  // draftId nào) — "pending" thì ẩn "Lưu nháp" (không còn khái niệm nháp ở
+  // trạng thái này) và đổi nhãn nút chính, xem loadedStatus bên dưới.
+  const [loadedStatus, setLoadedStatus] = useState<RequestInstance["status"] | null>(null);
   const [values, setValues] = useState<FieldValues>({});
   const [followers, setFollowers] = useState<TaggedUser[]>(group?.followers ?? []);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -72,6 +76,7 @@ export default function SubmitRequestPage() {
       .then((data: { request: RequestInstance }) => {
         setValues(data.request.values ?? {});
         setFollowers(data.request.followers ?? []);
+        setLoadedStatus(data.request.status);
       })
       .catch(() => setSubmitError("Không tải được bản nháp."));
   }, [draftId]);
@@ -428,6 +433,11 @@ export default function SubmitRequestPage() {
           <p className="mt-5 text-[13px] text-[var(--color-danger-red)]">{submitError}</p>
         )}
 
+        {loadedStatus === "pending" && (
+          <p className="mt-5 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-700">
+            Đề xuất này đang chờ duyệt — sửa và gửi lại sẽ xoá mọi quyết định duyệt đã có, duyệt lại từ đầu.
+          </p>
+        )}
         <div className="mt-6 flex items-center gap-3 border-t border-gray-100 pt-5">
           <button
             type="button"
@@ -435,16 +445,18 @@ export default function SubmitRequestPage() {
             disabled={submitting || savingDraft}
             className={`${confirmButtonClass} flex-none px-6`}
           >
-            {submitting ? "Đang gửi..." : "Gửi đề xuất"}
+            {submitting ? "Đang gửi..." : loadedStatus === "pending" ? "Gửi lại đề xuất" : "Gửi đề xuất"}
           </button>
-          <button
-            type="button"
-            onClick={saveDraft}
-            disabled={submitting || savingDraft}
-            className={`${cancelButtonClass} flex-none px-6`}
-          >
-            {savingDraft ? "Đang lưu..." : "Lưu nháp"}
-          </button>
+          {loadedStatus !== "pending" && (
+            <button
+              type="button"
+              onClick={saveDraft}
+              disabled={submitting || savingDraft}
+              className={`${cancelButtonClass} flex-none px-6`}
+            >
+              {savingDraft ? "Đang lưu..." : "Lưu nháp"}
+            </button>
+          )}
           {draftSavedAt && (
             <span className="text-[12px] text-gray-400">
               Đã lưu nháp lúc {new Date(draftSavedAt).toLocaleTimeString("vi-VN")}

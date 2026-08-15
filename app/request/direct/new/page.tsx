@@ -24,6 +24,7 @@ function DirectRequestForm() {
   const searchParams = useSearchParams();
 
   const [draftId, setDraftId] = useState<string | null>(searchParams.get("draftId"));
+  const [loadedStatus, setLoadedStatus] = useState<RequestInstance["status"] | null>(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [approvers, setApprovers] = useState<TaggedUser[]>([]);
@@ -42,6 +43,7 @@ function DirectRequestForm() {
         setDescription((data.request.values.description as string) ?? "");
         setApprovers(data.request.approversSnapshot);
         setFollowers(data.request.followers);
+        setLoadedStatus(data.request.status);
       })
       .catch(() => setError("Không tải được bản nháp."));
   }, [draftId]);
@@ -161,6 +163,11 @@ function DirectRequestForm() {
 
       {error && <p className="mt-4 text-[13px] text-[var(--color-danger-red)]">{error}</p>}
 
+      {loadedStatus === "pending" && (
+        <p className="mt-4 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-700">
+          Đề xuất này đang chờ duyệt — sửa và gửi lại sẽ xoá mọi quyết định duyệt đã có, duyệt lại từ đầu.
+        </p>
+      )}
       <div className="mt-6 flex items-center gap-3">
         <button
           type="button"
@@ -168,16 +175,18 @@ function DirectRequestForm() {
           disabled={submitting || savingDraft}
           className={`${confirmButtonClass} flex-none px-6`}
         >
-          {submitting ? "Đang gửi..." : "Gửi đề xuất"}
+          {submitting ? "Đang gửi..." : loadedStatus === "pending" ? "Gửi lại đề xuất" : "Gửi đề xuất"}
         </button>
-        <button
-          type="button"
-          onClick={saveDraft}
-          disabled={submitting || savingDraft}
-          className={`${cancelButtonClass} flex-none px-6`}
-        >
-          {savingDraft ? "Đang lưu..." : "Lưu nháp"}
-        </button>
+        {loadedStatus !== "pending" && (
+          <button
+            type="button"
+            onClick={saveDraft}
+            disabled={submitting || savingDraft}
+            className={`${cancelButtonClass} flex-none px-6`}
+          >
+            {savingDraft ? "Đang lưu..." : "Lưu nháp"}
+          </button>
+        )}
         {draftSavedAt && (
           <span className="text-[12px] text-gray-400">
             Đã lưu nháp lúc {new Date(draftSavedAt).toLocaleTimeString("vi-VN")}

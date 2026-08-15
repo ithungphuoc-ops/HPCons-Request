@@ -298,9 +298,14 @@ export default function RequestDetailView({
               )}
             </div>
           )}
-          {request.status === "returned" && isOwnRequest && (
+          {(request.status === "returned" || request.status === "pending") && isOwnRequest && (
             <a
               href={editLinkFor(request)}
+              title={
+                request.status === "pending"
+                  ? "Sửa nội dung — mọi quyết định duyệt đã có sẽ bị xoá, duyệt lại từ đầu"
+                  : undefined
+              }
               className="flex h-8 items-center gap-1.5 rounded border border-[var(--color-action-blue)] px-3 text-[12px] font-medium text-[var(--color-action-blue)] transition-colors hover:bg-blue-50"
             >
               <PenLine size={13} /> Sửa và gửi lại
