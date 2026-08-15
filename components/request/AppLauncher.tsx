@@ -174,7 +174,7 @@ export default function AppLauncher({ onClose }: { onClose: () => void }) {
                 <p className="mb-4 mt-0.5 text-[12px] text-gray-400">{g.subtitle}</p>
                 <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5">
                   {g.apps.map((app) => (
-                    <Tile key={app.name} app={app} />
+                    <Tile key={app.name} app={app} query={q} />
                   ))}
                 </div>
               </div>
@@ -186,7 +186,22 @@ export default function AppLauncher({ onClose }: { onClose: () => void }) {
   );
 }
 
-function Tile({ app }: { app: RemoteApp }) {
+/** Tô sáng phần chữ khớp với từ khoá tìm kiếm — plain-match, khớp đúng luật lọc list ở trên. */
+function HighlightMatch({ text, query }: { text: string; query: string }) {
+  const q = query.trim();
+  if (!q) return <>{text}</>;
+  const index = text.toLowerCase().indexOf(q.toLowerCase());
+  if (index === -1) return <>{text}</>;
+  return (
+    <>
+      {text.slice(0, index)}
+      <mark className="rounded bg-green-100 px-0.5 font-semibold text-green-800">{text.slice(index, index + q.length)}</mark>
+      {text.slice(index + q.length)}
+    </>
+  );
+}
+
+function Tile({ app, query }: { app: RemoteApp; query: string }) {
   const Icon = (app.iconKey && ICONS[app.iconKey]) || AppWindow;
   const current = !!app.href && app.href.includes(CURRENT_APP_HOST);
 
@@ -205,7 +220,7 @@ function Tile({ app }: { app: RemoteApp }) {
         )}
       </div>
       <span className={`text-center text-[12px] font-medium leading-tight ${app.comingSoon ? "text-gray-300" : "text-gray-800"}`}>
-        {app.name}
+        <HighlightMatch text={app.name} query={query} />
       </span>
       {current && (
         <span className="flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[9px] font-medium text-[var(--color-action-blue)]">
