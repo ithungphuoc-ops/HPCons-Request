@@ -166,7 +166,9 @@ export default function NotificationBell() {
       </button>
 
       {open && (
-        <div className="absolute left-full top-0 z-20 ml-2 w-[300px] rounded border border-[var(--color-border)] bg-white shadow-lg">
+        // z-50: FuncBar (sidebar nhóm đề xuất) dùng z-40 cho chính nó — z-20 cũ
+        // thấp hơn nên bị sidebar vẽ đè lên trên (góp ý Nhung 14/08/2026).
+        <div className="absolute left-full top-0 z-50 ml-2 w-[300px] rounded border border-[var(--color-border)] bg-white shadow-lg">
           <div className="border-b border-gray-100 px-3 py-2 text-[13px] font-semibold text-gray-700">
             Thông báo
           </div>
