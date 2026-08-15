@@ -2,7 +2,7 @@ import "server-only";
 import type { ApproverState } from "@/lib/approval-logic";
 import { addBusinessHours } from "@/lib/business-hours";
 import { adminDb } from "@/lib/firebase/admin";
-import { evaluateCondition, filterApplicableSteps } from "@/lib/server/conditions";
+import { evaluateConditionGroup, filterApplicableSteps } from "@/lib/server/conditions";
 import { getHpcoreDb } from "@/lib/hpcore";
 import { canManageGroupsAtAppScope, type Role } from "@/lib/permissions";
 import { nextCounterCode } from "@/lib/validation";
@@ -54,7 +54,7 @@ export function findMissingRequiredFields(
     (f) =>
       f.required &&
       isEmptyValue(values?.[f.id]) &&
-      (!f.visibleWhen || evaluateCondition(f.visibleWhen, values ?? {}, fields)),
+      (!f.visibleWhen || evaluateConditionGroup(f.visibleWhen, values ?? {}, fields)),
   );
 }
 

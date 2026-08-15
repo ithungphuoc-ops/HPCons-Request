@@ -49,12 +49,13 @@ export interface ProposalField {
   options?: string[];
   tableColumns?: string[];
   formula?: string;
-  /** Chỉ hiển thị field này trên form Gửi đề xuất khi điều kiện thoả mãn (dựa
-   * trên giá trị field khác của CÙNG đề xuất) — ví dụ 4 field "Thiết bị..."
-   * chỉ hiện đúng 1 cái tuỳ theo "Nhóm đề xuất" đang chọn. Field bị ẩn KHÔNG
-   * bắt buộc trả lời dù `required=true`, và giá trị của field bị ẩn không
-   * được validate khi gửi (xem lib/server/requests.ts findVisibleFields). */
-  visibleWhen?: ConditionRule;
+  /** Chỉ hiển thị field này trên form Gửi đề xuất khi nhóm điều kiện thoả mãn
+   * (dựa trên giá trị (các) field khác của CÙNG đề xuất, kết hợp AND/OR) —
+   * ví dụ 4 field "Thiết bị..." chỉ hiện đúng 1 cái tuỳ theo "Nhóm đề xuất"
+   * đang chọn. Field bị ẩn KHÔNG bắt buộc trả lời dù `required=true`, và giá
+   * trị của field bị ẩn không được validate khi gửi (xem lib/server/requests.ts
+   * findMissingRequiredFields). */
+  visibleWhen?: ConditionGroup;
 }
 
 export type FieldDataType =
@@ -95,19 +96,51 @@ export const fieldDataTypeLabels: Record<FieldDataType, string> = {
 };
 
 /**
- * Điều kiện đơn giản dựa trên giá trị 1 field của đề xuất — dùng chung cho
- * bước duyệt có điều kiện (ApproverStepDef.condition) và người theo dõi theo
- * điều kiện (ProposalGroup.followersConditional). "equals"/"not_equals" dùng
- * cho field kiểu single_choice/department_select; "includes" dùng cho
- * multiple_choice (value nằm trong mảng đã chọn). Xem design.md của change
- * add-base-vn-group-settings-parity — chỉ hỗ trợ 1 field/1 điều kiện, chưa
- * có AND/OR vì chưa có bằng chứng Base.vn thật cần điều đó.
+ * Một rule con dựa trên giá trị 1 field của đề xuất — dùng chung cho field
+ * hiển thị theo điều kiện (ProposalField.visibleWhen), bước duyệt có điều
+ * kiện (ApproverStepDef.condition), và người theo dõi theo điều kiện
+ * (ProposalGroup.followersConditional). Luôn nằm trong 1 ConditionGroup (xem
+ * dưới) — không dùng đứng riêng. "equals"/"not_equals" dùng cho field kiểu
+ * single_choice/department_select; "includes" dùng cho multiple_choice
+ * (value nằm trong mảng đã chọn); "greater_than"/"less_than"/"between" dùng
+ * cho field kiểu integer/decimal/currency/date (so sánh sau khi ép kiểu số
+ * hoặc thời điểm — xem lib/server/conditions.ts evaluateRule). `valueTo` chỉ
+ * dùng khi operator là "between" (cận trên của khoảng, `value` là cận dưới).
+ * "not_includes" là phủ định của "includes" (multiple_choice không chứa lựa
+ * chọn nào đó). "is_empty"/"is_not_empty" dùng cho MỌI kiểu field (field chưa
+ * điền/rỗng hay đã có giá trị) — không cần `value`.
  */
 export interface ConditionRule {
   /** Tham chiếu ProposalField.code trong CÙNG nhóm, không phải field.id. */
   fieldCode: string;
-  operator: "equals" | "not_equals" | "includes";
+  operator:
+    | "equals"
+    | "not_equals"
+    | "includes"
+    | "not_includes"
+    | "is_empty"
+    | "is_not_empty"
+    | "greater_than"
+    | "less_than"
+    | "between";
+  /** Bỏ trống ("") khi operator là "is_empty"/"is_not_empty" — không dùng tới. */
   value: string;
+  /** Chỉ dùng khi operator === "between" — cận trên của khoảng (đóng 2 đầu). */
+  valueTo?: string;
+}
+
+/**
+ * Một nhóm điều kiện — danh sách 1 hoặc nhiều ConditionRule kết hợp bằng
+ * "all" (AND, mọi rule con phải thoả) hoặc "any" (OR, chỉ cần 1 rule con
+ * thoả). Nhóm rỗng (rules: []) luôn được coi là thoả mãn — an toàn hơn là
+ * chặn nhầm khi dữ liệu migrate lỗi. Cố ý KHÔNG lồng nhóm con trong nhóm cha
+ * (không có cây điều kiện nhiều tầng) — xem design.md của change
+ * extend-condition-rules: mức phức tạp 1 tầng conjunction phẳng đã đủ dùng,
+ * chưa có bằng chứng cần cây điều kiện lồng nhau.
+ */
+export interface ConditionGroup {
+  conjunction: "all" | "any";
+  rules: ConditionRule[];
 }
 
 /**
@@ -119,11 +152,11 @@ export interface ConditionRule {
  * `code` là mã ổn định sinh 1 lần lúc tạo (cùng cơ chế slugifyFieldName của
  * field), backfill ngầm cho bước duyệt cũ khi đọc qua API — xem
  * lib/server/groups.ts. `condition`: nếu có, bước duyệt CHỈ được đưa vào
- * danh sách người duyệt thực tế khi điều kiện thoả mãn tại thời điểm gửi.
+ * danh sách người duyệt thực tế khi nhóm điều kiện thoả mãn tại thời điểm gửi.
  */
 export type ApproverStepDef =
-  | { kind: "fixed"; user: TaggedUser; code?: string; condition?: ConditionRule }
-  | { kind: "submitter_manager"; code?: string; condition?: ConditionRule };
+  | { kind: "fixed"; user: TaggedUser; code?: string; condition?: ConditionGroup }
+  | { kind: "submitter_manager"; code?: string; condition?: ConditionGroup };
 
 export interface ProposalGroup {
   id: string;
@@ -141,9 +174,9 @@ export interface ProposalGroup {
   usedFor: TaggedUser[];
   approverSteps: ApproverStepDef[];
   followers: TaggedUser[];
-  /** Danh sách người theo dõi CHỈ được thêm khi điều kiện tương ứng thoả mãn
-   * lúc gửi chính thức — hợp cùng `followers` (cố định) + người gửi tự thêm. */
-  followersConditional?: { condition: ConditionRule; users: TaggedUser[] }[];
+  /** Danh sách người theo dõi CHỈ được thêm khi nhóm điều kiện tương ứng thoả
+   * mãn lúc gửi chính thức — hợp cùng `followers` (cố định) + người gửi tự thêm. */
+  followersConditional?: { condition: ConditionGroup; users: TaggedUser[] }[];
   fields: ProposalField[];
   pinned: boolean;
   createdAt: string;

@@ -12,7 +12,7 @@ import {
 } from "@/components/shared/form-styles";
 import { useRequestContext } from "@/context/RequestContext";
 import { CONDITION_ELIGIBLE_TYPES, ConditionEditor } from "@/components/request/ApproverStepsEditor";
-import { fieldDataTypeLabels, type ConditionRule, type FieldDataType } from "@/lib/types";
+import { fieldDataTypeLabels, type ConditionGroup, type FieldDataType } from "@/lib/types";
 import { slugifyFieldName } from "@/lib/print-template";
 import { validateFieldName, validateFieldOptions } from "@/lib/validation";
 
@@ -35,7 +35,7 @@ export default function AddFieldModal() {
   const [options, setOptions] = useState<string[]>([""]);
   const [tableColumns, setTableColumns] = useState<string[]>([""]);
   const [formula, setFormula] = useState("");
-  const [visibleWhen, setVisibleWhen] = useState<ConditionRule | undefined>(undefined);
+  const [visibleWhen, setVisibleWhen] = useState<ConditionGroup | undefined>(undefined);
   const [errors, setErrors] = useState<{ name?: string; options?: string; code?: string }>({});
 
   const conditionFields = useMemo(

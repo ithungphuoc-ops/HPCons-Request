@@ -47,6 +47,7 @@
     "eslint-config-next": "15.5.20",
     "jsdom": "^29.1.1",
     "playwright": "^1.61.1",
+    "server-only": "^0.0.1",
     "tailwindcss": "^4",
     "tsx": "^4.19.2",
     "typescript": "^5",

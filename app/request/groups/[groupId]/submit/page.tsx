@@ -6,7 +6,7 @@ import { Loader2, Paperclip, Plus, Trash2, X } from "lucide-react";
 import { useRequestContext } from "@/context/RequestContext";
 import { HPCORE_MEMBER_GROUPS_API } from "@/lib/constants";
 import { deserializeTableRows, toWireTableRows } from "@/lib/table-field";
-import { evaluateCondition } from "@/lib/server/conditions";
+import { evaluateConditionGroup } from "@/lib/server/conditions";
 import TagUserInput from "@/components/shared/TagUserInput";
 import DatePicker from "@/components/ui/DatePicker";
 import {
@@ -96,8 +96,7 @@ export default function SubmitRequestPage() {
   const conditionFieldIds = group
     ? new Set(
         group.approverSteps
-          .map((s) => s.condition?.fieldCode)
-          .filter((code): code is string => !!code)
+          .flatMap((s) => s.condition?.rules.map((r) => r.fieldCode) ?? [])
           .map((code) => group.fields.find((f) => f.code === code)?.id)
           .filter((id): id is string => !!id),
       )
@@ -138,7 +137,7 @@ export default function SubmitRequestPage() {
   // "Thiết bị..." chỉ hiện đúng 1 cái tuỳ "Nhóm đề xuất" đang chọn. Field ẩn
   // KHÔNG bắt buộc trả lời dù `required=true` (đúng theo Base.vn thật).
   const isFieldVisible = (field: ProposalField) =>
-    !field.visibleWhen || evaluateCondition(field.visibleWhen, values, group.fields);
+    !field.visibleWhen || evaluateConditionGroup(field.visibleWhen, values, group.fields);
   const visibleFields = group.fields.filter(isFieldVisible);
 
   const setFieldValue = (fieldId: string, value: unknown) => {

@@ -10,6 +10,7 @@ import {
   recordGroupHistory,
   sanitizeDescriptionHtml,
 } from "@/lib/server/groups";
+import { validateConditionGroupFieldCodes } from "@/lib/server/conditions";
 import { requireWriteAccess } from "@/lib/session";
 import type { ProposalGroup } from "@/lib/types";
 
@@ -58,19 +59,52 @@ export async function PATCH(
       }
       patch.fields = ensureFieldCodes(normalized).fields;
     }
-    if (patch.approverSteps) {
+    // Validate mọi ConditionGroup tham chiếu field có thật trong nhóm — dùng
+    // chung 1 hàm cho cả 3 nơi lưu điều kiện (field.visibleWhen,
+    // approverSteps[].condition, followersConditional[].condition), tránh
+    // lệch nhau như trước đây (chỉ approverSteps được validate).
+    if (patch.fields || patch.approverSteps || patch.followersConditional) {
       const fieldsForValidation = patch.fields ?? before.fields;
-      const knownFieldCodes = new Set(fieldsForValidation.map((f) => f.code).filter(Boolean));
-      for (const step of patch.approverSteps) {
-        if (step.condition && !knownFieldCodes.has(step.condition.fieldCode)) {
-          return NextResponse.json(
-            {
-              error: `Điều kiện tham chiếu tới trường "${step.condition.fieldCode}" không tồn tại trong nhóm.`,
-            },
-            { status: 400 },
-          );
+      const knownFieldCodes = new Set(fieldsForValidation.map((f) => f.code).filter(Boolean) as string[]);
+
+      if (patch.fields) {
+        for (const field of patch.fields) {
+          const badCode = validateConditionGroupFieldCodes(field.visibleWhen, knownFieldCodes);
+          if (badCode) {
+            return NextResponse.json(
+              { error: `Điều kiện hiển thị của trường "${field.name}" tham chiếu tới trường "${badCode}" không tồn tại trong nhóm.` },
+              { status: 400 },
+            );
+          }
         }
       }
+
+      if (patch.approverSteps) {
+        for (const step of patch.approverSteps) {
+          const badCode = validateConditionGroupFieldCodes(step.condition, knownFieldCodes);
+          if (badCode) {
+            return NextResponse.json(
+              { error: `Điều kiện của bước duyệt tham chiếu tới trường "${badCode}" không tồn tại trong nhóm.` },
+              { status: 400 },
+            );
+          }
+        }
+      }
+
+      if (patch.followersConditional) {
+        for (const item of patch.followersConditional) {
+          const badCode = validateConditionGroupFieldCodes(item.condition, knownFieldCodes);
+          if (badCode) {
+            return NextResponse.json(
+              { error: `Điều kiện của người theo dõi tham chiếu tới trường "${badCode}" không tồn tại trong nhóm.` },
+              { status: 400 },
+            );
+          }
+        }
+      }
+    }
+
+    if (patch.approverSteps) {
       patch.approverSteps = ensureApproverStepCodes(patch.approverSteps).steps;
     }
 
