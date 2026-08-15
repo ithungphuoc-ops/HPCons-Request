@@ -26,7 +26,9 @@ function buildNotifications(
   if (enabled("approver_pending")) {
     for (const r of inbox) {
       const lastEntry = r.history[r.history.length - 1];
-      const forwardedToMe = lastEntry?.action === "Đã chuyển tiếp";
+      const forwardedToMe =
+        lastEntry?.action === "Đã chấp thuận và chuyển tiếp" ||
+        lastEntry?.action === "Đã chuyển tiếp cho duyệt trước";
       items.push({
         id: `inbox-${r.id}`,
         requestId: r.id,

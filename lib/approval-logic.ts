@@ -74,30 +74,28 @@ export class ApprovalActionError extends Error {}
  * false = đủ điều kiện tiếp tục.
  */
 export function missingRequiredNote(
-  decision: "approved" | "rejected" | "forwarded" | "returned",
+  decision: "approved" | "rejected" | "approve_and_forward" | "forward_then_approve" | "returned",
   note: string | undefined,
   requireDecisionNote: { approve?: boolean; forward?: boolean } | undefined,
 ): boolean {
   const hasNote = Boolean(note?.trim());
   if (decision === "rejected" || decision === "returned") return !hasNote;
   if (decision === "approved") return Boolean(requireDecisionNote?.approve) && !hasNote;
-  if (decision === "forwarded") return Boolean(requireDecisionNote?.forward) && !hasNote;
+  if (decision === "approve_and_forward" || decision === "forward_then_approve") {
+    return Boolean(requireDecisionNote?.forward) && !hasNote;
+  }
   return false;
 }
 
-/**
- * Chuyển tiếp quyền xử lý của một người duyệt sang người khác, giữ nguyên vị
- * trí trong thứ tự (quan trọng với quy trình lần lượt: người mới kế thừa
- * đúng lượt của người cũ) và trạng thái "pending" tại vị trí đó.
- * Ném lỗi nếu người chuyển chưa tới lượt/đã quyết định, hoặc người nhận đã
- * có mặt trong danh sách người duyệt.
- */
-export function forwardApprover(
+/** Kiểm tra chung cho cả 2 kiểu "chuyển tiếp" bên dưới — dùng lại 1 chỗ tránh
+ * lệch thông báo lỗi. Ném lỗi nếu người chuyển chưa tới lượt/đã quyết định,
+ * hoặc người nhận đã có mặt trong danh sách người duyệt. */
+function assertCanForward(
   flow: ApprovalFlowType,
   approvers: ApproverState[],
   fromApproverId: string,
   toApproverId: string,
-): ApproverState[] {
+): void {
   if (!canApproverAct(flow, approvers, fromApproverId)) {
     throw new ApprovalActionError(
       `Người duyệt ${fromApproverId} chưa tới lượt hoặc đã xử lý đề xuất này.`,
@@ -108,10 +106,55 @@ export function forwardApprover(
       `${toApproverId} đã có mặt trong danh sách người duyệt của đề xuất này.`,
     );
   }
+}
 
-  return approvers.map((a) =>
-    a.id === fromApproverId ? { id: toApproverId, decision: "pending" } : a,
-  );
+/**
+ * "Chấp nhận và chuyển tiếp" — người duyệt hiện tại CHẤP THUẬN ngay (được
+ * ghi nhận đã duyệt, không mất quyền), đồng thời thêm 1 người duyệt mới vào
+ * NGAY SAU vị trí của mình. Dùng khi 1 người duyệt xong rồi đẩy lên 1 người
+ * khác (thường cấp trên hơn) duyệt tiếp — ví dụ Sếp: "nhân viên duyệt và
+ * chuyển lên cho 1 người cấp trên hơn duyệt".
+ */
+export function approveAndForward(
+  flow: ApprovalFlowType,
+  approvers: ApproverState[],
+  fromApproverId: string,
+  toApproverId: string,
+): ApproverState[] {
+  assertCanForward(flow, approvers, fromApproverId, toApproverId);
+  const index = approvers.findIndex((a) => a.id === fromApproverId);
+  const next = [...approvers];
+  next[index] = { ...next[index], decision: "approved" };
+  next.splice(index + 1, 0, { id: toApproverId, decision: "pending" });
+  return next;
+}
+
+/**
+ * "Chuyển tiếp và Duyệt" — thêm 1 người duyệt mới vào NGAY TRƯỚC vị trí
+ * người đang chuyển tiếp; người mới xử lý trước, xong mới TỚI LƯỢT người
+ * chuyển tiếp (vẫn còn nguyên trong danh sách, "pending", KHÔNG mất quyền
+ * duyệt) tự quyết định tiếp. Dùng khi cấp trên chưa hiểu rõ đề xuất, muốn
+ * cấp dưới hiểu việc xem/duyệt trước rồi mới quay lại mình quyết định —
+ * ví dụ Sếp: "cấp trên chưa hiểu đề nghị này mà cấp dưới hiểu thì đưa xuống
+ * cấp dưới duyệt trước tiên rồi quay lại cấp trên duyệt".
+ *
+ * LƯU Ý: thứ tự chỉ thực sự chặn được người chuyển tiếp thao tác trước ở
+ * quy trình "lần lượt" (sequential) — quy trình "đồng thời"/"một người duyệt"
+ * không có khái niệm thứ tự nên người chuyển tiếp vẫn thao tác được ngay,
+ * giống mọi người duyệt khác trong 2 quy trình đó (canApproverAct không xét
+ * thứ tự khi flow !== "sequential").
+ */
+export function forwardThenApprove(
+  flow: ApprovalFlowType,
+  approvers: ApproverState[],
+  fromApproverId: string,
+  toApproverId: string,
+): ApproverState[] {
+  assertCanForward(flow, approvers, fromApproverId, toApproverId);
+  const index = approvers.findIndex((a) => a.id === fromApproverId);
+  const next = [...approvers];
+  next.splice(index, 0, { id: toApproverId, decision: "pending" });
+  return next;
 }
 
 /**

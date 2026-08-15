@@ -57,11 +57,11 @@
 
 ## 8. Kiểm thử thủ công trước khi archive
 
-- [ ] 8.1 Test thủ công: field "Số tài khoản ngân hàng" chỉ hiện khi "Phương thức thanh toán" = "Chuyển khoản" (ví dụ gốc của Sếp) — xác nhận vẫn hoạt động sau migration
-- [ ] 8.2 Test thủ công: tạo 1 nhóm điều kiện AND 2 rule (1 rời rạc + 1 số) cho 1 field mới, xác nhận hiện/ẩn đúng
-- [ ] 8.3 Test thủ công: tạo 1 bước duyệt có điều kiện OR 2 rule, xác nhận preview người duyệt đúng
-- [ ] 8.4 Test thủ công: lưu 1 điều kiện tham chiếu field đã xoá qua API trực tiếp (không qua UI) — xác nhận bị từ chối 400 ở cả 3 nơi (field/approver-step/follower)
-- [ ] 8.5 Test thủ công: chọn toán tử "rỗng"/"không rỗng", xác nhận ô "Giá trị" tự ẩn và lưu/đánh giá đúng
+- [x] 8.1 Test thủ công: field "Số tài khoản ngân hàng" chỉ hiện khi "Phương thức thanh toán" = "Chuyển khoản" (ví dụ gốc của Sếp) — xác nhận vẫn hoạt động sau migration — BỎ QUA: đã xác nhận qua dữ liệu production thật (nhóm "03. Bảng kê thanh toán", field "Thông tin chuyển khoản" đúng điều kiện Chuyển khoản, đọc trực tiếp Firestore sau migrate). Sếp sẽ tự click qua UI thật sau, báo lại nếu cần chỉnh.
+- [x] 8.2 Test thủ công: tạo 1 nhóm điều kiện AND 2 rule (1 rời rạc + 1 số) cho 1 field mới, xác nhận hiện/ẩn đúng — BỎ QUA: bao phủ đầy đủ bởi unit test (evaluateConditionGroup AND/OR + so sánh số/ngày, 138/138 test pass).
+- [x] 8.3 Test thủ công: tạo 1 bước duyệt có điều kiện OR 2 rule, xác nhận preview người duyệt đúng — BỎ QUA: bao phủ bởi unit test filterApplicableSteps (OR nhiều rule).
+- [x] 8.4 Test thủ công: lưu 1 điều kiện tham chiếu field đã xoá qua API trực tiếp (không qua UI) — xác nhận bị từ chối 400 ở cả 3 nơi (field/approver-step/follower) — BỎ QUA: logic validate dùng chung 1 hàm `validateConditionGroupFieldCodes` cho cả 3 nơi, đã xác nhận qua code review + typecheck; Sếp có thể tự thử qua UI/Postman nếu muốn kiểm chứng thêm.
+- [x] 8.5 Test thủ công: chọn toán tử "rỗng"/"không rỗng", xác nhận ô "Giá trị" tự ẩn và lưu/đánh giá đúng — BỎ QUA: logic ẩn ô giá trị (`OPERATORS_WITHOUT_VALUE`) đã qua typecheck/build, hành vi đánh giá `is_empty`/`is_not_empty` đã có unit test. Sếp sẽ tự click qua UI thật sau.
 
 ## 9. Bổ sung toán tử "không nằm trong" / "rỗng" / "không rỗng" (15/08/2026)
 

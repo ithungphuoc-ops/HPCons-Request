@@ -26,7 +26,7 @@ import {
   XCircle,
 } from "lucide-react";
 import RequestStatusBadge from "@/components/request/RequestStatusBadge";
-import ForwardModal from "@/components/request/ForwardModal";
+import ForwardModal, { type ForwardMode } from "@/components/request/ForwardModal";
 import ReasonModal from "@/components/request/ReasonModal";
 import CommentSection from "@/components/request/CommentSection";
 import { canApproverAct } from "@/lib/approval-logic";
@@ -219,11 +219,11 @@ export default function RequestDetailView({
     }
   };
 
-  const forward = async (target: TaggedUser, note: string) => {
+  const forward = async (mode: ForwardMode, target: TaggedUser, note: string) => {
     const res = await fetch(`/api/requests/${request.id}/decision`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ decision: "forwarded", target, note }),
+      body: JSON.stringify({ decision: mode, target, note }),
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}) as { error?: string });

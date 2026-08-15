@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import {
   applyApproverDecision,
+  approveAndForward,
   canApproverAct,
-  forwardApprover,
+  forwardThenApprove,
   getRequestStatus,
   missingRequiredNote,
 } from "@/lib/approval-logic";
@@ -13,8 +14,8 @@ import type { RequestInstance, TaggedUser } from "@/lib/types";
 import { guiSangQlkCtr, trichXuatPayload } from "@/lib/qlkctr-sync";
 
 interface DecisionBody {
-  decision: "approved" | "rejected" | "forwarded" | "returned";
-  /** Chỉ dùng khi decision = "forwarded" — người nhận quyền xử lý mới. */
+  decision: "approved" | "rejected" | "approve_and_forward" | "forward_then_approve" | "returned";
+  /** Chỉ dùng khi decision = "approve_and_forward"/"forward_then_approve" — người được thêm vào duyệt. */
   target?: TaggedUser;
   /** Bắt buộc khi decision = "rejected" hoặc "returned" (§4.4 quy định phải có lý do). */
   note?: string;
@@ -23,7 +24,8 @@ interface DecisionBody {
 const ACTION_LABEL: Record<DecisionBody["decision"], string> = {
   approved: "Đã chấp thuận",
   rejected: "Đã từ chối",
-  forwarded: "Đã chuyển tiếp",
+  approve_and_forward: "Đã chấp thuận và chuyển tiếp",
+  forward_then_approve: "Đã chuyển tiếp cho duyệt trước",
   returned: "Đã trả lại",
 };
 
@@ -47,10 +49,10 @@ export async function POST(
     // Nhóm có thể bắt buộc thêm ghi chú cho "Chấp thuận"/"Chuyển tiếp" (mặc
     // định KHÔNG bắt buộc, giữ đúng hành vi hiện có) — "rejected"/"returned"
     // LUÔN bắt buộc sẵn, không phụ thuộc cấu hình nhóm (xem missingRequiredNote).
-    // "approveAndForward" của Base.vn chưa có hành động tương ứng trong app
-    // này nên chưa có gì để chặn.
+    const isForwardDecision =
+      body.decision === "approve_and_forward" || body.decision === "forward_then_approve";
     let requireDecisionNote: { approve?: boolean; forward?: boolean } | undefined;
-    if (current.groupId && (body.decision === "approved" || body.decision === "forwarded")) {
+    if (current.groupId && (body.decision === "approved" || isForwardDecision)) {
       const groupSnap = await adminDb.collection("groups").doc(current.groupId).get();
       requireDecisionNote = (
         groupSnap.data() as { requireDecisionNote?: { approve?: boolean; forward?: boolean } } | undefined
@@ -89,30 +91,34 @@ export async function POST(
       return NextResponse.json({ request: updated });
     }
 
-    if (body.decision === "forwarded") {
+    if (isForwardDecision) {
       if (!body.target) {
         return NextResponse.json(
           { error: "Thiếu người nhận chuyển tiếp." },
           { status: 400 },
         );
       }
-      // forwardApprover ném ApprovalActionError nếu chưa tới lượt, đã quyết
-      // định rồi, hoặc người nhận đã có mặt — apiErrorResponse map thành 409.
-      const approvers = forwardApprover(
-        current.approvalFlow,
-        current.approvers,
-        session.uid,
-        body.target.id,
-      );
-      const approversSnapshot = current.approversSnapshot.map((a) =>
-        a.id === session.uid ? body.target! : a,
+      // approveAndForward/forwardThenApprove ném ApprovalActionError nếu chưa
+      // tới lượt, đã quyết định rồi, hoặc người nhận đã có mặt — apiErrorResponse
+      // map thành 409. Người chuyển KHÔNG bị thay thế ở cả 2 kiểu (khác hành vi
+      // "forwarded" cũ) nên approversSnapshot phải CHÈN người mới, không map-thay.
+      const approvers =
+        body.decision === "approve_and_forward"
+          ? approveAndForward(current.approvalFlow, current.approvers, session.uid, body.target.id)
+          : forwardThenApprove(current.approvalFlow, current.approvers, session.uid, body.target.id);
+      const selfIndex = current.approversSnapshot.findIndex((a) => a.id === session.uid);
+      const approversSnapshot = [...current.approversSnapshot];
+      approversSnapshot.splice(
+        body.decision === "approve_and_forward" ? selfIndex + 1 : selfIndex,
+        0,
+        body.target,
       );
       const history = [
         ...current.history,
         {
           at: nowIso,
           actor: session.name,
-          action: ACTION_LABEL.forwarded,
+          action: ACTION_LABEL[body.decision],
           target: body.target.name,
           note: body.note,
         },
@@ -126,6 +132,13 @@ export async function POST(
         updatedAt: nowIso,
       };
       return NextResponse.json({ request: updated });
+    }
+
+    // Tới đây chỉ còn "approved"/"rejected" (returned và 2 kiểu chuyển tiếp đã
+    // return ở trên) — kiểm tra tường minh để TS thu hẹp kiểu, đồng thời chặn
+    // luôn giá trị lạ nếu có.
+    if (body.decision !== "approved" && body.decision !== "rejected") {
+      return NextResponse.json({ error: "Quyết định không hợp lệ." }, { status: 400 });
     }
 
     // applyApproverDecision ném ApprovalActionError nếu chưa tới lượt hoặc đã

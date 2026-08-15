@@ -1,11 +1,15 @@
-## MODIFIED Requirements
+## Purpose
+
+Cơ chế "điều kiện" dùng chung cho toàn bộ app — cho phép field hiển thị theo điều kiện (`ProposalField.visibleWhen`), bước duyệt có điều kiện (`ApproverStepDef.condition`), và người theo dõi theo điều kiện (`ProposalGroup.followersConditional`) đều đánh giá TRUE/FALSE dựa trên giá trị field của đề xuất, dùng chung 1 bộ logic đánh giá (`lib/server/conditions.ts`) thay vì viết riêng cho từng nơi.
+
+## Requirements
 
 ### Requirement: Điều kiện dựa trên giá trị field của đề xuất
 Hệ thống SHALL cung cấp một cơ chế "điều kiện" dùng chung, cho phép đánh giá TRUE/FALSE dựa trên giá trị của MỘT HOẶC NHIỀU field trong đề xuất tại thời điểm gửi chính thức. Cơ chế này SHALL được dùng lại cho cả bước duyệt có điều kiện (`approver-steps`), người theo dõi theo điều kiện (`followers`), và field hiển thị theo điều kiện (`visibleWhen`) — không viết nhiều bộ logic đánh giá riêng.
 
 Một điều kiện SHALL là một nhóm gồm: toán tử kết hợp (`all` = AND, `any` = OR), và danh sách một hoặc nhiều rule con. Mỗi rule con SHALL gồm: field tham chiếu (theo `code` ổn định của field, không theo `id` hay tên hiển thị), toán tử so sánh, và (các) giá trị so sánh.
 
-Bộ toán tử SHALL gồm: "bằng" và "khác" cho field kiểu `single_choice`/`department_select`; "chứa" cho field kiểu `multiple_choice`; "lớn hơn", "nhỏ hơn", và "trong khoảng" (2 giá trị, đóng 2 đầu) cho field kiểu `integer`/`decimal`/`currency`/`date`. Với "lớn hơn"/"nhỏ hơn"/"trong khoảng", hệ thống SHALL ép kiểu giá trị field và giá trị điều kiện về số (hoặc thời điểm, với field `date`) trước khi so sánh; nếu không ép kiểu được, điều kiện đó SHALL được coi là không thoả mãn.
+Bộ toán tử SHALL gồm: "bằng" và "khác" cho field kiểu `single_choice`/`department_select`; "chứa" và "không chứa" cho field kiểu `multiple_choice`; "lớn hơn", "nhỏ hơn", và "trong khoảng" (2 giá trị, đóng 2 đầu) cho field kiểu `integer`/`decimal`/`currency`/`date`; "rỗng" và "không rỗng" cho MỌI kiểu field (không cần giá trị so sánh). Với "lớn hơn"/"nhỏ hơn"/"trong khoảng", hệ thống SHALL ép kiểu giá trị field và giá trị điều kiện về số (hoặc thời điểm, với field `date`) trước khi so sánh; nếu không ép kiểu được, điều kiện đó SHALL được coi là không thoả mãn.
 
 Một nhóm điều kiện KHÔNG có rule con nào (danh sách rỗng) SHALL được coi là luôn thoả mãn.
 
@@ -41,8 +45,12 @@ Một nhóm điều kiện KHÔNG có rule con nào (danh sách rỗng) SHALL đ
 - **WHEN** một nhóm điều kiện được cấu hình (hoặc migrate) mà không có rule con nào
 - **THEN** nhóm điều kiện đó được đánh giá là thoả mãn (true)
 
+#### Scenario: Toán tử "rỗng"/"không rỗng" không cần giá trị so sánh
+- **WHEN** rule con dùng toán tử "rỗng" và field tham chiếu chưa có giá trị (hoặc mảng rỗng với field nhiều lựa chọn)
+- **THEN** rule con được đánh giá là thoả mãn (true), không cần và không dùng tới giá trị so sánh cấu hình sẵn
+
 ### Requirement: Quản trị viên cấu hình điều kiện qua UI
-Người có quyền quản lý nhóm (`requireWriteAccess`) SHALL cấu hình được một hoặc nhiều rule con, kết hợp bằng AND hoặc OR, khi thêm/sửa: field hiển thị theo điều kiện, bước duyệt có điều kiện, hoặc người theo dõi theo điều kiện. Với mỗi rule con, quản trị viên SHALL chọn field từ danh sách field hiện có của nhóm (không nhập tay `code`), và danh sách toán tử hiển thị SHALL được lọc theo kiểu dữ liệu của field đã chọn (field rời rạc chỉ hiện "bằng"/"khác"/"chứa"; field số/ngày chỉ hiện "bằng"/"khác"/"lớn hơn"/"nhỏ hơn"/"trong khoảng").
+Người có quyền quản lý nhóm (`requireWriteAccess`) SHALL cấu hình được một hoặc nhiều rule con, kết hợp bằng AND hoặc OR, khi thêm/sửa: field hiển thị theo điều kiện, bước duyệt có điều kiện, hoặc người theo dõi theo điều kiện. Với mỗi rule con, quản trị viên SHALL chọn field từ danh sách field hiện có của nhóm (không nhập tay `code`), và danh sách toán tử hiển thị SHALL được lọc theo kiểu dữ liệu của field đã chọn (field rời rạc chỉ hiện "bằng"/"khác"/"chứa"/"không chứa"/"rỗng"/"không rỗng"; field số/ngày chỉ hiện "bằng"/"khác"/"lớn hơn"/"nhỏ hơn"/"trong khoảng"/"rỗng"/"không rỗng"). Với toán tử "rỗng"/"không rỗng", giao diện SHALL ẩn ô nhập giá trị vì không cần thiết.
 
 #### Scenario: Chọn field không hợp lệ bị từ chối khi lưu
 - **WHEN** người quản lý cố lưu một rule con (thuộc field `visibleWhen`, bước duyệt, hoặc người theo dõi) tham chiếu tới field không thuộc nhóm hiện tại

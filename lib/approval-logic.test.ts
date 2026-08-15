@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   ApprovalActionError,
   applyApproverDecision,
+  approveAndForward,
   canApproverAct,
   dedupeApprovers,
-  forwardApprover,
+  forwardThenApprove,
   getRequestStatus,
   missingRequiredNote,
   type ApproverState,
@@ -103,51 +104,67 @@ describe("Ràng buộc chung", () => {
   });
 });
 
-describe("Chuyển tiếp (forwardApprover)", () => {
-  it("đồng thời: thay đúng người, giữ pending, không đổi người khác", () => {
+describe("Chấp nhận và chuyển tiếp (approveAndForward)", () => {
+  it("người chuyển được ghi 'approved', người mới chèn NGAY SAU, pending", () => {
     const list = approvers("a", "b");
-    const result = forwardApprover("concurrent", list, "a", "z");
+    const result = approveAndForward("concurrent", list, "a", "z");
     expect(result).toEqual([
+      { id: "a", decision: "approved" },
       { id: "z", decision: "pending" },
       { id: "b", decision: "pending" },
     ]);
   });
 
-  it("lần lượt: người mới kế thừa đúng lượt của người cũ (giữ vị trí)", () => {
-    const list = approvers("a", "b", "c");
-    const result = forwardApprover("sequential", list, "a", "z");
+  it("lần lượt: người mới vào đúng lượt kế tiếp (a đã duyệt, z tới lượt)", () => {
+    const list = approvers("a", "b");
+    const result = approveAndForward("sequential", list, "a", "z");
     expect(canApproverAct("sequential", result, "z")).toBe(true);
     expect(canApproverAct("sequential", result, "b")).toBe(false);
-    expect(canApproverAct("sequential", result, "c")).toBe(false);
   });
 
-  it("lần lượt: không cho chuyển tiếp khi chưa tới lượt", () => {
+  it("không cho khi chưa tới lượt, đã quyết định rồi, hoặc người nhận đã có mặt", () => {
     const list = approvers("a", "b");
-    expect(() => forwardApprover("sequential", list, "b", "z")).toThrow(
-      ApprovalActionError,
-    );
+    expect(() => approveAndForward("sequential", list, "b", "z")).toThrow(ApprovalActionError);
+    expect(() => approveAndForward("concurrent", list, "a", "b")).toThrow(ApprovalActionError);
+    let decided = approvers("a", "b");
+    decided = applyApproverDecision("concurrent", decided, "a", "approved");
+    expect(() => approveAndForward("concurrent", decided, "a", "z")).toThrow(ApprovalActionError);
   });
 
-  it("không cho chuyển tiếp cho người đã có trong danh sách duyệt", () => {
+  it("một người duyệt: người chuyển đã 'approved' nên đề xuất hoàn tất luôn, không cần chờ z", () => {
     const list = approvers("a", "b");
-    expect(() => forwardApprover("concurrent", list, "a", "b")).toThrow(
-      ApprovalActionError,
-    );
+    const result = approveAndForward("single", list, "a", "z");
+    expect(getRequestStatus("single", result)).toBe("approved");
   });
+});
 
-  it("không cho chuyển tiếp khi người chuyển đã quyết định rồi", () => {
-    let list = approvers("a", "b");
-    list = applyApproverDecision("concurrent", list, "a", "approved");
-    expect(() => forwardApprover("concurrent", list, "a", "z")).toThrow(
-      ApprovalActionError,
-    );
-  });
-
-  it("một người duyệt: chuyển tiếp không làm mất khả năng hoàn tất của người còn lại", () => {
+describe("Chuyển tiếp và Duyệt (forwardThenApprove)", () => {
+  it("người mới chèn NGAY TRƯỚC, người chuyển vẫn còn nguyên, pending", () => {
     const list = approvers("a", "b");
-    const result = forwardApprover("single", list, "a", "z");
-    const afterApprove = applyApproverDecision("single", result, "z", "approved");
-    expect(getRequestStatus("single", afterApprove)).toBe("approved");
+    const result = forwardThenApprove("concurrent", list, "a", "z");
+    expect(result).toEqual([
+      { id: "z", decision: "pending" },
+      { id: "a", decision: "pending" },
+      { id: "b", decision: "pending" },
+    ]);
+  });
+
+  it("lần lượt: người mới xử lý TRƯỚC, người chuyển chưa tới lượt cho tới khi z quyết định", () => {
+    const list = approvers("a", "b");
+    const result = forwardThenApprove("sequential", list, "a", "z");
+    expect(canApproverAct("sequential", result, "z")).toBe(true);
+    expect(canApproverAct("sequential", result, "a")).toBe(false);
+    const afterZ = applyApproverDecision("sequential", result, "z", "approved");
+    expect(canApproverAct("sequential", afterZ, "a")).toBe(true);
+  });
+
+  it("không cho khi chưa tới lượt, đã quyết định rồi, hoặc người nhận đã có mặt", () => {
+    const list = approvers("a", "b");
+    expect(() => forwardThenApprove("sequential", list, "b", "z")).toThrow(ApprovalActionError);
+    expect(() => forwardThenApprove("concurrent", list, "a", "b")).toThrow(ApprovalActionError);
+    let decided = approvers("a", "b");
+    decided = applyApproverDecision("concurrent", decided, "a", "approved");
+    expect(() => forwardThenApprove("concurrent", decided, "a", "z")).toThrow(ApprovalActionError);
   });
 });
 
@@ -173,13 +190,16 @@ describe("missingRequiredNote", () => {
     expect(missingRequiredNote("approved", "Ok", { approve: true })).toBe(false);
   });
 
-  it("forwarded không bắt buộc khi nhóm chưa bật cờ", () => {
-    expect(missingRequiredNote("forwarded", undefined, undefined)).toBe(false);
+  it("2 kiểu chuyển tiếp không bắt buộc khi nhóm chưa bật cờ", () => {
+    expect(missingRequiredNote("approve_and_forward", undefined, undefined)).toBe(false);
+    expect(missingRequiredNote("forward_then_approve", undefined, undefined)).toBe(false);
   });
 
-  it("forwarded bắt buộc khi nhóm bật cờ forward", () => {
-    expect(missingRequiredNote("forwarded", undefined, { forward: true })).toBe(true);
-    expect(missingRequiredNote("forwarded", "Chuyển", { forward: true })).toBe(false);
+  it("2 kiểu chuyển tiếp bắt buộc khi nhóm bật cờ forward", () => {
+    expect(missingRequiredNote("approve_and_forward", undefined, { forward: true })).toBe(true);
+    expect(missingRequiredNote("approve_and_forward", "Chuyển", { forward: true })).toBe(false);
+    expect(missingRequiredNote("forward_then_approve", undefined, { forward: true })).toBe(true);
+    expect(missingRequiredNote("forward_then_approve", "Chuyển", { forward: true })).toBe(false);
   });
 });
 
