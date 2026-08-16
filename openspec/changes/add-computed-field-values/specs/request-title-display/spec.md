@@ -14,3 +14,18 @@ Hệ thống SHALL xác định tiêu đề hiển thị của 1 đề xuất b�
 #### Scenario: Đề xuất không có field tên riêng thì dùng tên nhóm như cũ
 - **WHEN** 1 đề xuất không có field nào khớp tập mã quy ước, hoặc field đó rỗng
 - **THEN** hệ thống hiển thị tên nhóm (`groupNameSnapshot`) làm tiêu đề, giữ nguyên hành vi trước đây
+
+### Requirement: Danh sách đề xuất chiếm toàn màn hình, box nội dung chỉ hiện khi bấm chọn
+Trang danh sách đề xuất SHALL hiển thị danh sách chiếm toàn bộ chiều rộng khi CHƯA có đề xuất nào được chọn (không tự chọn sẵn đề xuất đầu tiên, không hiện sẵn khung nội dung trống). Khi người dùng bấm vào 1 đề xuất, hệ thống SHALL mở box nội dung của đúng đề xuất đó và SHALL cung cấp nút đóng để quay lại danh sách toàn màn hình. (Sếp chốt 16/08/2026.)
+
+#### Scenario: Mở trang danh sách lần đầu thấy danh sách toàn màn hình
+- **WHEN** người dùng mở trang danh sách đề xuất mà URL không chỉ định đề xuất nào
+- **THEN** danh sách chiếm toàn bộ chiều rộng, không có box nội dung nào hiển thị
+
+#### Scenario: Bấm 1 đề xuất mở box nội dung của đề xuất đó
+- **WHEN** người dùng bấm vào 1 dòng đề xuất trong danh sách
+- **THEN** box nội dung chi tiết của đúng đề xuất đó hiện ra bên cạnh danh sách (danh sách thu về cột trái)
+
+#### Scenario: Đóng box nội dung quay lại danh sách toàn màn hình
+- **WHEN** người dùng bấm nút đóng của box nội dung
+- **THEN** box nội dung ẩn đi, danh sách trở lại chiếm toàn bộ chiều rộng

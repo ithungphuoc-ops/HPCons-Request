@@ -374,7 +374,13 @@ export default function SubmitRequestPage() {
                 step.kind === "submitter_manager" ? "Quản lý trực tiếp" : (displayUser?.title ?? displayUser?.name ?? "Người duyệt");
 
               return (
-                <div key={step.index} className="flex flex-col gap-1 sm:flex-row sm:gap-4">
+                // key gộp cả id người: bước "fixed" nhiều người sinh NHIỀU dòng
+                // cùng step.index (xem resolveApproverStepsDetailed) — chỉ dùng
+                // index sẽ trùng key React.
+                <div
+                  key={`${step.index}-${step.kind === "fixed" ? (step.user?.id ?? "") : "manager"}`}
+                  className="flex flex-col gap-1 sm:flex-row sm:gap-4"
+                >
                   <div className="shrink-0 sm:w-[220px]">
                     <label className="pt-1.5 text-[13px] font-semibold text-gray-700 block">
                       {rowLabel}

@@ -52,6 +52,11 @@
 - [x] 9.1 Viết script 1 lần `scripts/configure-computed-ten-de-xuat.ts` (Admin SDK, theo khuôn mẫu migrate-condition-rules.ts, có dry-run + kiểm tra 4 field nguồn tồn tại trước khi ghi) cấu hình `computedFrom` cho field `ten_de_xuat` (groupId `MbSGRaYx0FGGsObPjk4f`): nhánh 1 — điều kiện `lua_chon_de_nghi = "Đề nghị công trình"`, mẫu `"${so_hop_dong}-${ten_cong_trinh}"`; nhánh 2 — điều kiện `lua_chon_de_nghi = "Đề nghị phòng ban"`, mẫu `"Đề nghị ${bo_phan}"`
 - [x] 9.2 Đã chạy thật 16/08/2026, script tự đọc lại Firestore sau khi ghi và xác nhận đủ 2 nhánh đúng nội dung
 
+## 11. Danh sách toàn màn hình, box nội dung chỉ hiện khi bấm (Sếp bổ sung 16/08/2026, sau khi test bản deploy đầu)
+
+- [x] 11.1 `app/request/list/page.tsx` — bỏ tự chọn sẵn đề xuất đầu tiên; chưa chọn gì thì danh sách chiếm toàn chiều rộng, không render khung nội dung
+- [x] 11.2 Bấm 1 đề xuất → danh sách thu về cột trái 320px + box nội dung hiện bên phải (màn hình nhỏ ẩn cột danh sách để box đủ chỗ đọc); nút "Đóng" (X) quay lại danh sách toàn màn hình
+
 ## 10. Kiểm tra tổng thể trước khi archive
 
 - [x] 10.1 `npx tsc --noEmit` sạch (ngoài 3 lỗi có sẵn không liên quan ở `print-engine.test.ts`)

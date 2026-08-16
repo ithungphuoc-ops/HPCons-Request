@@ -184,7 +184,19 @@ export interface ConditionGroup {
  * danh sách người duyệt thực tế khi nhóm điều kiện thoả mãn tại thời điểm gửi.
  */
 export type ApproverStepDef =
-  | { kind: "fixed"; user: TaggedUser; code?: string; condition?: ConditionGroup }
+  | {
+      kind: "fixed";
+      /** Người ĐẦU TIÊN của bước — giữ nguyên cho tương thích dữ liệu/code cũ
+       * (bước tạo trước 16/08/2026 chỉ có field này). Đọc đủ danh sách người
+       * của bước bằng `fixedStepUsers()` (lib/approval-logic.ts), đừng đọc
+       * trực tiếp field này trừ khi cố ý chỉ cần người đầu tiên. */
+      user: TaggedUser;
+      /** Đủ danh sách người của bước (nhiều người/1 bước, TẤT CẢ phải duyệt —
+       * Sếp chốt 16/08/2026). Bước cũ không có field này = 1 người (`user`). */
+      users?: TaggedUser[];
+      code?: string;
+      condition?: ConditionGroup;
+    }
   | { kind: "submitter_manager"; code?: string; condition?: ConditionGroup };
 
 export interface ProposalGroup {

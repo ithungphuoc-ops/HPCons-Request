@@ -2,35 +2,32 @@
 
 Hiện tại 1 bước duyệt (`ApproverStepDef`) chỉ gắn được ĐÚNG 1 người — hoặc 1 người cố định (`kind: "fixed"`, `user: TaggedUser` số ít), hoặc tự động lấy quản lý trực tiếp (`kind: "submitter_manager"`). Sếp muốn: ngoài người mặc định (quản lý trực tiếp hoặc người @tag cố định), có thể **thêm người khác cùng duyệt trong CÙNG 1 bước** — tức 1 bước có thể có nhiều hơn 1 người, không phải thêm 1 bước mới (bước mới đã làm được từ trước, đây là nhu cầu khác: gộp nhiều người vào cùng 1 hàng/bước).
 
-**Trạng thái xác nhận (15/08/2026):** Đã tra trực tiếp trong code (`lib/types.ts` — `ApproverStepDef`) và xác nhận: khả năng "nhiều người trong 1 bước" **CHƯA tồn tại**. Sếp có nhắc đã từng yêu cầu việc này trước đó nhưng không tìm thấy ghi nhận rõ ràng nào khác trong phạm vi đã tra được (phiên làm việc đã qua nhiều lần nén ngữ cảnh) — coi đây là yêu cầu MỚI, chưa từng implement.
+**Trạng thái xác nhận (15/08/2026):** Đã tra trực tiếp trong code (`lib/types.ts` — `ApproverStepDef`) và xác nhận: khả năng "nhiều người trong 1 bước" **CHƯA tồn tại**.
 
-## What Changes (dự kiến, CHƯA thiết kế chi tiết)
+**16/08/2026 — Sếp đã chốt Open Question 1:** khi 1 bước có nhiều người, **TẤT CẢ phải duyệt mới qua bước đó** (chặt chẽ hơn). Được phép thiết kế + code.
 
-- Đổi `ApproverStepDef` từ 1 user/bước sang nhiều user/bước (cấu trúc chính xác cần thiết kế thêm)
-- Cập nhật `ApproverStepsEditor.tsx` (UI): cho phép @tag thêm người vào cùng 1 "Bước" đã có sẵn quản lý trực tiếp hoặc người cố định
-- Cập nhật logic tính "bước đã xong chưa" trong `lib/approval-logic.ts` (đây là phần lõi, ảnh hưởng rộng — SLA, trạng thái đề xuất...)
+## What Changes
+
+- Bước duyệt `kind: "fixed"` gắn được NHIỀU người (mảng `users`), giữ nguyên `user` (người đầu tiên) để tương thích dữ liệu cũ
+- `ApproverStepsEditor.tsx`: ô @tag của bước "Người cố định" cho chọn nhiều người thay vì tự thay người cũ khi chọn người mới
+- `resolveApproverStepsDetailed`/`resolveApproverSteps`: bước fixed nhiều người mở rộng thành nhiều dòng người duyệt trong danh sách phẳng — với quy trình "Xử lý đồng thời"/"Lần lượt" sẵn có, TẤT CẢ những người này đều phải duyệt (đúng lựa chọn của Sếp), KHÔNG cần đổi `lib/approval-logic.ts`
+- Trang thay người duyệt hàng loạt (`app/request/groups/page.tsx`) xử lý cả mảng `users`
 
 ## Capabilities
 
 ### New Capabilities
-(chưa xác định — cần explore thêm trước khi chốt tên capability)
-
-### Modified Capabilities
-- Có thể là mở rộng của `conditional-approval-rules` hoặc 1 capability riêng cho luồng duyệt (`approver-steps` hoặc tương tự) — cần rà lại `lib/approval-logic.ts` để đặt tên đúng.
+- `multi-approver-step`: 1 bước duyệt cố định chứa nhiều người, tất cả đều phải duyệt
 
 ## Impact
 
-- `lib/types.ts` (`ApproverStepDef`)
-- `lib/approval-logic.ts` (logic tính trạng thái duyệt — ẢNH HƯỞNG LÕI, cần cẩn thận)
-- `components/request/ApproverStepsEditor.tsx`
-- `lib/server/requests.ts` (`resolveApproverStepsDetailed`, `resolveApproverSteps`)
+- `lib/types.ts` (`ApproverStepDef` — thêm `users?`, giữ `user`)
+- `components/request/ApproverStepsEditor.tsx` (Draft type + UI @tag nhiều người)
+- `lib/server/requests.ts` (`resolveApproverStepsDetailed` mở rộng bước fixed nhiều người)
+- `app/request/groups/page.tsx` (thay người duyệt hàng loạt)
+- `app/request/groups/[groupId]/submit/page.tsx` (key React của dòng preview người duyệt)
+- KHÔNG đổi `lib/approval-logic.ts` (danh sách người duyệt phẳng sẵn có đã cho đúng ngữ nghĩa "tất cả phải duyệt" với quy trình đồng thời/lần lượt)
 
-## Open Questions (BẮT BUỘC trả lời trước khi thiết kế)
+## Open Questions còn lại (đã chọn mặc định an toàn, không chặn)
 
-1. **Khi 1 bước có nhiều người: cần TẤT CẢ duyệt xong mới qua bước tiếp theo, hay chỉ cần 1 người bất kỳ trong số họ duyệt là đủ?** (Sếp chưa trả lời câu này — đã hỏi ở cuộc trò chuyện trước, chưa có câu trả lời)
-2. Khi thêm người vào cùng 1 bước với "Quản lý trực tiếp" (tự động), người thêm vào là cố định hay cũng tự động theo quy tắc nào đó?
-3. Hiển thị trên UI đề xuất (khi xem chi tiết 1 đề xuất) thể hiện nhiều người/1 bước như thế nào — liệt kê tên cả 2-3 người cùng hàng?
-
-## Trạng thái
-
-**CHƯA THIẾT KẾ, CHƯA CODE.** Đây là bản ghi nhận ý tưởng (proposal-only) để không bị quên — dừng lại chờ Sếp trả lời Open Questions ở trên rồi mới làm design.md/specs/tasks.
+2. Người thêm vào cùng 1 bước: **cố định** (đúng nhu cầu Sếp mô tả — @tag thêm người cụ thể). Bước "Quản lý trực tiếp" tự động giữ nguyên 1 người như cũ; muốn thêm người cùng duyệt với quản lý thì thêm vào bước fixed liền kề hoặc đổi bước đó sang fixed nhiều người.
+3. Hiển thị chi tiết đề xuất: danh sách người duyệt vốn là danh sách phẳng từng người (mỗi người 1 dòng trạng thái duyệt riêng) — giữ nguyên, nhiều người trong 1 bước hiện thành nhiều dòng liền nhau theo thứ tự.

@@ -7,6 +7,7 @@ import {
   dedupeApprovers,
   forwardThenApprove,
   getRequestStatus,
+  fixedStepUsers,
   missingRequiredNote,
   type ApproverState,
 } from "./approval-logic";
@@ -228,5 +229,40 @@ describe("dedupeApprovers", () => {
 
   it("danh sách rỗng trả về rỗng", () => {
     expect(dedupeApprovers([])).toEqual([]);
+  });
+});
+
+describe("fixedStepUsers — bước duyệt nhiều người (16/08/2026)", () => {
+  it("bước cũ chỉ có user số ít trả về [user]", () => {
+    const a = user("a");
+    expect(fixedStepUsers({ kind: "fixed", user: a })).toEqual([a]);
+  });
+
+  it("bước mới có users trả về đủ danh sách", () => {
+    const [a, b] = [user("a"), user("b")];
+    expect(fixedStepUsers({ kind: "fixed", user: a, users: [a, b] })).toEqual([a, b]);
+  });
+
+  it("users rỗng (dữ liệu lỗi) fallback về [user]", () => {
+    const a = user("a");
+    expect(fixedStepUsers({ kind: "fixed", user: a, users: [] })).toEqual([a]);
+  });
+});
+
+describe("bước nhiều người — TẤT CẢ phải duyệt (quy trình đồng thời)", () => {
+  it("chỉ 1 trong 2 người của bước đã duyệt thì đề xuất vẫn chờ", () => {
+    const approvers: ApproverState[] = [
+      { id: "a", decision: "approved" },
+      { id: "b", decision: "pending" },
+    ];
+    expect(getRequestStatus("concurrent", approvers)).toBe("pending");
+  });
+
+  it("cả 2 người của bước đều duyệt thì đề xuất hoàn tất", () => {
+    const approvers: ApproverState[] = [
+      { id: "a", decision: "approved" },
+      { id: "b", decision: "approved" },
+    ];
+    expect(getRequestStatus("concurrent", approvers)).toBe("approved");
   });
 });

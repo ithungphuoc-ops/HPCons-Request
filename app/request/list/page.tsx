@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { Plus } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import RequestStatusBadge from "@/components/request/RequestStatusBadge";
 import RequestDetailView from "@/components/request/RequestDetailView";
 import { useRequestContext } from "@/context/RequestContext";
@@ -68,20 +68,32 @@ function RequestListPageInner() {
       .catch(() => setCurrentUid(null));
   }, []);
 
-  const effectiveSelectedId = selectedId ?? requests[0]?.id ?? null;
+  // KHÔNG tự chọn sẵn đề xuất đầu tiên (Sếp chốt 16/08/2026): mặc định danh
+  // sách chiếm toàn bộ chiều rộng, box nội dung chỉ hiện khi bấm vào 1 đề xuất.
   const selectedRequest = useMemo(
-    () => requests.find((r) => r.id === effectiveSelectedId) ?? null,
-    [requests, effectiveSelectedId],
+    () => requests.find((r) => r.id === selectedId) ?? null,
+    [requests, selectedId],
   );
 
+  const baseQuery = scope === "group" && groupId ? `scope=group&groupId=${groupId}` : `scope=${scope}`;
   const selectRequest = (id: string) => {
-    const query = scope === "group" && groupId ? `scope=group&groupId=${groupId}` : `scope=${scope}`;
-    router.replace(`/request/list?${query}&id=${id}`);
+    router.replace(`/request/list?${baseQuery}&id=${id}`);
+  };
+  const closeDetail = () => {
+    router.replace(`/request/list?${baseQuery}`);
   };
 
   return (
     <div className="flex h-full">
-      <div className="flex w-[320px] shrink-0 flex-col border-r border-[var(--color-border)]">
+      <div
+        className={`shrink-0 flex-col ${
+          selectedRequest
+            ? // Đang mở box nội dung: danh sách thu về cột trái (ẩn hẳn trên
+              // màn hình nhỏ để box nội dung đủ chỗ đọc — bấm "Đóng" quay lại).
+              "hidden w-[320px] border-r border-[var(--color-border)] md:flex"
+            : "flex w-full"
+        }`}
+      >
         <div className="flex items-start justify-between gap-2 border-b border-[var(--color-border)] px-4 py-3">
           <div className="min-w-0">
             <h1 className="truncate text-[16px] font-semibold text-gray-900">
@@ -131,7 +143,7 @@ function RequestListPageInner() {
                   </Link>
                 );
               }
-              const isActive = r.id === effectiveSelectedId;
+              const isActive = r.id === selectedId;
               return (
                 <button
                   key={r.id}
@@ -157,15 +169,18 @@ function RequestListPageInner() {
         </div>
       </div>
 
-      <div className="min-w-0 flex-1 overflow-y-auto px-8 py-6">
-        {status === "loaded" && selectedRequest ? (
+      {selectedRequest && (
+        <div className="min-w-0 flex-1 overflow-y-auto px-8 py-6">
+          <button
+            type="button"
+            onClick={closeDetail}
+            className="mb-3 flex items-center gap-1 text-[13px] font-medium text-gray-500 hover:text-gray-800"
+          >
+            <X size={14} /> Đóng
+          </button>
           <RequestDetailView request={selectedRequest} currentUid={currentUid} onActed={load} />
-        ) : (
-          <div className="flex h-full min-h-[300px] items-center justify-center">
-            <p className="text-[13px] text-gray-400">Chọn một đề xuất bên trái để xem chi tiết.</p>
-          </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import type { ApprovalFlowType, TaggedUser } from "./types";
+import type { ApprovalFlowType, ApproverStepDef, TaggedUser } from "./types";
 
 export type ApproverDecision = "pending" | "approved" | "rejected";
 
@@ -62,6 +62,16 @@ export function dedupeApprovers(users: TaggedUser[]): TaggedUser[] {
   const lastIndexById = new Map<string, number>();
   users.forEach((u, i) => lastIndexById.set(u.id, i));
   return users.filter((u, i) => lastIndexById.get(u.id) === i);
+}
+
+/**
+ * Đủ danh sách người của 1 bước duyệt "fixed" — bước mới (từ 16/08/2026) lưu
+ * mảng `users` (nhiều người/1 bước, tất cả phải duyệt), bước cũ chỉ có `user`
+ * số ít. LUÔN đọc qua hàm này thay vì `step.user` trực tiếp, trừ khi cố ý chỉ
+ * cần người đầu tiên (vd sinh mã bước từ tên).
+ */
+export function fixedStepUsers(step: Extract<ApproverStepDef, { kind: "fixed" }>): TaggedUser[] {
+  return step.users?.length ? step.users : [step.user];
 }
 
 export class ApprovalActionError extends Error {}

@@ -1,5 +1,5 @@
 import "server-only";
-import type { ApproverState } from "@/lib/approval-logic";
+import { fixedStepUsers, type ApproverState } from "@/lib/approval-logic";
 import { addBusinessHours } from "@/lib/business-hours";
 import { adminDb } from "@/lib/firebase/admin";
 import { evaluateConditionGroup, filterApplicableSteps } from "@/lib/server/conditions";
@@ -251,7 +251,13 @@ export async function resolveApproverStepsDetailed(
   for (let i = 0; i < applicableSteps.length; i++) {
     const step = applicableSteps[i];
     if (step.kind === "fixed") {
-      results.push({ index: i, kind: "fixed", user: await withTitle(step.user) });
+      // Bước nhiều người (users) mở rộng thành nhiều phần tử kết quả cùng
+      // `index` — danh sách người duyệt phẳng sẵn có + quy trình đồng thời/
+      // lần lượt tự cho đúng ngữ nghĩa "TẤT CẢ phải duyệt" (Sếp chốt
+      // 16/08/2026), không cần đổi lib/approval-logic.ts.
+      for (const user of fixedStepUsers(step)) {
+        results.push({ index: i, kind: "fixed", user: await withTitle(user) });
+      }
       continue;
     }
 

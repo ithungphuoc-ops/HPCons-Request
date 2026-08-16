@@ -7,20 +7,21 @@ import type { ApproverStepDef, ConditionGroup, ConditionRule, ProposalField, Tag
 
 /**
  * Trạng thái đang soạn của 1 bước duyệt — khác `ApproverStepDef` ở chỗ bước
- * "fixed" có thể tạm chưa chọn người (user: null) trong lúc đang sửa form.
- * Dùng `toApproverSteps()` để xác thực + chuyển sang `ApproverStepDef[]`
- * thật trước khi gửi lên API. `code` giữ nguyên nếu bước đã có (không cho
- * sửa tay trong bản này — chỉ hiển thị), mất đi (undefined) nếu là bước mới
- * thêm — server sẽ tự backfill khi lưu.
+ * "fixed" có thể tạm chưa chọn ai (users: []) trong lúc đang sửa form, và
+ * dùng thẳng mảng `users` (1 bước nhiều người, tất cả phải duyệt — Sếp chốt
+ * 16/08/2026). Dùng `toApproverSteps()` để xác thực + chuyển sang
+ * `ApproverStepDef[]` thật trước khi gửi lên API. `code` giữ nguyên nếu bước
+ * đã có (không cho sửa tay trong bản này — chỉ hiển thị), mất đi (undefined)
+ * nếu là bước mới thêm — server sẽ tự backfill khi lưu.
  */
 export type DraftApproverStep =
-  | { kind: "fixed"; user: TaggedUser | null; code?: string; condition?: ConditionGroup }
+  | { kind: "fixed"; users: TaggedUser[]; code?: string; condition?: ConditionGroup }
   | { kind: "submitter_manager"; code?: string; condition?: ConditionGroup };
 
 export function fromApproverSteps(steps: ApproverStepDef[]): DraftApproverStep[] {
   return steps.map((s) =>
     s.kind === "fixed"
-      ? { kind: "fixed", user: s.user, code: s.code, condition: s.condition }
+      ? { kind: "fixed", users: s.users?.length ? s.users : [s.user], code: s.code, condition: s.condition }
       : { kind: "submitter_manager", code: s.code, condition: s.condition },
   );
 }
@@ -32,8 +33,16 @@ export function toApproverSteps(steps: DraftApproverStep[]): ApproverStepDef[] |
     if (step.kind === "submitter_manager") {
       result.push(step);
     } else {
-      if (!step.user) return null;
-      result.push({ kind: "fixed", user: step.user, code: step.code, condition: step.condition });
+      if (step.users.length === 0) return null;
+      // Lưu CẢ user (người đầu tiên — tương thích dữ liệu/code cũ) lẫn users
+      // (đủ danh sách) — xem ApproverStepDef ở lib/types.ts.
+      result.push({
+        kind: "fixed",
+        user: step.users[0],
+        users: step.users,
+        code: step.code,
+        condition: step.condition,
+      });
     }
   }
   return result;
@@ -102,7 +111,7 @@ export default function ApproverStepsEditor({
   const conditionFields = fields.filter((f) => f.code && CONDITION_ELIGIBLE_TYPES.has(f.dataType));
 
   const addStep = () => {
-    onChange([...value, { kind: "fixed", user: null }]);
+    onChange([...value, { kind: "fixed", users: [] }]);
   };
 
   const removeStep = (index: number) => {
@@ -115,16 +124,16 @@ export default function ApproverStepsEditor({
         i === index
           ? kind === "submitter_manager"
             ? { kind: "submitter_manager" as const, code: step.code, condition: step.condition }
-            : { kind: "fixed" as const, user: null, code: step.code, condition: step.condition }
+            : { kind: "fixed" as const, users: [], code: step.code, condition: step.condition }
           : step,
       ),
     );
   };
 
-  const setFixedUser = (index: number, user: TaggedUser | undefined) => {
+  const setFixedUsers = (index: number, users: TaggedUser[]) => {
     onChange(
       value.map((step, i) =>
-        i === index ? { ...step, kind: "fixed" as const, user: user ?? null } : step,
+        i === index ? { ...step, kind: "fixed" as const, users } : step,
       ),
     );
   };
@@ -147,10 +156,13 @@ export default function ApproverStepsEditor({
             <div className="flex items-center gap-2">
               <div className="min-w-0 flex-1">
                 {step.kind === "fixed" ? (
+                  // Cho @tag NHIỀU người trong cùng 1 bước — TẤT CẢ đều phải
+                  // duyệt mới qua bước (Sếp chốt 16/08/2026). TagUserInput vốn
+                  // multi-select, truyền thẳng mảng không cắt bớt.
                   <TagUserInput
-                    value={step.user ? [step.user] : []}
-                    onChange={(users) => setFixedUser(index, users.slice(-1)[0])}
-                    placeholder="Gõ @ để thêm người duyệt"
+                    value={step.users}
+                    onChange={(users) => setFixedUsers(index, users)}
+                    placeholder="Gõ @ để thêm người duyệt (được nhiều người — tất cả phải duyệt)"
                   />
                 ) : (
                   <p className="flex h-[36px] items-center gap-1.5 rounded border border-[var(--color-border)] bg-gray-50 px-3 text-[12px] text-gray-500">

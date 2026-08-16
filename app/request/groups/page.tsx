@@ -12,6 +12,7 @@ import {
   confirmButtonClass,
   inputClass,
 } from "@/components/shared/form-styles";
+import { fixedStepUsers } from "@/lib/approval-logic";
 import type { ApproverStepDef, TaggedUser } from "@/lib/types";
 import Link from "next/link";
 
@@ -83,10 +84,16 @@ function GroupsPageInner() {
       const group = getGroupById(id);
       if (!group) return;
       // Chỉ thay bước "người cố định" trùng đúng người cần đổi — không đụng
-      // tới bước tự động lấy quản lý trực tiếp/vai trò (§1.5 quy tắc).
-      const nextSteps: ApproverStepDef[] = group.approverSteps.map((step) =>
-        step.kind === "fixed" && step.user.id === from.id ? { kind: "fixed", user: to } : step,
-      );
+      // tới bước tự động lấy quản lý trực tiếp/vai trò (§1.5 quy tắc). Bước
+      // nhiều người (users): chỉ thay đúng người trùng trong danh sách, giữ
+      // nguyên những người còn lại + code/condition của bước.
+      const nextSteps: ApproverStepDef[] = group.approverSteps.map((step) => {
+        if (step.kind !== "fixed") return step;
+        const users = fixedStepUsers(step);
+        if (!users.some((u) => u.id === from.id)) return step;
+        const nextUsers = users.map((u) => (u.id === from.id ? to : u));
+        return { ...step, user: nextUsers[0], users: nextUsers };
+      });
       updateGroup(id, { approverSteps: nextSteps });
     });
     setApproverModalOpen(false);
