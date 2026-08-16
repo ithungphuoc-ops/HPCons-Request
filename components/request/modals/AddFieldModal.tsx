@@ -12,13 +12,20 @@ import {
 } from "@/components/shared/form-styles";
 import { useRequestContext } from "@/context/RequestContext";
 import { CONDITION_ELIGIBLE_TYPES, ConditionEditor } from "@/components/request/ApproverStepsEditor";
-import { fieldDataTypeLabels, type ConditionGroup, type FieldDataType } from "@/lib/types";
+import {
+  fieldDataTypeLabels,
+  type ComputedTemplateBranch,
+  type ConditionGroup,
+  type FieldDataType,
+} from "@/lib/types";
 import { slugifyFieldName } from "@/lib/print-template";
 import { validateFieldName, validateFieldOptions } from "@/lib/validation";
 
 const dataTypes = Object.keys(fieldDataTypeLabels) as FieldDataType[];
 const choiceTypes: FieldDataType[] = ["single_choice", "multiple_choice"];
 const tableTypes: FieldDataType[] = ["table", "base_table"];
+/** Chỉ field văn bản mới cấu hình được "tự động ghép giá trị từ trường khác". */
+const computedEligibleTypes: FieldDataType[] = ["short_text", "paragraph"];
 
 export default function AddFieldModal() {
   const { addFieldModalGroupId, editingField, closeAddFieldModal, getGroupById, addField, updateField } =
@@ -36,7 +43,10 @@ export default function AddFieldModal() {
   const [tableColumns, setTableColumns] = useState<string[]>([""]);
   const [formula, setFormula] = useState("");
   const [visibleWhen, setVisibleWhen] = useState<ConditionGroup | undefined>(undefined);
-  const [errors, setErrors] = useState<{ name?: string; options?: string; code?: string }>({});
+  // null = tắt "tự động ghép giá trị"; mảng (kể cả rỗng) = đang bật, mỗi phần
+  // tử là 1 nhánh { điều kiện tuỳ chọn + mẫu chuỗi ${ma_truong} }.
+  const [computedBranches, setComputedBranches] = useState<ComputedTemplateBranch[] | null>(null);
+  const [errors, setErrors] = useState<{ name?: string; options?: string; code?: string; computed?: string }>({});
 
   const conditionFields = useMemo(
     () =>
@@ -71,6 +81,7 @@ export default function AddFieldModal() {
     setTableColumns([""]);
     setFormula("");
     setVisibleWhen(undefined);
+    setComputedBranches(null);
     setErrors({});
   };
 
@@ -85,6 +96,7 @@ export default function AddFieldModal() {
       setTableColumns(editingField.tableColumns?.length ? editingField.tableColumns : [""]);
       setFormula(editingField.formula ?? "");
       setVisibleWhen(editingField.visibleWhen);
+      setComputedBranches(editingField.computedFrom?.branches ?? null);
       setErrors({});
     } else {
       resetForm();
@@ -126,6 +138,20 @@ export default function AddFieldModal() {
       }
     }
 
+    // Đang bật "tự động ghép giá trị": mọi nhánh phải có mẫu chuỗi khác rỗng
+    // (server còn validate sâu hơn — mã field có thật, không tham chiếu field
+    // tự tính khác — nhưng chặn sớm lỗi hiển nhiên ngay tại đây cho dễ hiểu).
+    const cleanedBranches =
+      computedEligibleTypes.includes(dataType) && computedBranches !== null
+        ? computedBranches
+            .map((b) => ({ ...b, template: b.template.trim() }))
+            .filter((b) => b.template)
+        : null;
+    if (computedBranches !== null && computedEligibleTypes.includes(dataType) && (!cleanedBranches || cleanedBranches.length === 0)) {
+      setErrors({ computed: "Đang bật tự động ghép giá trị — cần ít nhất 1 nhánh có mẫu chuỗi." });
+      return;
+    }
+
     setErrors({});
     const fieldData = {
       name: name.trim(),
@@ -138,6 +164,7 @@ export default function AddFieldModal() {
         : undefined,
       formula: dataType === "formula" ? formula : undefined,
       visibleWhen,
+      computedFrom: cleanedBranches && cleanedBranches.length > 0 ? { branches: cleanedBranches } : undefined,
     };
 
     if (isEditMode && editingField) {
@@ -321,6 +348,104 @@ export default function AddFieldModal() {
               onChange={(e) => setFormula(e.target.value)}
               placeholder="Ví dụ: SO_LUONG * DON_GIA"
             />
+          </Row>
+        )}
+
+        {computedEligibleTypes.includes(dataType) && (
+          <Row label="Tự động ghép giá trị từ trường khác">
+            <div className="flex flex-col gap-3">
+              <label className="flex items-center gap-2 text-[13px] text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={computedBranches !== null}
+                  onChange={(e) =>
+                    setComputedBranches(e.target.checked ? [{ template: "" }] : null)
+                  }
+                />
+                Bật — trường này KHÔNG cho gõ tay nữa, giá trị tự ghép từ (các) trường khác trong cùng đề xuất
+              </label>
+
+              {computedBranches !== null && (
+                <>
+                  {computedBranches.map((branch, index) => (
+                    <div key={index} className="flex flex-col gap-2 rounded-md border border-gray-200 p-3">
+                      <div className="flex items-center justify-between">
+                        <p className="text-[12px] font-medium text-gray-500">
+                          Nhánh {index + 1}{" "}
+                          <span className="font-normal">
+                            (xét theo thứ tự — nhánh nào khớp điều kiện trước thì dùng nhánh đó)
+                          </span>
+                        </p>
+                        <button
+                          type="button"
+                          aria-label="Xóa nhánh"
+                          onClick={() =>
+                            setComputedBranches((prev) => prev!.filter((_, i) => i !== index))
+                          }
+                          className="text-gray-400 hover:text-[var(--color-danger-red)]"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                      <div>
+                        <p className="mb-1 text-[12px] text-gray-500">
+                          Điều kiện áp dụng nhánh này (để trống = luôn áp dụng):
+                        </p>
+                        <ConditionEditor
+                          condition={branch.condition}
+                          fields={conditionFields}
+                          onChange={(next) =>
+                            setComputedBranches((prev) =>
+                              prev!.map((b, i) => (i === index ? { ...b, condition: next } : b)),
+                            )
+                          }
+                        />
+                      </div>
+                      <div>
+                        <p className="mb-1 text-[12px] text-gray-500">
+                          Mẫu chuỗi — dùng{" "}
+                          <code className="rounded bg-gray-100 px-1 py-0.5">{"${ma_truong}"}</code> để chèn giá trị
+                          trường khác:
+                        </p>
+                        <textarea
+                          className={textareaClass}
+                          rows={2}
+                          value={branch.template}
+                          onChange={(e) =>
+                            setComputedBranches((prev) =>
+                              prev!.map((b, i) => (i === index ? { ...b, template: e.target.value } : b)),
+                            )
+                          }
+                          placeholder={"Ví dụ: ${so_hop_dong}-${ten_cong_trinh}"}
+                        />
+                      </div>
+                    </div>
+                  ))}
+
+                  <button
+                    type="button"
+                    onClick={() => setComputedBranches((prev) => [...(prev ?? []), { template: "" }])}
+                    className="flex items-center gap-1 self-start text-[12px] text-[var(--color-action-blue)]"
+                  >
+                    <Plus size={13} /> Thêm nhánh
+                  </button>
+
+                  <div className="rounded-md bg-gray-50 p-2 text-[12px] text-gray-500">
+                    Mã trường dùng được trong mẫu chuỗi:{" "}
+                    {group.fields
+                      .filter((f) => f.id !== editingField?.id && f.code && !f.computedFrom)
+                      .map((f) => (
+                        <code key={f.id} className="mr-1 rounded bg-gray-100 px-1 py-0.5">
+                          {"${" + f.code + "}"}
+                        </code>
+                      ))}
+                  </div>
+                </>
+              )}
+              {errors.computed && (
+                <p className="text-[12px] text-[var(--color-danger-red)]">{errors.computed}</p>
+              )}
+            </div>
           </Row>
         )}
 

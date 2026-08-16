@@ -8,6 +8,7 @@ import RequestStatusBadge from "@/components/request/RequestStatusBadge";
 import RequestDetailView from "@/components/request/RequestDetailView";
 import { useRequestContext } from "@/context/RequestContext";
 import { primaryButtonClass } from "@/components/shared/form-styles";
+import { resolveRequestTitle } from "@/lib/request-title";
 import type { ListLoadStatus, RequestInstance, RequestListScope } from "@/lib/types";
 
 const scopeLabels: Record<RequestListScope, string> = {
@@ -122,7 +123,7 @@ function RequestListPageInner() {
                     className="flex flex-col gap-1 border-b border-gray-100 px-4 py-3 text-left hover:bg-gray-50"
                   >
                     <span className="truncate text-[13px] font-medium text-gray-800">
-                      {r.groupNameSnapshot}
+                      {resolveRequestTitle(r)}
                     </span>
                     <span className="text-[11px] text-gray-400">
                       Nháp · cập nhật {new Date(r.updatedAt ?? r.submittedAt).toLocaleString("vi-VN")}
@@ -142,7 +143,7 @@ function RequestListPageInner() {
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="truncate text-[13px] font-medium text-gray-800">
-                      {r.groupNameSnapshot}
+                      {resolveRequestTitle(r)}
                     </span>
                     <RequestStatusBadge status={r.status} />
                   </div>

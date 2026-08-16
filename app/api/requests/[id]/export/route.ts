@@ -7,6 +7,7 @@ import { logPrintExport } from "@/lib/server/print-exports";
 import { getDefaultPrintTemplate, getPrintTemplate } from "@/lib/server/print-templates";
 import { canView, loadRequest } from "@/lib/server/requests";
 import { requireSession } from "@/lib/session";
+import { resolveRequestTitle } from "@/lib/request-title";
 import type { ProposalGroup } from "@/lib/types";
 
 // Cần Node runtime (không phải Edge) để dùng firebase-admin/storage + docxtemplater.
@@ -105,10 +106,7 @@ export async function GET(
       resultPath: null,
     });
 
-    const nameField = found.fieldsSnapshot.find(
-      (f) => f.code && ["ten_de_xuat", "ten_de_nghi", "ten_phieu", "ten_dang_ky"].includes(f.code),
-    );
-    const titlePart = nameField ? String(found.values[nameField.id] ?? "") : found.groupNameSnapshot;
+    const titlePart = resolveRequestTitle(found);
     // Định dạng dd-mm-yyyy theo đúng ví dụ đặc tả ("... - 20-07-2026").
     const datePart = new Date().toLocaleDateString("vi-VN").split("/").join("-");
     const fileName =

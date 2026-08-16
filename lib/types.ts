@@ -56,6 +56,35 @@ export interface ProposalField {
    * trị của field bị ẩn không được validate khi gửi (xem lib/server/requests.ts
    * findMissingRequiredFields). */
   visibleWhen?: ConditionGroup;
+  /**
+   * Cho field kiểu short_text/paragraph: nếu có, giá trị field này KHÔNG cho
+   * gõ tay mà tự động ghép từ giá trị (các) field khác trong CÙNG đề xuất —
+   * xem ComputedFieldConfig. Không đổi `dataType` (vẫn là short_text/paragraph
+   * như cũ), chỉ thêm khả năng tự tính — các nơi khác (in ấn, xuất file,
+   * webhook) không cần biết tới field này, cứ đọc `values[field.id]` như field
+   * văn bản bình thường vì máy chủ đã ghi giá trị tính sẵn vào đó.
+   */
+  computedFrom?: ComputedFieldConfig;
+}
+
+/**
+ * Cấu hình field "tự tính" — danh sách nhánh, đánh giá theo thứ tự, dùng mẫu
+ * chuỗi của nhánh ĐẦU TIÊN có điều kiện thoả mãn (hoặc không có điều kiện —
+ * luôn khớp, dùng làm nhánh mặc định/fallback nếu đặt cuối danh sách). Không
+ * nhánh nào khớp → field coi như chưa tính được, cho gõ tay bình thường.
+ */
+export interface ComputedFieldConfig {
+  branches: ComputedTemplateBranch[];
+}
+
+/**
+ * 1 nhánh: điều kiện tuỳ chọn (dùng chung ConditionGroup với visibleWhen) +
+ * mẫu chuỗi dùng cú pháp `${code}` để chèn giá trị field khác trong CÙNG đề
+ * xuất (code không khớp field nào thì giữ nguyên `${code}`, không xoá trắng).
+ */
+export interface ComputedTemplateBranch {
+  condition?: ConditionGroup;
+  template: string;
 }
 
 export type FieldDataType =

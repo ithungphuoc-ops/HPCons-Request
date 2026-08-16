@@ -34,6 +34,7 @@ import { useCurrentSession } from "@/lib/useCurrentSession";
 import { fieldDataTypeLabels } from "@/lib/types";
 import type { PrintTemplate, RequestAttachment, RequestInstance, TaggedUser } from "@/lib/types";
 import { deserializeTableRows } from "@/lib/table-field";
+import { resolveRequestTitle } from "@/lib/request-title";
 
 function editLinkFor(request: RequestInstance): string {
   return request.groupId
@@ -238,7 +239,7 @@ export default function RequestDetailView({
       <div className="min-w-0 flex-[3]">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-[22px] font-bold text-gray-900">{request.groupNameSnapshot}</h1>
+            <h1 className="text-[22px] font-bold text-gray-900">{resolveRequestTitle(request)}</h1>
             <div className="mt-2 flex items-center gap-2">
               <RequestStatusBadge status={request.status} />
               {isOverdue(request) && (

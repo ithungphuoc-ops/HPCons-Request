@@ -3,6 +3,7 @@ import { adminDb } from "@/lib/firebase/admin";
 import { apiErrorResponse } from "@/lib/http";
 import { dedupeApprovers } from "@/lib/approval-logic";
 import { mergeFollowers } from "@/lib/server/conditions";
+import { resolveComputedValue } from "@/lib/server/computed-fields";
 import { canManageGroupsAtAppScope } from "@/lib/permissions";
 import {
   buildInitialApprovers,
@@ -122,6 +123,13 @@ export async function PATCH(
         );
       }
       const group = toProposalGroup(groupSnap.id, groupSnap.data()!);
+      // Máy chủ tự tính lại giá trị field "tự tính" ngay khi gửi/gửi lại
+      // chính thức — không tin giá trị client gửi lên (xem app/api/requests/route.ts).
+      for (const field of group.fields) {
+        if (!field.computedFrom) continue;
+        const computed = resolveComputedValue(field.computedFrom, values, group.fields);
+        if (computed !== null) values[field.id] = computed;
+      }
       const missing =
         group.requiresSubmissionForm === false ? [] : findMissingRequiredFields(group.fields, values);
       if (missing.length > 0) {

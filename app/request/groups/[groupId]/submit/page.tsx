@@ -7,6 +7,7 @@ import { useRequestContext } from "@/context/RequestContext";
 import { HPCORE_MEMBER_GROUPS_API } from "@/lib/constants";
 import { deserializeTableRows, toWireTableRows } from "@/lib/table-field";
 import { evaluateConditionGroup } from "@/lib/server/conditions";
+import { resolveComputedValue } from "@/lib/server/computed-fields";
 import TagUserInput from "@/components/shared/TagUserInput";
 import DatePicker from "@/components/ui/DatePicker";
 import {
@@ -135,6 +136,30 @@ export default function SubmitRequestPage() {
       );
     // eslint-disable-next-line react-hooks/exhaustive-deps -- chỉ cần chạy lại khi đổi nhóm hoặc giá trị field liên quan điều kiện đổi, không phải mọi lần values đổi tham chiếu.
   }, [group?.id, relevantValuesKey]);
+
+  // Field "tự tính" (computedFrom): tự tính lại giá trị theo THỜI GIAN THỰC
+  // mỗi khi bất kỳ field nào đổi — phép tính chỉ là ghép chuỗi trên vài field
+  // nên chạy mỗi lần đổi values vẫn rẻ, không cần lọc field nguồn trước.
+  // Guard "changed ? next : prev" trả về ĐÚNG tham chiếu cũ khi không có gì
+  // đổi → React bỏ qua re-render, không gây vòng lặp vô hạn.
+  useEffect(() => {
+    if (!group) return;
+    const computedFields = group.fields.filter((f) => f.computedFrom);
+    if (computedFields.length === 0) return;
+    setValues((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const field of computedFields) {
+        const computed = resolveComputedValue(field.computedFrom!, prev, group.fields);
+        if (computed !== null && prev[field.id] !== computed) {
+          next[field.id] = computed;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- group lấy theo id là đủ (fields đổi thì id không đổi nhưng lần render kế tiếp values đổi sẽ kéo effect chạy lại).
+  }, [group?.id, values]);
 
   if (!group) return null;
 
@@ -302,6 +327,13 @@ export default function SubmitRequestPage() {
                 value={values[field.id]}
                 error={errors[field.id]}
                 onChange={(value) => setFieldValue(field.id, value)}
+                // Field "tự tính" đang tính ra được giá trị (có nhánh khớp) →
+                // khoá không cho gõ tay; không nhánh nào khớp → cho gõ tay như
+                // field thường (xem specs/computed-field-values).
+                readOnlyComputed={
+                  !!field.computedFrom &&
+                  resolveComputedValue(field.computedFrom, values, group.fields) !== null
+                }
               />
             ))}
 
@@ -480,11 +512,14 @@ function FieldRow({
   value,
   error,
   onChange,
+  readOnlyComputed,
 }: {
   field: ProposalField;
   value: unknown;
   error?: string;
   onChange: (value: unknown) => void;
+  /** true = field "tự tính" đang tính ra được giá trị → ô nhập chỉ đọc. */
+  readOnlyComputed?: boolean;
 }) {
   if (field.dataType === "section_title") {
     return (
@@ -510,7 +545,12 @@ function FieldRow({
         {field.required && <span className="ml-0.5 text-[var(--color-danger-red)]">*</span>}
       </label>
       <div className="min-w-0 flex-1">
-        <FieldControl field={field} value={value} onChange={onChange} />
+        <FieldControl field={field} value={value} onChange={onChange} readOnlyComputed={readOnlyComputed} />
+        {readOnlyComputed && (
+          <p className="mt-1 text-[12px] text-gray-400">
+            Tự động ghép từ trường khác — thay đổi các trường liên quan để cập nhật.
+          </p>
+        )}
         {error && <p className="mt-1 text-[12px] text-[var(--color-danger-red)]">{error}</p>}
       </div>
     </div>
@@ -521,29 +561,35 @@ function FieldControl({
   field,
   value,
   onChange,
+  readOnlyComputed,
 }: {
   field: ProposalField;
   value: unknown;
   onChange: (value: unknown) => void;
+  readOnlyComputed?: boolean;
 }) {
   switch (field.dataType) {
     case "short_text":
       return (
         <input
-          className={inputClass}
+          className={readOnlyComputed ? disabledInputClass : inputClass}
           value={(value as string) ?? ""}
           placeholder={field.placeholder}
           onChange={(e) => onChange(e.target.value)}
+          disabled={readOnlyComputed}
+          readOnly={readOnlyComputed}
         />
       );
     case "paragraph":
       return (
         <textarea
-          className={textareaClass}
+          className={readOnlyComputed ? `${textareaClass} bg-gray-50 text-gray-500` : textareaClass}
           rows={3}
           value={(value as string) ?? ""}
           placeholder={field.placeholder}
           onChange={(e) => onChange(e.target.value)}
+          disabled={readOnlyComputed}
+          readOnly={readOnlyComputed}
         />
       );
     case "integer":

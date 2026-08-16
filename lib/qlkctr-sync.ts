@@ -1,3 +1,4 @@
+import { TITLE_FIELD_CODES } from "@/lib/request-title";
 import { deserializeTableRows } from "@/lib/table-field";
 import type { ProposalField, RequestInstance } from "@/lib/types";
 
@@ -12,7 +13,6 @@ import type { ProposalField, RequestInstance } from "@/lib/types";
  * TÊN cột (field.tableColumns) chứ không theo số thứ tự cố định.
  */
 
-const TITLE_FIELD_CODES = new Set(["ten_de_xuat", "ten_de_nghi", "ten_phieu", "ten_dang_ky"]);
 const DETAIL_FIELD_CODES = new Set(["chi_tiet", "vat_tu", "vat_tu_de_nghi", "danh_sach_vat_tu"]);
 
 function chuanHoaSoSanh(s: string): string {

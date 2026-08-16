@@ -4,6 +4,7 @@ import { adminDb } from "@/lib/firebase/admin";
 import { apiErrorResponse } from "@/lib/http";
 import { canManageGroupsAtAppScope, isWithinUsedForScope } from "@/lib/permissions";
 import { mergeFollowers } from "@/lib/server/conditions";
+import { resolveComputedValue } from "@/lib/server/computed-fields";
 import { dedupeApprovers } from "@/lib/approval-logic";
 import {
   buildInitialApprovers,
@@ -228,6 +229,20 @@ export async function POST(request: Request) {
           { error: "Bạn không nằm trong phạm vi sử dụng của nhóm đề xuất này." },
           { status: 403 },
         );
+      }
+
+      // Máy chủ tự tính lại giá trị của mọi field "tự tính" (computedFrom)
+      // ngay khi gửi CHÍNH THỨC, ghi đè bất kỳ giá trị nào client gửi lên cho
+      // field đó — không tin client (giống triết lý validate lại visibleWhen
+      // ở nơi khác). Nháp thì bỏ qua vì giá trị nháp chỉ tạm, chưa cần đúng.
+      if (!isDraft) {
+        for (const field of group.fields) {
+          if (!field.computedFrom) continue;
+          const computed = resolveComputedValue(field.computedFrom, body.values ?? {}, group.fields);
+          if (computed !== null) {
+            body.values = { ...(body.values ?? {}), [field.id]: computed };
+          }
+        }
       }
 
       if (!isDraft && group.requiresSubmissionForm !== false) {

@@ -11,6 +11,7 @@ import {
   sanitizeDescriptionHtml,
 } from "@/lib/server/groups";
 import { validateConditionGroupFieldCodes } from "@/lib/server/conditions";
+import { findReferencedComputedFieldCode } from "@/lib/server/computed-fields";
 import { requireWriteAccess } from "@/lib/session";
 import type { ProposalGroup } from "@/lib/types";
 
@@ -75,6 +76,34 @@ export async function PATCH(
               { error: `Điều kiện hiển thị của trường "${field.name}" tham chiếu tới trường "${badCode}" không tồn tại trong nhóm.` },
               { status: 400 },
             );
+          }
+
+          if (field.computedFrom) {
+            for (const branch of field.computedFrom.branches) {
+              const badBranchCode = validateConditionGroupFieldCodes(branch.condition, knownFieldCodes);
+              if (badBranchCode) {
+                return NextResponse.json(
+                  { error: `Điều kiện tự tính giá trị của trường "${field.name}" tham chiếu tới trường "${badBranchCode}" không tồn tại trong nhóm.` },
+                  { status: 400 },
+                );
+              }
+              const referencedCodes = [...branch.template.matchAll(/\$\{([^}]+)\}/g)].map((m) => m[1]);
+              const missingCode = referencedCodes.find((code) => !knownFieldCodes.has(code));
+              if (missingCode) {
+                return NextResponse.json(
+                  { error: `Mẫu chuỗi tự tính giá trị của trường "${field.name}" tham chiếu tới trường "${missingCode}" không tồn tại trong nhóm.` },
+                  { status: 400 },
+                );
+              }
+            }
+
+            const circularCode = findReferencedComputedFieldCode(field, patch.fields);
+            if (circularCode) {
+              return NextResponse.json(
+                { error: `Trường "${field.name}" không được tham chiếu tới trường "${circularCode}" vì trường đó cũng tự tính giá trị (không cho phép tính lồng nhiều tầng).` },
+                { status: 400 },
+              );
+            }
           }
         }
       }

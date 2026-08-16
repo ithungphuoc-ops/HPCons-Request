@@ -1,4 +1,5 @@
 import { COMPANY_NAME } from "@/lib/constants";
+import { resolveRequestTitle } from "@/lib/request-title";
 import { deserializeTableRows } from "@/lib/table-field";
 import type {
   ApproverStepDef,
@@ -89,9 +90,6 @@ export function ensureApproverStepCodes(steps: ApproverStepDef[]): {
   });
   return { steps: next, changed };
 }
-
-/** Vài mã trường phổ biến cho "tiêu đề" của 1 đề xuất — dùng cho thẻ ${name}. */
-const TITLE_FIELD_CODES = new Set(["ten_de_xuat", "ten_de_nghi", "ten_phieu", "ten_dang_ky"]);
 
 function formatFieldValueForPrint(field: ProposalField, value: unknown): string {
   if (value === undefined || value === null || value === "") return "";
@@ -247,15 +245,10 @@ function buildRejectionKeys(request: RequestInstance): Record<string, string> {
   };
 }
 
-/** Giá trị của trường được coi là "tên đề xuất" (mã trường ổn định, VD ten_de_xuat) — nếu không có, dùng tên nhóm. */
+/** Giá trị của trường được coi là "tên đề xuất" (mã trường ổn định, VD ten_de_xuat) — nếu không có, dùng tên nhóm.
+ * Dùng chung `resolveRequestTitle` (lib/request-title.ts) với danh sách/chi tiết đề xuất, đặt tên file xuất, webhook. */
 function resolveNameValue(request: RequestInstance): string {
-  for (const field of request.fieldsSnapshot) {
-    if (field.code && TITLE_FIELD_CODES.has(field.code)) {
-      const value = formatFieldValueForPrint(field, request.values[field.id]);
-      if (value) return value;
-    }
-  }
-  return request.groupNameSnapshot;
+  return resolveRequestTitle(request);
 }
 
 /** Danh sách thẻ hệ thống cố định — luôn có sẵn, không phụ thuộc trường tuỳ chỉnh của nhóm. */
