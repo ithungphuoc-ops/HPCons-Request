@@ -8,6 +8,7 @@ import RequestStatusBadge, { STATUS_LABEL } from "@/components/request/RequestSt
 import RequestDetailView from "@/components/request/RequestDetailView";
 import { useRequestContext } from "@/context/RequestContext";
 import { primaryButtonClass } from "@/components/shared/form-styles";
+import HighlightMatch from "@/components/shared/HighlightMatch";
 import { resolveRequestTitle, TITLE_FIELD_CODES } from "@/lib/request-title";
 import type { ListLoadStatus, ProposalField, RequestInstance, RequestListScope } from "@/lib/types";
 
@@ -165,63 +166,7 @@ function chuanHoaTimKiem(s: string): string {
     .trim();
 }
 
-/** Chuẩn hoá 1 KÝ TỰ (không trim — giữ khoảng trắng để map vị trí chuẩn xác). */
-function chuanHoaKyTu(ch: string): string {
-  return ch
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/đ/g, "d")
-    .replace(/Đ/g, "d")
-    .toLowerCase();
-}
 
-/**
- * Tô màu phần chữ TRÙNG với từ khoá tìm kiếm — so khớp KHÔNG DẤU (gõ "phong
- * ban" vẫn tô đúng "Phòng ban") nhờ map từng ký tự chuẩn hoá về vị trí gốc.
- * Không có từ khoá/không trùng thì trả nguyên văn.
- */
-function HighlightText({ text, query }: { text: string; query: string }) {
-  const q = chuanHoaTimKiem(query);
-  if (!q) return <>{text}</>;
-
-  // Dựng chuỗi chuẩn hoá + map: mỗi CODE UNIT của chuỗi chuẩn hoá → index ký
-  // tự gốc (indexOf trả chỉ số theo code unit — map theo code unit mới khớp
-  // khi text có emoji/ký tự ngoài BMP). Ép NFC trước để dấu tiếng Việt dạng
-  // NFD (copy từ macOS) không bị tách rời khỏi chữ khi tô.
-  const chars = [...text.normalize("NFC")];
-  const map: number[] = [];
-  let norm = "";
-  chars.forEach((ch, i) => {
-    const n = chuanHoaKyTu(ch);
-    norm += n;
-    for (let k = 0; k < n.length; k++) map.push(i);
-  });
-
-  // Tìm MỌI lần xuất hiện, đổi về khoảng [start, end) trên chuỗi gốc.
-  const ranges: [number, number][] = [];
-  let from = 0;
-  for (;;) {
-    const at = norm.indexOf(q, from);
-    if (at === -1) break;
-    ranges.push([map[at], map[at + q.length - 1] + 1]);
-    from = at + q.length;
-  }
-  if (ranges.length === 0) return <>{text}</>;
-
-  const parts: React.ReactNode[] = [];
-  let cursor = 0;
-  ranges.forEach(([start, end], i) => {
-    if (start > cursor) parts.push(chars.slice(cursor, start).join(""));
-    parts.push(
-      <mark key={i} className="rounded-[2px] bg-amber-200 text-gray-900">
-        {chars.slice(start, end).join("")}
-      </mark>,
-    );
-    cursor = end;
-  });
-  if (cursor < chars.length) parts.push(chars.slice(cursor).join(""));
-  return <>{parts}</>;
-}
 
 export default function RequestListPage() {
   return (
@@ -534,7 +479,7 @@ function RequestListPageInner() {
                                 className="truncate font-semibold text-gray-800 transition-colors duration-150 group-hover:text-[var(--color-action-blue)]"
                                 title={resolveRequestTitle(r)}
                               >
-                                <HighlightText text={resolveRequestTitle(r)} query={searchText} />
+                                <HighlightMatch text={resolveRequestTitle(r)} query={searchText} />
                               </span>
                             </span>
                           </td>
@@ -548,7 +493,7 @@ function RequestListPageInner() {
                               {isDraft ? (
                                 `Cập nhật ${new Date(r.updatedAt ?? r.submittedAt).toLocaleString("vi-VN")}`
                               ) : notableFieldParts(r).length > 0 ? (
-                                <HighlightText text={notableFieldParts(r).join(" · ")} query={searchText} />
+                                <HighlightMatch text={notableFieldParts(r).join(" · ")} query={searchText} />
                               ) : (
                                 "—"
                               )}
@@ -559,7 +504,7 @@ function RequestListPageInner() {
                               {r.submittedBy.uid === currentUid ? (
                                 "Bạn"
                               ) : (
-                                <HighlightText text={r.submittedBy.name} query={searchText} />
+                                <HighlightMatch text={r.submittedBy.name} query={searchText} />
                               )}
                             </span>
                           </td>

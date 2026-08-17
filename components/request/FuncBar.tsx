@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
   BarChart3,
   ChevronLeft,
@@ -50,6 +50,7 @@ export default function FuncBar() {
   const currentScope = searchParams.get("scope") ?? "all";
   const { categoryGroups, openCreateGroup, mobileNavOpen, setMobileNavOpen } = useRequestContext();
   const { session, isAdmin } = useCurrentSession();
+  const [avatarFailed, setAvatarFailed] = useState(false);
 
   const pinnedGroups = categoryGroups.flatMap((cat) => cat.groups).filter((g) => g.pinned);
   // Bấm tên nhóm ở sidebar → xem danh sách đề xuất đã gửi trong nhóm đó
@@ -88,9 +89,22 @@ export default function FuncBar() {
 
       {session && (
         <div className="mx-2 mb-2 flex items-center gap-2 rounded px-2 py-2">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--color-action-blue)] text-[12px] font-semibold text-white">
-            {session.name.trim().charAt(0).toUpperCase() || "?"}
-          </span>
+          {/* Ảnh THẬT từ app tổng (chuẩn đồng bộ 17/08/2026); chưa có ảnh
+              hoặc ảnh lỗi → chữ cái, không bao giờ hiện ô ảnh vỡ. */}
+          {session.avatarUrl && !avatarFailed ? (
+            // eslint-disable-next-line @next/next/no-img-element -- ảnh R2 ngoài domain
+            <img
+              src={session.avatarUrl}
+              alt=""
+              className="h-8 w-8 shrink-0 rounded-full object-cover"
+              loading="lazy"
+              onError={() => setAvatarFailed(true)}
+            />
+          ) : (
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--color-action-blue)] text-[12px] font-semibold text-white">
+              {session.name.trim().charAt(0).toUpperCase() || "?"}
+            </span>
+          )}
           <div className="min-w-0">
             <p className="truncate text-[13px] font-medium text-gray-800">{session.name}</p>
             <p className="truncate text-[11px] text-gray-400">

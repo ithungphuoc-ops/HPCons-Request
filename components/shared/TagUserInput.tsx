@@ -1,23 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import HighlightMatch, { normalizeSearch } from "@/components/shared/HighlightMatch";
 import { X } from "lucide-react";
 import type { TaggedUser } from "@/lib/types";
 
-/** Tô sáng phần chữ khớp với từ khoá tìm kiếm — plain-match, khớp đúng luật lọc ở trên. */
-function HighlightMatch({ text, query }: { text: string; query: string }) {
-  const q = query.trim();
-  if (!q) return <>{text}</>;
-  const index = text.toLowerCase().indexOf(q.toLowerCase());
-  if (index === -1) return <>{text}</>;
-  return (
-    <>
-      {text.slice(0, index)}
-      <mark className="rounded bg-green-100 px-0.5 font-semibold text-green-800">{text.slice(index, index + q.length)}</mark>
-      {text.slice(index + q.length)}
-    </>
-  );
-}
 
 interface TagUserInputProps {
   value: TaggedUser[];
@@ -87,7 +74,7 @@ export default function TagUserInput({
   }, [browseAllDirectoryUrl]);
 
   useEffect(() => {
-    const term = query.replace("@", "").trim().toLowerCase();
+    const term = normalizeSearch(query.replace("@", "").trim());
     if (!term) {
       setResults([]);
       return;
@@ -98,8 +85,8 @@ export default function TagUserInput({
       const matches = directory.filter(
         (u) =>
           !selectedIds.has(u.id) &&
-          (u.name.toLowerCase().includes(term) ||
-            u.username.toLowerCase().includes(term)),
+          (normalizeSearch(u.name).includes(term) ||
+            normalizeSearch(u.username).includes(term)),
       );
       setResults(matches);
     }, 250);

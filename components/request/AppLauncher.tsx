@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import HighlightMatch from "@/components/shared/HighlightMatch";
 import {
   AppWindow,
   BarChart3,
@@ -186,20 +187,6 @@ export default function AppLauncher({ onClose }: { onClose: () => void }) {
   );
 }
 
-/** Tô sáng phần chữ khớp với từ khoá tìm kiếm — plain-match, khớp đúng luật lọc list ở trên. */
-function HighlightMatch({ text, query }: { text: string; query: string }) {
-  const q = query.trim();
-  if (!q) return <>{text}</>;
-  const index = text.toLowerCase().indexOf(q.toLowerCase());
-  if (index === -1) return <>{text}</>;
-  return (
-    <>
-      {text.slice(0, index)}
-      <mark className="rounded bg-green-100 px-0.5 font-semibold text-green-800">{text.slice(index, index + q.length)}</mark>
-      {text.slice(index + q.length)}
-    </>
-  );
-}
 
 function Tile({ app, query }: { app: RemoteApp; query: string }) {
   const Icon = (app.iconKey && ICONS[app.iconKey]) || AppWindow;

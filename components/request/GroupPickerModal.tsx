@@ -1,25 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import HighlightMatch, { normalizeSearch } from "@/components/shared/HighlightMatch";
 import { useRouter } from "next/navigation";
 import { Layers, Search } from "lucide-react";
 import Modal from "@/components/shared/Modal";
 import { useRequestContext } from "@/context/RequestContext";
 
-/** Tô sáng phần chữ khớp với từ khoá tìm kiếm — plain-match, khớp đúng luật lọc ở trên. */
-function HighlightMatch({ text, query }: { text: string; query: string }) {
-  const q = query.trim();
-  if (!q) return <>{text}</>;
-  const index = text.toLowerCase().indexOf(q.toLowerCase());
-  if (index === -1) return <>{text}</>;
-  return (
-    <>
-      {text.slice(0, index)}
-      <mark className="rounded bg-green-100 px-0.5 font-semibold text-green-800">{text.slice(index, index + q.length)}</mark>
-      {text.slice(index + q.length)}
-    </>
-  );
-}
 
 /**
  * Cửa sổ chọn nhóm khi bấm "Tạo đề xuất" — xem
@@ -34,7 +21,7 @@ export default function GroupPickerModal({ onClose }: { onClose: () => void }) {
   const [query, setQuery] = useState("");
 
   const filteredCategories = useMemo(() => {
-    const term = query.trim().toLowerCase();
+    const term = normalizeSearch(query.trim());
     return categoryGroups
       .map((cat) => ({
         ...cat,
@@ -42,8 +29,8 @@ export default function GroupPickerModal({ onClose }: { onClose: () => void }) {
           (g) =>
             g.status === "active" &&
             (term === "" ||
-              g.name.toLowerCase().includes(term) ||
-              g.description.toLowerCase().includes(term)),
+              normalizeSearch(g.name).includes(term) ||
+              normalizeSearch(g.description).includes(term)),
         ),
       }))
       .filter((cat) => cat.groups.length > 0);
