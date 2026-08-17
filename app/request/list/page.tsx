@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronRight, Plus, X } from "lucide-react";
+import { Check, Plus, X } from "lucide-react";
 import RequestStatusBadge from "@/components/request/RequestStatusBadge";
 import RequestDetailView from "@/components/request/RequestDetailView";
 import { useRequestContext } from "@/context/RequestContext";
@@ -253,7 +253,7 @@ function RequestListPageInner() {
             <h1 className="truncate text-[16px] font-semibold text-gray-900">
               {scope === "group" ? (group?.name ?? "Nhóm đề xuất") : "Danh sách đề xuất"}
             </h1>
-            <p className="truncate text-[12px] text-gray-400">
+            <p className="truncate text-[12px] text-gray-500">
               {scope === "group" ? "Đề xuất trong nhóm này" : (scopeLabels[scope] ?? scope)}
             </p>
           </div>
@@ -269,7 +269,7 @@ function RequestListPageInner() {
 
         <div className="flex-1 overflow-y-auto">
           {status === "loading" && (
-            <p className="px-4 py-6 text-[13px] text-gray-400">Đang tải...</p>
+            <p className="px-4 py-6 text-[13px] text-gray-500">Đang tải...</p>
           )}
           {status === "error" && (
             <p className="px-4 py-6 text-[13px] text-[var(--color-danger-red)]">
@@ -277,47 +277,129 @@ function RequestListPageInner() {
             </p>
           )}
           {status === "empty" && (
-            <p className="px-4 py-6 text-[13px] text-gray-400">Không có đề xuất nào ở mục này.</p>
+            <p className="px-4 py-6 text-[13px] text-gray-500">Không có đề xuất nào ở mục này.</p>
           )}
-          {/* Dòng danh sách: avatar chữ cái + tiêu đề + dòng phụ "Nhóm · người
-              gửi · ngày" + badge trạng thái. Hover: nền sáng nhẹ + vạch xanh
-              trái + tiêu đề đổi xanh + mũi tên trượt vào — chỉ đổi màu/mờ/
-              translate (không đổi kích thước, không giật layout), 150ms.
-              Vạch trái luôn chiếm sẵn 3px (transparent khi thường) nên
-              hover/chọn không xê dịch nội dung. */}
+          {/* CHƯA chọn đề xuất nào (danh sách toàn màn hình): kẻ BẢNG cột cố
+              định thẳng hàng — Sếp chốt 17/08/2026 sau khi chê bản chuỗi tự do
+              "thụt vào thụt ra". Bảng rộng cuộn ngang trong khung riêng (theo
+              chuẩn responsive nội bộ), không làm cả trang cuộn ngang. */}
+          {status === "loaded" && !selectedRequest && (
+            <div className="px-4 py-4">
+              <div className="overflow-x-auto rounded-lg border border-[var(--color-border)] bg-white">
+                <table className="w-full min-w-[960px] table-fixed border-collapse text-[13px]">
+                  <thead>
+                    <tr className="border-b border-[var(--color-border)] bg-gray-50 text-left text-[11px] uppercase tracking-wider text-gray-500">
+                      <th className="w-[26%] px-4 py-2.5 font-semibold">Tên đề xuất</th>
+                      <th className="w-[15%] px-4 py-2.5 font-semibold">Nhóm</th>
+                      <th className="px-4 py-2.5 font-semibold">Thông tin</th>
+                      <th className="w-[12%] px-4 py-2.5 font-semibold">Người gửi</th>
+                      <th className="w-[160px] px-4 py-2.5 font-semibold">Người duyệt</th>
+                      <th className="w-[150px] px-4 py-2.5 font-semibold">Trạng thái</th>
+                      <th className="w-[104px] px-4 py-2.5 text-right font-semibold">Ngày</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {requests.map((r) => {
+                      const isDraft = r.status === "draft";
+                      return (
+                        <tr
+                          key={r.id}
+                          tabIndex={0}
+                          onClick={() => (isDraft ? router.push(draftLinkFor(r)) : selectRequest(r.id))}
+                          onKeyDown={(e) => {
+                            // Cho phép mở bằng bàn phím (Tab tới dòng, Enter/Space mở)
+                            // — tr onClick suông không focus được bằng Tab.
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              if (isDraft) router.push(draftLinkFor(r));
+                              else selectRequest(r.id);
+                            }
+                          }}
+                          className="group cursor-pointer transition-colors duration-150 hover:bg-blue-50/40 focus-visible:bg-blue-50/60 focus-visible:outline-none"
+                        >
+                          <td className="px-4 py-2.5">
+                            <span className="flex items-center gap-2.5">
+                              <Avatar
+                                url={avatars[r.submittedBy.uid]}
+                                initial={submitterInitial(r)}
+                                size={28}
+                                fallbackClassName={
+                                  isDraft ? "bg-gray-100 text-gray-500" : "bg-blue-100 text-[var(--color-action-blue)]"
+                                }
+                              />
+                              <span className="truncate font-semibold text-gray-800 transition-colors duration-150 group-hover:text-[var(--color-action-blue)]">
+                                {resolveRequestTitle(r)}
+                              </span>
+                            </span>
+                          </td>
+                          <td className="px-4 py-2.5">
+                            <span className="block truncate text-gray-500">{r.groupNameSnapshot}</span>
+                          </td>
+                          <td className="px-4 py-2.5">
+                            <span className="block truncate text-gray-500" title={isDraft ? undefined : notableFieldParts(r).join(" · ")}>
+                              {isDraft
+                                ? `Cập nhật ${new Date(r.updatedAt ?? r.submittedAt).toLocaleString("vi-VN")}`
+                                : notableFieldParts(r).join(" · ") || "—"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2.5">
+                            <span className="block truncate text-gray-500">
+                              {r.submittedBy.uid === currentUid ? "Bạn" : r.submittedBy.name}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2.5">
+                            {!isDraft && r.approversSnapshot.length > 0 ? (
+                              <ApproverCluster request={r} avatars={avatars} />
+                            ) : (
+                              <span className="text-gray-300">—</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-2.5">
+                            <RequestStatusBadge status={r.status} />
+                          </td>
+                          <td className="px-4 py-2.5 text-right tabular-nums text-gray-500">
+                            {new Date(isDraft ? (r.updatedAt ?? r.submittedAt) : r.submittedAt).toLocaleDateString("vi-VN")}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* ĐANG mở box nội dung (cột trái 320px): dòng rút gọn 2 tầng —
+              bảng 7 cột không nhét vừa cột hẹp. Giữ hover/active như cũ. */}
           {status === "loaded" &&
+            selectedRequest &&
             requests.map((r) => {
               if (r.status === "draft") {
                 return (
                   <Link
                     key={r.id}
                     href={draftLinkFor(r)}
-                    className="group flex w-full cursor-pointer items-center gap-3 border-b border-l-[3px] border-gray-100 border-l-transparent px-4 py-3 text-left transition-colors duration-150 hover:border-l-gray-300 hover:bg-gray-50"
+                    className="flex w-full cursor-pointer items-center gap-2.5 border-b border-l-[3px] border-gray-100 border-l-transparent px-3 py-2.5 text-left transition-colors duration-150 hover:border-l-gray-300 hover:bg-gray-50"
                   >
                     <Avatar
                       url={avatars[r.submittedBy.uid]}
                       initial={submitterInitial(r)}
-                      size={36}
+                      size={28}
                       fallbackClassName="bg-gray-100 text-gray-500"
                     />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="truncate text-[13px]">
-                          <span className="font-semibold text-gray-700">{resolveRequestTitle(r)}</span>
-                          <span className="text-gray-400">
-                            {"   "}Nhóm: {r.groupNameSnapshot} · cập nhật{" "}
-                            {new Date(r.updatedAt ?? r.submittedAt).toLocaleString("vi-VN")}
-                          </span>
+                        <span className="truncate text-[13px] font-semibold text-gray-700">
+                          {resolveRequestTitle(r)}
                         </span>
-                        <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-500">
-                          Nháp
+                        <span className="shrink-0">
+                          <RequestStatusBadge status={r.status} />
                         </span>
                       </div>
+                      <span className="mt-0.5 block truncate text-[11px] text-gray-500">
+                        {r.groupNameSnapshot} · {new Date(r.updatedAt ?? r.submittedAt).toLocaleDateString("vi-VN")}
+                      </span>
                     </div>
-                    <ChevronRight
-                      size={15}
-                      className="shrink-0 text-gray-300 opacity-0 transition-all duration-150 group-hover:translate-x-0.5 group-hover:opacity-100"
-                    />
                   </Link>
                 );
               }
@@ -327,7 +409,7 @@ function RequestListPageInner() {
                   key={r.id}
                   type="button"
                   onClick={() => selectRequest(r.id)}
-                  className={`group flex w-full cursor-pointer items-center gap-3 border-b border-l-[3px] border-gray-100 px-4 py-3 text-left transition-colors duration-150 ${
+                  className={`flex w-full cursor-pointer items-center gap-2.5 border-b border-l-[3px] border-gray-100 px-3 py-2.5 text-left transition-colors duration-150 ${
                     isActive
                       ? "border-l-[var(--color-action-blue)] bg-blue-50"
                       : "border-l-transparent hover:border-l-[var(--color-action-blue)] hover:bg-blue-50/40"
@@ -336,8 +418,7 @@ function RequestListPageInner() {
                   <Avatar
                     url={avatars[r.submittedBy.uid]}
                     initial={submitterInitial(r)}
-                    size={36}
-                    className={isActive ? "ring-2 ring-[var(--color-action-blue)]" : ""}
+                    size={28}
                     fallbackClassName={
                       isActive
                         ? "bg-[var(--color-action-blue)] text-white"
@@ -346,53 +427,21 @@ function RequestListPageInner() {
                   />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
-                      {/* Tiêu đề + thông tin phụ trên CÙNG 1 dòng, chữ to bằng
-                          nhau như Base.vn thật (Sếp chốt 17/08/2026) — tiêu đề
-                          đậm, phần thông tin nhạt hơn, dài quá thì cắt "...". */}
-                      <span className="truncate text-[13px]">
-                        <span
-                          className={`font-semibold transition-colors duration-150 ${
-                            isActive
-                              ? "text-[var(--color-action-blue)]"
-                              : "text-gray-800 group-hover:text-[var(--color-action-blue)]"
-                          }`}
-                        >
-                          {resolveRequestTitle(r)}
-                        </span>
-                        <span className="text-gray-400">
-                          {"   "}
-                          {[
-                            `Nhóm: ${r.groupNameSnapshot}`,
-                            ...notableFieldParts(r),
-                            r.submittedBy.uid === currentUid ? "Bạn" : r.submittedBy.name,
-                          ].join(" · ")}
-                          <span className="sm:hidden">
-                            {" · "}
-                            {new Date(r.submittedAt).toLocaleDateString("vi-VN")}
-                          </span>
-                        </span>
+                      <span
+                        className={`truncate text-[13px] font-semibold ${
+                          isActive ? "text-[var(--color-action-blue)]" : "text-gray-800"
+                        }`}
+                      >
+                        {resolveRequestTitle(r)}
                       </span>
-                      <div className="flex shrink-0 items-center gap-3">
-                        {/* Cụm người duyệt (ảnh + chấm quyết định) — ẩn trên màn
-                            hình hẹp, đã có badge trạng thái tổng thay thế. */}
-                        <span className="hidden md:flex">
-                          <ApproverCluster request={r} avatars={avatars} />
-                        </span>
+                      <span className="shrink-0">
                         <RequestStatusBadge status={r.status} />
-                        <span className="hidden w-[72px] text-right text-[11px] tabular-nums text-gray-400 sm:block">
-                          {new Date(r.submittedAt).toLocaleDateString("vi-VN")}
-                        </span>
-                      </div>
+                      </span>
                     </div>
+                    <span className="mt-0.5 block truncate text-[11px] text-gray-500">
+                      {r.groupNameSnapshot} · {new Date(r.submittedAt).toLocaleDateString("vi-VN")}
+                    </span>
                   </div>
-                  <ChevronRight
-                    size={15}
-                    className={`shrink-0 transition-all duration-150 ${
-                      isActive
-                        ? "translate-x-0.5 text-[var(--color-action-blue)] opacity-100"
-                        : "text-gray-300 opacity-0 group-hover:translate-x-0.5 group-hover:opacity-100"
-                    }`}
-                  />
                 </button>
               );
             })}

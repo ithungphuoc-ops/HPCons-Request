@@ -19,7 +19,7 @@ const STATUS_CLASS: Record<RequestStatus, string> = {
 export default function RequestStatusBadge({ status }: { status: RequestStatus }) {
   return (
     <span
-      className={`inline-flex h-6 items-center rounded-full px-2.5 text-[12px] font-medium ${STATUS_CLASS[status]}`}
+      className={`inline-flex h-6 items-center whitespace-nowrap rounded-full px-2.5 text-[12px] font-medium ${STATUS_CLASS[status]}`}
     >
       {STATUS_LABEL[status]}
     </span>
