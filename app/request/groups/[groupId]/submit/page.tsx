@@ -573,7 +573,7 @@ function FieldRow({
         <FieldControl field={field} value={value} onChange={onChange} readOnlyComputed={readOnlyComputed} />
         {readOnlyComputed && (
           <p className="mt-1 text-[12px] text-gray-400">
-            Tự động ghép từ trường khác — thay đổi các trường liên quan để cập nhật.
+            Tên đề xuất được lấy tự động từ thông tin bên dưới — không nhập tay ở đây.
           </p>
         )}
         {error && <p className="mt-1 text-[12px] text-[var(--color-danger-red)]">{error}</p>}
