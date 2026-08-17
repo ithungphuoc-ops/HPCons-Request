@@ -111,16 +111,17 @@ function ApproverCluster({
   const shown = request.approversSnapshot.slice(0, 3);
   const extra = request.approversSnapshot.length - shown.length;
   return (
-    <span className="flex items-center">
-      {shown.map((user, i) => {
+    // Tách rời từng người, có khoảng cách — KHÔNG chồng avatar lên nhau
+    // (Sếp góp ý 17/08/2026 sau khi xem bản đầu).
+    <span className="flex items-center gap-1.5">
+      {shown.map((user) => {
         const decision = decisionById.get(user.id) ?? "pending";
         return (
-          <span key={user.id} className={`relative ${i > 0 ? "-ml-1.5" : ""}`} title={`${user.name} — ${decision === "approved" ? "đã duyệt" : decision === "rejected" ? "từ chối" : "đang chờ"}`}>
+          <span key={user.id} className="relative" title={`${user.name} — ${decision === "approved" ? "đã duyệt" : decision === "rejected" ? "từ chối" : "đang chờ"}`}>
             <Avatar
               url={avatars[user.id]}
               initial={user.avatarInitial || user.name.charAt(0).toUpperCase()}
               size={24}
-              className="ring-2 ring-white"
               fallbackClassName="bg-gray-200 text-gray-600"
             />
             <span
@@ -135,7 +136,7 @@ function ApproverCluster({
         );
       })}
       {extra > 0 && (
-        <span className="-ml-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-gray-100 text-[10px] font-semibold text-gray-500 ring-2 ring-white">
+        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-100 text-[10px] font-semibold text-gray-500">
           +{extra}
         </span>
       )}
@@ -301,17 +302,17 @@ function RequestListPageInner() {
                     />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="truncate text-[13px] font-semibold text-gray-700">
-                          {resolveRequestTitle(r)}
+                        <span className="truncate text-[13px]">
+                          <span className="font-semibold text-gray-700">{resolveRequestTitle(r)}</span>
+                          <span className="text-gray-400">
+                            {"   "}Nhóm: {r.groupNameSnapshot} · cập nhật{" "}
+                            {new Date(r.updatedAt ?? r.submittedAt).toLocaleString("vi-VN")}
+                          </span>
                         </span>
                         <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-500">
                           Nháp
                         </span>
                       </div>
-                      <span className="mt-0.5 block truncate text-[11px] text-gray-400">
-                        Nhóm: {r.groupNameSnapshot} · cập nhật{" "}
-                        {new Date(r.updatedAt ?? r.submittedAt).toLocaleString("vi-VN")}
-                      </span>
                     </div>
                     <ChevronRight
                       size={15}
@@ -345,14 +346,31 @@ function RequestListPageInner() {
                   />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
-                      <span
-                        className={`truncate text-[13px] font-semibold transition-colors duration-150 ${
-                          isActive
-                            ? "text-[var(--color-action-blue)]"
-                            : "text-gray-800 group-hover:text-[var(--color-action-blue)]"
-                        }`}
-                      >
-                        {resolveRequestTitle(r)}
+                      {/* Tiêu đề + thông tin phụ trên CÙNG 1 dòng, chữ to bằng
+                          nhau như Base.vn thật (Sếp chốt 17/08/2026) — tiêu đề
+                          đậm, phần thông tin nhạt hơn, dài quá thì cắt "...". */}
+                      <span className="truncate text-[13px]">
+                        <span
+                          className={`font-semibold transition-colors duration-150 ${
+                            isActive
+                              ? "text-[var(--color-action-blue)]"
+                              : "text-gray-800 group-hover:text-[var(--color-action-blue)]"
+                          }`}
+                        >
+                          {resolveRequestTitle(r)}
+                        </span>
+                        <span className="text-gray-400">
+                          {"   "}
+                          {[
+                            `Nhóm: ${r.groupNameSnapshot}`,
+                            ...notableFieldParts(r),
+                            r.submittedBy.uid === currentUid ? "Bạn" : r.submittedBy.name,
+                          ].join(" · ")}
+                          <span className="sm:hidden">
+                            {" · "}
+                            {new Date(r.submittedAt).toLocaleDateString("vi-VN")}
+                          </span>
+                        </span>
                       </span>
                       <div className="flex shrink-0 items-center gap-3">
                         {/* Cụm người duyệt (ảnh + chấm quyết định) — ẩn trên màn
@@ -366,19 +384,6 @@ function RequestListPageInner() {
                         </span>
                       </div>
                     </div>
-                    {/* Chuỗi phụ kiểu Base.vn: Nhóm + tối đa 3 field nổi bật của
-                        chính đề xuất + người gửi (Sếp chốt 17/08/2026). */}
-                    <span className="mt-0.5 block truncate text-[11px] text-gray-400">
-                      {[
-                        `Nhóm: ${r.groupNameSnapshot}`,
-                        ...notableFieldParts(r),
-                        r.submittedBy.uid === currentUid ? "Bạn" : r.submittedBy.name,
-                      ].join(" · ")}
-                      <span className="sm:hidden">
-                        {" · "}
-                        {new Date(r.submittedAt).toLocaleDateString("vi-VN")}
-                      </span>
-                    </span>
                   </div>
                   <ChevronRight
                     size={15}
