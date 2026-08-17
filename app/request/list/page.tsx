@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { Plus, X } from "lucide-react";
+import { ChevronRight, Plus, X } from "lucide-react";
 import RequestStatusBadge from "@/components/request/RequestStatusBadge";
 import RequestDetailView from "@/components/request/RequestDetailView";
 import { useRequestContext } from "@/context/RequestContext";
@@ -18,6 +18,12 @@ const scopeLabels: Record<RequestListScope, string> = {
   following: "Đang theo dõi",
   group: "Nhóm đề xuất",
 };
+
+/** Chữ cái đầu của tên người gửi làm avatar tròn — RequestSubmitter không có
+ * sẵn avatarInitial (khác TaggedUser), lấy từ ký tự đầu của name. */
+function submitterInitial(r: RequestInstance): string {
+  return (r.submittedBy.name?.trim().charAt(0) || "?").toUpperCase();
+}
 
 function draftLinkFor(r: RequestInstance): string {
   return r.groupId
@@ -125,6 +131,12 @@ function RequestListPageInner() {
           {status === "empty" && (
             <p className="px-4 py-6 text-[13px] text-gray-400">Không có đề xuất nào ở mục này.</p>
           )}
+          {/* Dòng danh sách: avatar chữ cái + tiêu đề + dòng phụ "Nhóm · người
+              gửi · ngày" + badge trạng thái. Hover: nền sáng nhẹ + vạch xanh
+              trái + tiêu đề đổi xanh + mũi tên trượt vào — chỉ đổi màu/mờ/
+              translate (không đổi kích thước, không giật layout), 150ms.
+              Vạch trái luôn chiếm sẵn 3px (transparent khi thường) nên
+              hover/chọn không xê dịch nội dung. */}
           {status === "loaded" &&
             requests.map((r) => {
               if (r.status === "draft") {
@@ -132,15 +144,29 @@ function RequestListPageInner() {
                   <Link
                     key={r.id}
                     href={draftLinkFor(r)}
-                    className="flex flex-col gap-1 border-b border-gray-100 px-4 py-3 text-left hover:bg-gray-50"
+                    className="group flex w-full cursor-pointer items-center gap-3 border-b border-l-[3px] border-gray-100 border-l-transparent px-4 py-3 text-left transition-colors duration-150 hover:border-l-gray-300 hover:bg-gray-50"
                   >
-                    <span className="truncate text-[13px] font-medium text-gray-800">
-                      {resolveRequestTitle(r)}
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gray-100 text-[13px] font-semibold text-gray-500">
+                      {submitterInitial(r)}
                     </span>
-                    <span className="truncate text-[11px] text-gray-400">
-                      {r.groupNameSnapshot} · Nháp · cập nhật{" "}
-                      {new Date(r.updatedAt ?? r.submittedAt).toLocaleString("vi-VN")}
-                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate text-[13px] font-semibold text-gray-700">
+                          {resolveRequestTitle(r)}
+                        </span>
+                        <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-500">
+                          Nháp
+                        </span>
+                      </div>
+                      <span className="mt-0.5 block truncate text-[11px] text-gray-400">
+                        {r.groupNameSnapshot} · cập nhật{" "}
+                        {new Date(r.updatedAt ?? r.submittedAt).toLocaleString("vi-VN")}
+                      </span>
+                    </div>
+                    <ChevronRight
+                      size={15}
+                      className="shrink-0 text-gray-300 opacity-0 transition-all duration-150 group-hover:translate-x-0.5 group-hover:opacity-100"
+                    />
                   </Link>
                 );
               }
@@ -150,22 +176,49 @@ function RequestListPageInner() {
                   key={r.id}
                   type="button"
                   onClick={() => selectRequest(r.id)}
-                  className={`flex w-full flex-col gap-1 border-b border-gray-100 px-4 py-3 text-left ${
-                    isActive ? "bg-blue-50" : "hover:bg-gray-50"
+                  className={`group flex w-full cursor-pointer items-center gap-3 border-b border-l-[3px] border-gray-100 px-4 py-3 text-left transition-colors duration-150 ${
+                    isActive
+                      ? "border-l-[var(--color-action-blue)] bg-blue-50"
+                      : "border-l-transparent hover:border-l-[var(--color-action-blue)] hover:bg-blue-50/40"
                   }`}
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="truncate text-[13px] font-medium text-gray-800">
-                      {resolveRequestTitle(r)}
-                    </span>
-                    <RequestStatusBadge status={r.status} />
-                  </div>
-                  {/* Nhóm đề xuất · người gửi · ngày đề nghị (Sếp chốt 17/08/2026) */}
-                  <span className="truncate text-[11px] text-gray-400">
-                    {r.groupNameSnapshot} ·{" "}
-                    {r.submittedBy.uid === currentUid ? "Bạn" : r.submittedBy.name} ·{" "}
-                    {new Date(r.submittedAt).toLocaleDateString("vi-VN")}
+                  <span
+                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[13px] font-semibold transition-colors duration-150 ${
+                      isActive
+                        ? "bg-[var(--color-action-blue)] text-white"
+                        : "bg-blue-100 text-[var(--color-action-blue)]"
+                    }`}
+                  >
+                    {submitterInitial(r)}
                   </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span
+                        className={`truncate text-[13px] font-semibold transition-colors duration-150 ${
+                          isActive
+                            ? "text-[var(--color-action-blue)]"
+                            : "text-gray-800 group-hover:text-[var(--color-action-blue)]"
+                        }`}
+                      >
+                        {resolveRequestTitle(r)}
+                      </span>
+                      <RequestStatusBadge status={r.status} />
+                    </div>
+                    {/* Nhóm đề xuất · người gửi · ngày đề nghị (Sếp chốt 17/08/2026) */}
+                    <span className="mt-0.5 block truncate text-[11px] text-gray-400">
+                      {r.groupNameSnapshot} ·{" "}
+                      {r.submittedBy.uid === currentUid ? "Bạn" : r.submittedBy.name} ·{" "}
+                      {new Date(r.submittedAt).toLocaleDateString("vi-VN")}
+                    </span>
+                  </div>
+                  <ChevronRight
+                    size={15}
+                    className={`shrink-0 transition-all duration-150 ${
+                      isActive
+                        ? "translate-x-0.5 text-[var(--color-action-blue)] opacity-100"
+                        : "text-gray-300 opacity-0 group-hover:translate-x-0.5 group-hover:opacity-100"
+                    }`}
+                  />
                 </button>
               );
             })}
