@@ -84,16 +84,20 @@ function formatListValue(field: ProposalField, value: unknown): string {
   return s;
 }
 
-/** Tối đa 3 mẩu "Tên field: giá trị" cho chuỗi thông tin phụ của 1 dòng —
- * không hard-code tên field nào, nhóm nào cũng tự ra thông tin của nhóm đó. */
-function notableFieldParts(r: RequestInstance): string[] {
+/** Tối đa 3 cặp {tên field, giá trị} nổi bật của 1 đề xuất — dùng chung cho
+ * chuỗi hiển thị lẫn phạm vi tìm kiếm (chỉ tìm trên GIÁ TRỊ, không tìm trên
+ * tên field để khỏi khớp nhầm mọi dòng có cùng field). */
+function notableFields(r: RequestInstance): { name: string; value: string }[] {
   return r.fieldsSnapshot
     .filter((f) => NOTABLE_FIELD_TYPES.has(f.dataType) && !(f.code && TITLE_FIELD_CODES.has(f.code)))
     .sort((a, b) => a.order - b.order)
     .map((f) => ({ name: f.name, value: formatListValue(f, r.values[f.id]) }))
     .filter((x) => x.value)
-    .slice(0, 3)
-    .map((x) => `${x.name}: ${x.value}`);
+    .slice(0, 3);
+}
+
+function notableFieldParts(r: RequestInstance): string[] {
+  return notableFields(r).map((x) => `${x.name}: ${x.value}`);
 }
 
 /** Cụm avatar người duyệt chồng nhau (tối đa 3 + "+N"), mỗi avatar có chấm
@@ -159,6 +163,64 @@ function chuanHoaTimKiem(s: string): string {
     .replace(/Đ/g, "d")
     .toLowerCase()
     .trim();
+}
+
+/** Chuẩn hoá 1 KÝ TỰ (không trim — giữ khoảng trắng để map vị trí chuẩn xác). */
+function chuanHoaKyTu(ch: string): string {
+  return ch
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "d")
+    .toLowerCase();
+}
+
+/**
+ * Tô màu phần chữ TRÙNG với từ khoá tìm kiếm — so khớp KHÔNG DẤU (gõ "phong
+ * ban" vẫn tô đúng "Phòng ban") nhờ map từng ký tự chuẩn hoá về vị trí gốc.
+ * Không có từ khoá/không trùng thì trả nguyên văn.
+ */
+function HighlightText({ text, query }: { text: string; query: string }) {
+  const q = chuanHoaTimKiem(query);
+  if (!q) return <>{text}</>;
+
+  // Dựng chuỗi chuẩn hoá + map: mỗi CODE UNIT của chuỗi chuẩn hoá → index ký
+  // tự gốc (indexOf trả chỉ số theo code unit — map theo code unit mới khớp
+  // khi text có emoji/ký tự ngoài BMP). Ép NFC trước để dấu tiếng Việt dạng
+  // NFD (copy từ macOS) không bị tách rời khỏi chữ khi tô.
+  const chars = [...text.normalize("NFC")];
+  const map: number[] = [];
+  let norm = "";
+  chars.forEach((ch, i) => {
+    const n = chuanHoaKyTu(ch);
+    norm += n;
+    for (let k = 0; k < n.length; k++) map.push(i);
+  });
+
+  // Tìm MỌI lần xuất hiện, đổi về khoảng [start, end) trên chuỗi gốc.
+  const ranges: [number, number][] = [];
+  let from = 0;
+  for (;;) {
+    const at = norm.indexOf(q, from);
+    if (at === -1) break;
+    ranges.push([map[at], map[at + q.length - 1] + 1]);
+    from = at + q.length;
+  }
+  if (ranges.length === 0) return <>{text}</>;
+
+  const parts: React.ReactNode[] = [];
+  let cursor = 0;
+  ranges.forEach(([start, end], i) => {
+    if (start > cursor) parts.push(chars.slice(cursor, start).join(""));
+    parts.push(
+      <mark key={i} className="rounded-[2px] bg-amber-200 text-gray-900">
+        {chars.slice(start, end).join("")}
+      </mark>,
+    );
+    cursor = end;
+  });
+  if (cursor < chars.length) parts.push(chars.slice(cursor).join(""));
+  return <>{parts}</>;
 }
 
 export default function RequestListPage() {
@@ -265,7 +327,18 @@ function RequestListPageInner() {
     return requests.filter((r) => {
       if (filterStatus !== "all" && r.status !== filterStatus) return false;
       if (filterGroup !== "all" && r.groupNameSnapshot !== filterGroup) return false;
-      if (q && !chuanHoaTimKiem(resolveRequestTitle(r)).includes(q)) return false;
+      if (q) {
+        // Tìm trên: tên đề xuất + GIÁ TRỊ các field nổi bật (gồm phòng ban)
+        // + tên người gửi (Sếp chốt 17/08/2026) — đều không phụ thuộc dấu.
+        const haystack = chuanHoaTimKiem(
+          [
+            resolveRequestTitle(r),
+            ...notableFields(r).map((x) => x.value),
+            r.submittedBy.name,
+          ].join(" | "),
+        );
+        if (!haystack.includes(q)) return false;
+      }
       return true;
     });
   }, [requests, searchText, filterStatus, filterGroup]);
@@ -348,8 +421,8 @@ function RequestListPageInner() {
               <input
                 value={searchText}
                 onChange={(e) => setSearchText(e.target.value)}
-                placeholder="Tìm theo tên đề xuất..."
-                aria-label="Tìm theo tên đề xuất"
+                placeholder="Tìm theo tên, phòng ban, người gửi..."
+                aria-label="Tìm theo tên đề xuất, phòng ban, hoặc người gửi"
                 className="h-8 w-[220px] rounded border border-[var(--color-border)] pl-8 pr-2.5 text-[13px] text-gray-800 outline-none transition-colors duration-150 focus:border-[var(--color-action-blue)]"
               />
             </label>
@@ -461,7 +534,7 @@ function RequestListPageInner() {
                                 className="truncate font-semibold text-gray-800 transition-colors duration-150 group-hover:text-[var(--color-action-blue)]"
                                 title={resolveRequestTitle(r)}
                               >
-                                {resolveRequestTitle(r)}
+                                <HighlightText text={resolveRequestTitle(r)} query={searchText} />
                               </span>
                             </span>
                           </td>
@@ -472,14 +545,22 @@ function RequestListPageInner() {
                           </td>
                           <td className="px-4 py-2.5">
                             <span className="block truncate text-gray-500" title={isDraft ? undefined : notableFieldParts(r).join(" · ")}>
-                              {isDraft
-                                ? `Cập nhật ${new Date(r.updatedAt ?? r.submittedAt).toLocaleString("vi-VN")}`
-                                : notableFieldParts(r).join(" · ") || "—"}
+                              {isDraft ? (
+                                `Cập nhật ${new Date(r.updatedAt ?? r.submittedAt).toLocaleString("vi-VN")}`
+                              ) : notableFieldParts(r).length > 0 ? (
+                                <HighlightText text={notableFieldParts(r).join(" · ")} query={searchText} />
+                              ) : (
+                                "—"
+                              )}
                             </span>
                           </td>
                           <td className="px-4 py-2.5">
                             <span className="block truncate text-gray-500">
-                              {r.submittedBy.uid === currentUid ? "Bạn" : r.submittedBy.name}
+                              {r.submittedBy.uid === currentUid ? (
+                                "Bạn"
+                              ) : (
+                                <HighlightText text={r.submittedBy.name} query={searchText} />
+                              )}
                             </span>
                           </td>
                           <td className="px-4 py-2.5">
