@@ -11,13 +11,13 @@ import {
 } from "./validation";
 
 describe("nextCounterCode", () => {
-  it("bắt đầu từ 000001 khi chưa có giá trị hiện tại", () => {
-    expect(nextCounterCode(undefined)).toEqual({ next: 2, code: "000001" });
+  it("bắt đầu từ 000000001 khi chưa có giá trị hiện tại", () => {
+    expect(nextCounterCode(undefined)).toEqual({ next: 2, code: "000000001" });
   });
 
-  it("tăng dần và giữ định dạng 6 chữ số", () => {
-    expect(nextCounterCode(1)).toEqual({ next: 2, code: "000001" });
-    expect(nextCounterCode(41)).toEqual({ next: 42, code: "000041" });
+  it("tăng dần và giữ định dạng 9 chữ số (Sếp chốt 17/08/2026)", () => {
+    expect(nextCounterCode(1)).toEqual({ next: 2, code: "000000001" });
+    expect(nextCounterCode(41)).toEqual({ next: 42, code: "000000041" });
   });
 
   it("2 lần gọi liên tiếp (mô phỏng gửi đồng thời) cho ra mã khác nhau", () => {
@@ -26,9 +26,9 @@ describe("nextCounterCode", () => {
     expect(first.code).not.toBe(second.code);
   });
 
-  it("vượt quá 999999 vẫn hiện đủ số, không lỗi", () => {
-    expect(nextCounterCode(999999).code).toBe("999999");
-    expect(nextCounterCode(1000000).code).toBe("1000000");
+  it("vượt quá 999999999 vẫn hiện đủ số, không lỗi", () => {
+    expect(nextCounterCode(999999999).code).toBe("999999999");
+    expect(nextCounterCode(1000000000).code).toBe("1000000000");
   });
 });
 

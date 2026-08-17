@@ -56,6 +56,8 @@
 
 - [x] 11.1 `app/request/list/page.tsx` — bỏ tự chọn sẵn đề xuất đầu tiên; chưa chọn gì thì danh sách chiếm toàn chiều rộng, không render khung nội dung
 - [x] 11.2 Bấm 1 đề xuất → danh sách thu về cột trái 320px + box nội dung hiện bên phải (màn hình nhỏ ẩn cột danh sách để box đủ chỗ đọc); nút "Đóng" (X) quay lại danh sách toàn màn hình
+- [x] 11.3 Dòng danh sách hiện đủ: tên đề xuất (đậm) + dòng phụ "Nhóm đề xuất · người gửi · ngày đề nghị" (Sếp chốt 17/08/2026; áp dụng cả dòng nháp)
+- [x] 11.4 Mã đề nghị đổi từ 6 → 9 chữ số (`nextCounterCode` padStart 9; Sếp chốt 17/08/2026) — mã cũ đã cấp trong đề xuất đã gửi GIỮ NGUYÊN, chỉ mã cấp mới theo 9 số; cập nhật test validation.test.ts
 
 ## 10. Kiểm tra tổng thể trước khi archive
 

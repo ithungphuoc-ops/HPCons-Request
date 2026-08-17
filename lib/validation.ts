@@ -7,14 +7,16 @@ import type { FieldDataType } from "./types";
  * Không tin nội dung client gửi lên dù chỉ hiển thị lại cho người trong công ty.
  */
 /**
- * Phần tính toán THUẦN của mã đề xuất (6 chữ số tăng dần) — tách khỏi
- * transaction Firestore thật (lib/server/requests.ts, "server-only" nên
- * không test trực tiếp được) để test được logic định dạng/tăng số bằng
- * vitest, theo đúng cách các hàm khác trong file này đã làm.
+ * Phần tính toán THUẦN của mã đề xuất (9 chữ số tăng dần — Sếp chốt
+ * 17/08/2026, trước đó 6 chữ số; mã cũ đã cấp giữ nguyên trong đề xuất đã
+ * gửi, chỉ mã cấp MỚI theo định dạng 9 số) — tách khỏi transaction Firestore
+ * thật (lib/server/requests.ts, "server-only" nên không test trực tiếp được)
+ * để test được logic định dạng/tăng số bằng vitest, theo đúng cách các hàm
+ * khác trong file này đã làm.
  */
 export function nextCounterCode(current: number | undefined): { next: number; code: string } {
   const value = current ?? 1;
-  return { next: value + 1, code: String(value).padStart(6, "0") };
+  return { next: value + 1, code: String(value).padStart(9, "0") };
 }
 
 export function sanitizeDescriptionHtml(html: string): string {

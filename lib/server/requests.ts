@@ -92,8 +92,9 @@ export function toProposalGroup(id: string, data: Record<string, unknown>): Prop
 /**
  * Mã đề xuất hiển thị cho người dùng — số nguyên tăng dần, cấp qua transaction
  * trên 1 document đếm dùng chung (counters/requestCode) để không trùng khi
- * nhiều người gửi cùng lúc. Định dạng 6 chữ số (000001, 000002...) — nếu vượt
- * quá 999999 thì hiện nhiều hơn 6 số, vẫn duy nhất, không lỗi.
+ * nhiều người gửi cùng lúc. Định dạng 9 chữ số (000000001... — Sếp chốt
+ * 17/08/2026, mã 6 số đã cấp trước đó giữ nguyên) — nếu vượt quá 999999999
+ * thì hiện nhiều hơn 9 số, vẫn duy nhất, không lỗi.
  */
 export async function generateRequestCode(): Promise<string> {
   const counterRef = adminDb.collection("counters").doc("requestCode");
@@ -109,7 +110,7 @@ export async function generateRequestCode(): Promise<string> {
  * Mã đề xuất RIÊNG cho 1 nhóm đã bật `useOwnCounter` — transaction TRÊN
  * document đếm riêng (`counters/group_{groupId}`, tách biệt hoàn toàn khỏi
  * `counters/requestCode` dùng chung) nên không ảnh hưởng số thứ tự của nhóm
- * khác hay bộ đếm toàn hệ thống. Cùng định dạng 6 chữ số với generateRequestCode().
+ * khác hay bộ đếm toàn hệ thống. Cùng định dạng 9 chữ số với generateRequestCode().
  */
 export async function generateGroupRequestCode(groupId: string): Promise<string> {
   const counterRef = adminDb.collection("counters").doc(`group_${groupId}`);

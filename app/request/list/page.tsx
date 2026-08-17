@@ -137,8 +137,9 @@ function RequestListPageInner() {
                     <span className="truncate text-[13px] font-medium text-gray-800">
                       {resolveRequestTitle(r)}
                     </span>
-                    <span className="text-[11px] text-gray-400">
-                      Nháp · cập nhật {new Date(r.updatedAt ?? r.submittedAt).toLocaleString("vi-VN")}
+                    <span className="truncate text-[11px] text-gray-400">
+                      {r.groupNameSnapshot} · Nháp · cập nhật{" "}
+                      {new Date(r.updatedAt ?? r.submittedAt).toLocaleString("vi-VN")}
                     </span>
                   </Link>
                 );
@@ -159,7 +160,9 @@ function RequestListPageInner() {
                     </span>
                     <RequestStatusBadge status={r.status} />
                   </div>
+                  {/* Nhóm đề xuất · người gửi · ngày đề nghị (Sếp chốt 17/08/2026) */}
                   <span className="truncate text-[11px] text-gray-400">
+                    {r.groupNameSnapshot} ·{" "}
                     {r.submittedBy.uid === currentUid ? "Bạn" : r.submittedBy.name} ·{" "}
                     {new Date(r.submittedAt).toLocaleDateString("vi-VN")}
                   </span>
