@@ -1,6 +1,6 @@
 import type { RequestStatus } from "@/lib/types";
 
-const STATUS_LABEL: Record<RequestStatus, string> = {
+export const STATUS_LABEL: Record<RequestStatus, string> = {
   draft: "Đã lưu nháp",
   pending: "Đang chờ duyệt",
   approved: "Đã chấp thuận",

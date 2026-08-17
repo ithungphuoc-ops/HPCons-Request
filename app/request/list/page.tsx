@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { Check, Plus, X } from "lucide-react";
-import RequestStatusBadge from "@/components/request/RequestStatusBadge";
+import { Check, Download, Plus, Search, X } from "lucide-react";
+import RequestStatusBadge, { STATUS_LABEL } from "@/components/request/RequestStatusBadge";
 import RequestDetailView from "@/components/request/RequestDetailView";
 import { useRequestContext } from "@/context/RequestContext";
 import { primaryButtonClass } from "@/components/shared/form-styles";
@@ -150,6 +150,17 @@ function draftLinkFor(r: RequestInstance): string {
     : `/request/direct/new?draftId=${r.id}`;
 }
 
+/** Bỏ dấu tiếng Việt + hạ chữ thường để tìm kiếm không phụ thuộc dấu ("de nghi" khớp "Đề nghị"). */
+function chuanHoaTimKiem(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "d")
+    .toLowerCase()
+    .trim();
+}
+
 export default function RequestListPage() {
   return (
     <Suspense fallback={null}>
@@ -175,6 +186,11 @@ function RequestListPageInner() {
   // tải lại uid đã biết).
   const [avatars, setAvatars] = useState<Record<string, string | null>>({});
   const avatarCache = useRef(new Map<string, string | null>());
+  // Bộ lọc client-side trên danh sách đã tải (Sếp yêu cầu 17/08/2026):
+  // tìm theo tên (không dấu), lọc trạng thái, lọc nhóm.
+  const [searchText, setSearchText] = useState("");
+  const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [filterGroup, setFilterGroup] = useState<string>("all");
 
   const load = () => {
     setStatus("loading");
@@ -190,6 +206,15 @@ function RequestListPageInner() {
   };
 
   useEffect(load, [scope, groupId]);
+
+  // Đổi scope/nhóm thì reset bộ lọc — tránh cảnh mang bộ lọc cũ sang danh
+  // sách mới (select Nhóm trỏ tới nhóm không tồn tại → hiển thị trống + bảng
+  // rỗng khó hiểu).
+  useEffect(() => {
+    setSearchText("");
+    setFilterStatus("all");
+    setFilterGroup("all");
+  }, [scope, groupId]);
 
   useEffect(() => {
     fetch("/api/session")
@@ -229,6 +254,50 @@ function RequestListPageInner() {
     [requests, selectedId],
   );
 
+  /** Danh sách tên nhóm duy nhất trong trang hiện tại — làm option cho bộ lọc Nhóm. */
+  const groupOptions = useMemo(
+    () => [...new Set(requests.map((r) => r.groupNameSnapshot))].sort((a, b) => a.localeCompare(b, "vi")),
+    [requests],
+  );
+
+  const filteredRequests = useMemo(() => {
+    const q = chuanHoaTimKiem(searchText);
+    return requests.filter((r) => {
+      if (filterStatus !== "all" && r.status !== filterStatus) return false;
+      if (filterGroup !== "all" && r.groupNameSnapshot !== filterGroup) return false;
+      if (q && !chuanHoaTimKiem(resolveRequestTitle(r)).includes(q)) return false;
+      return true;
+    });
+  }, [requests, searchText, filterStatus, filterGroup]);
+
+  /** Xuất danh sách ĐANG LỌC ra file Excel .xlsx — thư viện tải lười lúc bấm,
+   * không cộng vào bundle lúc mở trang. */
+  const exportExcel = async () => {
+    try {
+      await doExportExcel();
+    } catch {
+      alert("Xuất Excel thất bại — thử tải lại trang rồi bấm lại.");
+    }
+  };
+
+  const doExportExcel = async () => {
+    const XLSX = await import("xlsx");
+    const rows = filteredRequests.map((r) => ({
+      "Tên đề xuất": resolveRequestTitle(r),
+      "Nhóm": r.groupNameSnapshot,
+      "Thông tin": notableFieldParts(r).join(" · "),
+      "Người gửi": r.submittedBy.name,
+      "Người duyệt": r.approversSnapshot.map((a) => a.name).join(", "),
+      "Trạng thái": STATUS_LABEL[r.status],
+      "Ngày": new Date(r.status === "draft" ? (r.updatedAt ?? r.submittedAt) : r.submittedAt).toLocaleDateString("vi-VN"),
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws["!cols"] = [{ wch: 32 }, { wch: 22 }, { wch: 48 }, { wch: 20 }, { wch: 30 }, { wch: 14 }, { wch: 11 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Đề xuất");
+    XLSX.writeFile(wb, `danh-sach-de-xuat-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+
   const baseQuery = scope === "group" && groupId ? `scope=group&groupId=${groupId}` : `scope=${scope}`;
   const selectRequest = (id: string) => {
     router.replace(`/request/list?${baseQuery}&id=${id}`);
@@ -267,6 +336,60 @@ function RequestListPageInner() {
           )}
         </div>
 
+        {/* Thanh công cụ: tìm kiếm (không dấu) + lọc trạng thái/nhóm + Xuất
+            Excel — chỉ hiện ở chế độ bảng toàn màn hình (Sếp yêu cầu 17/08/2026). */}
+        {status === "loaded" && !selectedRequest && (
+          <div className="flex flex-wrap items-center gap-2 border-b border-[var(--color-border)] px-4 py-2.5">
+            <label className="relative">
+              <Search
+                size={14}
+                className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400"
+              />
+              <input
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+                placeholder="Tìm theo tên đề xuất..."
+                aria-label="Tìm theo tên đề xuất"
+                className="h-8 w-[220px] rounded border border-[var(--color-border)] pl-8 pr-2.5 text-[13px] text-gray-800 outline-none transition-colors duration-150 focus:border-[var(--color-action-blue)]"
+              />
+            </label>
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="h-8 cursor-pointer rounded border border-[var(--color-border)] px-2 text-[13px] text-gray-700 outline-none transition-colors duration-150 focus:border-[var(--color-action-blue)]"
+              aria-label="Lọc theo trạng thái"
+            >
+              <option value="all">Trạng thái: Tất cả</option>
+              {Object.entries(STATUS_LABEL).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            <select
+              value={filterGroup}
+              onChange={(e) => setFilterGroup(e.target.value)}
+              className="h-8 max-w-[240px] cursor-pointer rounded border border-[var(--color-border)] px-2 text-[13px] text-gray-700 outline-none transition-colors duration-150 focus:border-[var(--color-action-blue)]"
+              aria-label="Lọc theo nhóm đề xuất"
+            >
+              <option value="all">Nhóm: Tất cả</option>
+              {groupOptions.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={exportExcel}
+              disabled={filteredRequests.length === 0}
+              className="ml-auto flex h-8 cursor-pointer items-center gap-1.5 rounded border border-[var(--color-border)] px-3 text-[13px] font-medium text-gray-700 transition-colors duration-150 hover:border-[var(--color-action-blue)] hover:text-[var(--color-action-blue)] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-[var(--color-border)] disabled:hover:text-gray-700"
+            >
+              <Download size={14} /> Xuất Excel
+            </button>
+          </div>
+        )}
+
         <div className="flex-1 overflow-y-auto">
           {status === "loading" && (
             <p className="px-4 py-6 text-[13px] text-gray-500">Đang tải...</p>
@@ -286,11 +409,11 @@ function RequestListPageInner() {
           {status === "loaded" && !selectedRequest && (
             <div className="px-4 py-4">
               <div className="overflow-x-auto rounded-lg border border-[var(--color-border)] bg-white">
-                <table className="w-full min-w-[960px] table-fixed border-collapse text-[13px]">
+                <table className="w-full min-w-[1000px] table-fixed border-collapse text-[13px]">
                   <thead>
                     <tr className="border-b border-[var(--color-border)] bg-gray-50 text-left text-[11px] uppercase tracking-wider text-gray-500">
-                      <th className="w-[26%] px-4 py-2.5 font-semibold">Tên đề xuất</th>
-                      <th className="w-[15%] px-4 py-2.5 font-semibold">Nhóm</th>
+                      <th className="w-[19%] px-4 py-2.5 font-semibold">Tên đề xuất</th>
+                      <th className="w-[13%] px-4 py-2.5 font-semibold">Nhóm</th>
                       <th className="px-4 py-2.5 font-semibold">Thông tin</th>
                       <th className="w-[12%] px-4 py-2.5 font-semibold">Người gửi</th>
                       <th className="w-[160px] px-4 py-2.5 font-semibold">Người duyệt</th>
@@ -299,7 +422,14 @@ function RequestListPageInner() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {requests.map((r) => {
+                    {filteredRequests.length === 0 && (
+                      <tr>
+                        <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
+                          Không có đề xuất nào khớp bộ lọc hiện tại.
+                        </td>
+                      </tr>
+                    )}
+                    {filteredRequests.map((r) => {
                       const isDraft = r.status === "draft";
                       return (
                         <tr
@@ -327,13 +457,18 @@ function RequestListPageInner() {
                                   isDraft ? "bg-gray-100 text-gray-500" : "bg-blue-100 text-[var(--color-action-blue)]"
                                 }
                               />
-                              <span className="truncate font-semibold text-gray-800 transition-colors duration-150 group-hover:text-[var(--color-action-blue)]">
+                              <span
+                                className="truncate font-semibold text-gray-800 transition-colors duration-150 group-hover:text-[var(--color-action-blue)]"
+                                title={resolveRequestTitle(r)}
+                              >
                                 {resolveRequestTitle(r)}
                               </span>
                             </span>
                           </td>
                           <td className="px-4 py-2.5">
-                            <span className="block truncate text-gray-500">{r.groupNameSnapshot}</span>
+                            <span className="block truncate text-gray-500" title={r.groupNameSnapshot}>
+                              {r.groupNameSnapshot}
+                            </span>
                           </td>
                           <td className="px-4 py-2.5">
                             <span className="block truncate text-gray-500" title={isDraft ? undefined : notableFieldParts(r).join(" · ")}>
@@ -373,7 +508,7 @@ function RequestListPageInner() {
               bảng 7 cột không nhét vừa cột hẹp. Giữ hover/active như cũ. */}
           {status === "loaded" &&
             selectedRequest &&
-            requests.map((r) => {
+            filteredRequests.map((r) => {
               if (r.status === "draft") {
                 return (
                   <Link
