@@ -16,6 +16,12 @@
 
 - [x] 4.1 `app/request/groups/[groupId]/submit/page.tsx`: key React của dòng preview đổi sang `${index}-${user.id}` (bước nhiều người sinh nhiều dòng cùng index)
 
+## 6. Thêm người cùng duyệt tại hàng "Quản lý trực tiếp" trên form gửi (Sếp bổ sung 16/08/2026 sau khi test)
+
+- [x] 6.1 `lib/server/requests.ts`: `managerOverrides` nhận `string | string[]` (người đầu = quản lý, sau = người thêm), xác thực TỪNG uid qua `resolveManagerOverride`, mở rộng thành nhiều dòng người duyệt cùng bước
+- [x] 6.2 `app/api/requests/route.ts` + `app/api/requests/[id]/route.ts`: nới kiểu `managerOverrides` (tương thích ngược string đơn)
+- [x] 6.3 `app/request/groups/[groupId]/submit/page.tsx`: state `extraApprovers` + TagUserInput "Gõ @ để thêm người cùng duyệt" ngay dưới thẻ quản lý; payload gộp `[managerId, ...extraIds]` loại trùng
+
 ## 5. Test + kiểm tra
 
 - [x] 5.1 Test `fixedStepUsers`: bước cũ (chỉ user) → [user]; bước mới (users 2 người) → đủ 2; users rỗng → fallback [user]

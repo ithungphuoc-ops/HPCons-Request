@@ -243,7 +243,7 @@ export async function resolveApproverStepsDetailed(
   submitterUid: string,
   values: Record<string, unknown> = {},
   fields: ProposalField[] = [],
-  managerOverrides: Record<number, string> = {},
+  managerOverrides: Record<number, string | string[]> = {},
 ): Promise<ResolvedApproverStep[]> {
   const applicableSteps = filterApplicableSteps(steps ?? [], values, fields);
   const results: ResolvedApproverStep[] = [];
@@ -261,10 +261,20 @@ export async function resolveApproverStepsDetailed(
       continue;
     }
 
-    const overrideUserId = managerOverrides[i];
-    const overrideUser = overrideUserId ? await resolveManagerOverride(overrideUserId) : null;
-    if (overrideUser) {
-      results.push({ index: i, kind: "submitter_manager", user: overrideUser });
+    // Bước "quản lý trực tiếp" nhận được NHIỀU người từ 16/08/2026 (Sếp yêu
+    // cầu thêm người cùng duyệt ngay tại hàng này trên form gửi) — người đầu
+    // là quản lý được chọn, những người sau là người duyệt thêm; TẤT CẢ đều
+    // phải duyệt (danh sách phẳng + quy trình đồng thời/lần lượt tự bảo đảm).
+    // Vẫn xác thực TỪNG uid qua resolveManagerOverride, không tin client.
+    const overrideRaw = managerOverrides[i];
+    const overrideIds = Array.isArray(overrideRaw) ? overrideRaw : overrideRaw ? [overrideRaw] : [];
+    const overrideUsers = (
+      await Promise.all(overrideIds.map((id) => resolveManagerOverride(id)))
+    ).filter((u): u is TaggedUser => u !== null);
+    if (overrideUsers.length > 0) {
+      for (const user of overrideUsers) {
+        results.push({ index: i, kind: "submitter_manager", user });
+      }
       continue;
     }
 
@@ -296,7 +306,7 @@ export async function resolveApproverSteps(
   submitterUid: string,
   values: Record<string, unknown> = {},
   fields: ProposalField[] = [],
-  managerOverrides: Record<number, string> = {},
+  managerOverrides: Record<number, string | string[]> = {},
 ): Promise<TaggedUser[]> {
   const applicableSteps = filterApplicableSteps(steps ?? [], values, fields);
   if ((steps ?? []).length > 0 && applicableSteps.length === 0) {

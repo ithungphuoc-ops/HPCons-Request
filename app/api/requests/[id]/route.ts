@@ -51,7 +51,7 @@ interface UpdateDraftBody {
   /** true (mặc định) = vẫn lưu nháp; false = gửi chính thức, chuyển sang "pending". */
   isDraft?: boolean;
   // Xem app/api/requests/route.ts SubmitBody.managerOverrides.
-  managerOverrides?: Record<number, string>;
+  managerOverrides?: Record<number, string | string[]>;
 }
 
 export async function PATCH(

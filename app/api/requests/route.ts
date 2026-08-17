@@ -195,7 +195,10 @@ interface SubmitBody {
   // Lựa chọn thủ công quản lý trực tiếp cho bước "submitter_manager", theo
   // index của bước trong approverSteps — xem lib/server/requests.ts
   // resolveApproverSteps(). Server tự xác thực lại, không tin nguyên giá trị.
-  managerOverrides?: Record<number, string>;
+  // Từ 16/08/2026 nhận được mảng uid: người đầu là quản lý, người sau là
+  // người duyệt thêm cùng bước (tất cả phải duyệt). Giữ nhận string đơn cho
+  // client bản cũ còn cache.
+  managerOverrides?: Record<number, string | string[]>;
 }
 
 export async function POST(request: Request) {

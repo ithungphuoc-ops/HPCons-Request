@@ -68,6 +68,10 @@ export default function SubmitRequestPage() {
   // Lựa chọn thủ công "quản lý trực tiếp" theo index của bước duyệt — chỉ áp
   // dụng cho bước kind "submitter_manager", ghi đè lên kết quả auto-resolve.
   const [managerOverrides, setManagerOverrides] = useState<Record<number, TaggedUser>>({});
+  // Người duyệt THÊM cùng hàng "Quản lý trực tiếp" (Sếp yêu cầu 16/08/2026):
+  // @ thêm bao nhiêu người cũng được, TẤT CẢ (quản lý + người thêm) đều phải
+  // duyệt — gửi kèm managerOverrides dạng mảng uid, server tự xác thực lại.
+  const [extraApprovers, setExtraApprovers] = useState<Record<number, TaggedUser[]>>({});
   const [editingStepIndex, setEditingStepIndex] = useState<number | null>(null);
 
   useEffect(() => {
@@ -242,9 +246,13 @@ export default function SubmitRequestPage() {
       return;
     }
 
-    const managerOverridesPayload: Record<number, string> = {};
+    const managerOverridesPayload: Record<number, string[]> = {};
     for (const [index, user] of Object.entries(managerOverrides)) {
-      managerOverridesPayload[Number(index)] = user.id;
+      const idx = Number(index);
+      // Người đầu = quản lý được chọn, sau đó là người duyệt thêm (loại trùng
+      // uid với quản lý để không tạo 2 dòng duyệt cho cùng 1 người).
+      const extraIds = (extraApprovers[idx] ?? []).map((u) => u.id).filter((id) => id !== user.id);
+      managerOverridesPayload[idx] = [user.id, ...extraIds];
     }
 
     setErrors({});
@@ -434,22 +442,33 @@ export default function SubmitRequestPage() {
                         )}
                       </div>
                     ) : (
-                      <div className="flex items-center gap-2">
-                        <span className="flex items-center gap-1.5 rounded-full bg-gray-100 py-0.5 pl-1 pr-2.5 text-[12px] text-gray-700">
-                          {displayUser && (
-                            <span className="flex h-4 w-4 items-center justify-center rounded-full bg-[var(--color-action-blue)] text-[9px] font-semibold text-white">
-                              {displayUser.avatarInitial}
-                            </span>
-                          )}
-                          {displayUser?.name ?? "—"}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setEditingStepIndex(step.index)}
-                          className="text-[12px] font-medium text-[var(--color-action-blue)] hover:underline"
-                        >
-                          Đổi
-                        </button>
+                      <div className="flex flex-col gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="flex items-center gap-1.5 rounded-full bg-gray-100 py-0.5 pl-1 pr-2.5 text-[12px] text-gray-700">
+                            {displayUser && (
+                              <span className="flex h-4 w-4 items-center justify-center rounded-full bg-[var(--color-action-blue)] text-[9px] font-semibold text-white">
+                                {displayUser.avatarInitial}
+                              </span>
+                            )}
+                            {displayUser?.name ?? "—"}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setEditingStepIndex(step.index)}
+                            className="text-[12px] font-medium text-[var(--color-action-blue)] hover:underline"
+                          >
+                            Đổi
+                          </button>
+                        </div>
+                        {/* Người duyệt THÊM cùng hàng — @ được nhiều người, tất
+                            cả (quản lý + người thêm) đều phải duyệt mới qua. */}
+                        <TagUserInput
+                          value={extraApprovers[step.index] ?? []}
+                          onChange={(users) =>
+                            setExtraApprovers((prev) => ({ ...prev, [step.index]: users }))
+                          }
+                          placeholder="Gõ @ để thêm người cùng duyệt (tất cả phải duyệt)"
+                        />
                       </div>
                     )}
                   </div>
