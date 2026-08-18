@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import HighlightMatch from "@/components/shared/HighlightMatch";
+import HighlightMatch, { normalizeSearch } from "@/components/shared/HighlightMatch";
 import {
   AppWindow,
   BarChart3,
@@ -11,7 +11,6 @@ import {
   ClipboardCheck,
   FileCheck,
   Heart,
-  LayoutGrid,
   Laptop,
   MapPin,
   PenTool,
@@ -64,7 +63,7 @@ type RemoteApp = {
  * trong file thì class không được biên dịch ra CSS, ô icon mất màu nền (phát hiện 31/07/2026
  * ở app HPCons_ThongTinCuocHop, cùng lỗi ở pkd_crm-next/hpcons-quatang). Đủ bộ màu hiện có
  * trong hpcons-portal/lib/dashboardApps.ts, cập nhật nếu thêm màu mới:
- * bg-amber-500 bg-blue-500 bg-cyan-500 bg-emerald-500 bg-fuchsia-500 bg-gray-500 bg-green-500
+ * bg-amber-500 bg-blue-500 bg-cyan-500 bg-emerald-500 bg-fuchsia-500 bg-gray-500 bg-green-500 bg-slate-500 bg-orange-600
  * bg-indigo-500 bg-lime-500 bg-orange-500 bg-pink-500 bg-purple-500 bg-red-500 bg-rose-500
  * bg-sky-500 bg-teal-500 bg-violet-500 bg-yellow-500
  */
@@ -89,8 +88,23 @@ export default function AppLauncher({ onClose }: { onClose: () => void }) {
     };
   }, []);
 
-  const q = query.trim().toLowerCase();
-  const list = (apps ?? []).filter((a) => !q || a.name.toLowerCase().includes(q));
+  // Đăng xuất SSO: gọi route sẵn có xoá cookie .hpcore.vn rồi tải lại —
+  // middleware sẽ tự chuyển hướng về trang đăng nhập app tổng kèm ?next.
+  async function handleLogout() {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch {
+      // Bỏ qua lỗi mạng — reload bên dưới vẫn đưa về login nếu cookie đã mất.
+    }
+    window.location.reload();
+  }
+
+  // Lọc BỎ DẤU (gõ "phong ban" vẫn ra "Phòng ban") — dùng cùng normalizeSearch
+  // với HighlightMatch để bộ lọc và phần tô màu khớp nhau tuyệt đối.
+  const q = normalizeSearch(query.trim());
+  const list = (apps ?? []).filter(
+    (a) => !q || normalizeSearch(a.name).includes(q) || normalizeSearch(a.description ?? "").includes(q),
+  );
   const groups = [
     {
       title: "Nhân sự & Vận hành",
@@ -106,74 +120,73 @@ export default function AppLauncher({ onClose }: { onClose: () => void }) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-start overflow-y-auto bg-black/50 p-3 sm:py-4 sm:pl-[292px] sm:pr-4"
+      className="fixed inset-0 z-50 bg-black/40 flex items-start justify-start p-3 sm:py-4 sm:pl-[292px] sm:pr-4 overflow-y-auto"
       onMouseDown={onClose}
     >
       <div
-        className="w-full max-w-4xl overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-black/5"
+        className="bg-white rounded-2xl w-full max-w-4xl shadow-2xl"
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="flex flex-col gap-3 bg-gray-50 px-6 py-4 sm:flex-row sm:items-center">
-          <div className="flex min-w-0 items-center gap-3">
+        {/* Header — chuẩn AppLauncher app tổng (hpcons-portal) */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 p-5 border-b border-gray-100">
+          <div className="flex items-center gap-3 min-w-0">
             {session?.avatarUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={session.avatarUrl}
                 alt={session.name}
-                className="h-10 w-10 shrink-0 rounded-full object-cover"
+                className="w-11 h-11 shrink-0 rounded-full object-cover"
               />
             ) : (
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--color-action-blue)] text-[14px] font-semibold text-white">
+              <span
+                className="flex w-11 h-11 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white"
+                style={{ backgroundColor: "var(--hp-primary,#096AA7)" }}
+              >
                 {session?.name.trim().charAt(0).toUpperCase() ?? "?"}
               </span>
             )}
             <div className="min-w-0">
-              <p className="truncate text-[14px] font-bold text-gray-900">
-                {session?.name ?? "Đang tải..."}
+              <p className="font-semibold text-gray-900 truncate">{session?.name ?? "Đang tải..."}</p>
+              <p className="text-xs text-gray-400">
+                {(apps ?? []).length} ứng dụng ·{" "}
+                <a href={HPCORE_DASHBOARD_URL} className="text-blue-600 hover:underline">Về App Tổng</a> ·{" "}
+                <a href={HPCORE_PROFILE_URL} className="text-blue-600 hover:underline">Tài khoản</a> ·{" "}
+                <button onClick={handleLogout} className="text-blue-600 hover:underline">Đăng xuất</button>
               </p>
-              <a href={HPCORE_PROFILE_URL} className="text-[12px] text-[var(--color-action-blue)] hover:underline">
-                Xem tài khoản
-              </a>
             </div>
           </div>
           <div className="relative sm:ml-auto sm:w-72">
-            <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               autoFocus
               placeholder="Tìm kiếm ứng dụng"
-              className="h-9 w-full rounded-full border border-[var(--color-border)] bg-white pl-9 pr-3 text-[13px] outline-none focus:border-[var(--color-action-blue)]"
+              className="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label="Đóng"
-            className="flex h-8 w-8 shrink-0 items-center justify-center self-end rounded-full text-gray-400 hover:bg-gray-200 hover:text-gray-700 sm:self-auto"
+            className="hidden sm:flex w-8 h-8 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100"
           >
-            <X size={18} />
+            <X size={20} />
           </button>
         </div>
 
-        <div className="max-h-[70vh] space-y-7 overflow-y-auto p-6">
-          <a
-            href={HPCORE_DASHBOARD_URL}
-            className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] px-3.5 py-1.5 text-[13px] font-medium text-[var(--color-action-blue)] hover:bg-blue-50"
-          >
-            <LayoutGrid size={15} /> Tổng quan HPCons App Tổng
-          </a>
-
+        {/* Nhóm ứng dụng */}
+        <div className="p-5 max-h-[70vh] overflow-y-auto space-y-7">
           {apps === null ? (
-            <p className="py-10 text-center text-[13px] text-gray-400">Đang tải danh sách ứng dụng…</p>
+            <p className="text-center text-gray-400 py-10">Đang tải danh sách ứng dụng…</p>
           ) : groups.length === 0 ? (
-            <p className="py-10 text-center text-[13px] text-gray-400">Không có ứng dụng phù hợp</p>
+            <p className="text-center text-gray-400 py-10">Không tìm thấy ứng dụng phù hợp</p>
           ) : (
             groups.map((g) => (
               <div key={g.title}>
-                <p className="text-[12px] font-semibold uppercase tracking-wide text-gray-500">{g.title}</p>
-                <p className="mb-4 mt-0.5 text-[12px] text-gray-400">{g.subtitle}</p>
-                <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5">
+                <p className="font-semibold text-gray-800">{g.title}</p>
+                <p className="text-xs text-gray-400 mb-3">{g.subtitle}</p>
+                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
                   {g.apps.map((app) => (
                     <Tile key={app.name} app={app} query={q} />
                   ))}
@@ -195,35 +208,30 @@ function Tile({ app, query }: { app: RemoteApp; query: string }) {
   const inner = (
     <>
       <div
-        className={`flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl shadow-sm transition-all duration-150 group-hover:-translate-y-0.5 group-hover:shadow-md ${
-          app.image ? "bg-white" : app.color
+        className={`w-14 h-14 rounded-2xl flex items-center justify-center overflow-hidden transition-transform group-hover:scale-105 ${
+          app.image ? "bg-white border border-gray-100" : app.color
         } ${app.comingSoon ? "opacity-50" : ""}`}
       >
         {app.image ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={app.image} alt={app.name} className="h-full w-full scale-[1.15] object-cover" />
+          <img src={app.image} alt={app.name} className="w-full h-full object-cover scale-[1.15]" />
         ) : (
-          <Icon size={24} className="text-white" aria-hidden />
+          <Icon size={26} className="text-white" aria-hidden />
         )}
       </div>
-      <span className={`text-center text-[12px] font-medium leading-tight ${app.comingSoon ? "text-gray-300" : "text-gray-800"}`}>
+      <p className={`text-xs font-medium text-center leading-tight ${app.comingSoon ? "text-gray-400" : "text-gray-700"}`}>
         <HighlightMatch text={app.name} query={query} />
-      </span>
+      </p>
       {current && (
-        <span className="flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[9px] font-medium text-[var(--color-action-blue)]">
-          <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-action-blue)]" /> Đang dùng
-        </span>
+        <span className="text-[9px] text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full">Đang dùng</span>
       )}
       {app.comingSoon && (
-        <span className="rounded-full bg-orange-50 px-2 py-0.5 text-[9px] font-medium text-orange-500">
-          Sắp ra mắt
-        </span>
+        <span className="text-[9px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full">Sắp ra mắt</span>
       )}
     </>
   );
 
-  const cls =
-    "group flex flex-col items-center gap-2 rounded-2xl p-3 transition-colors hover:bg-gray-50";
+  const cls = "group flex flex-col items-center gap-2 p-3 rounded-xl hover:bg-gray-50 transition-colors";
 
   if (app.comingSoon || !app.href) {
     return (
