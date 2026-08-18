@@ -1,7 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { trichXuatPayload } from "./qlkctr-sync";
 import { serializeTableRows } from "./table-field";
 import type { ProposalField, RequestInstance } from "./types";
+
+vi.mock("./r2", () => ({
+  createSignedReadUrl: vi.fn(async (path: string) => `https://signed.example/${path}?sig=test`),
+}));
 
 function makeField(overrides: Partial<ProposalField>): ProposalField {
   return {
@@ -41,7 +45,7 @@ function makeRequest(overrides: Partial<RequestInstance>): RequestInstance {
 const CHI_TIET_COLS_THUONG = ["Tên hàng", "Quy cách/chủng loại", "Số lượng", "ĐVT", "Mục đích sử dụng"];
 
 describe("trichXuatPayload", () => {
-  it("tách đúng dữ liệu khi field đúng mã code chuẩn (ten_de_xuat/chi_tiet)", () => {
+  it("tách đúng dữ liệu khi field đúng mã code chuẩn (ten_de_xuat/chi_tiet)", async () => {
     const titleField = makeField({ id: "f1", name: "Tên đề xuất", code: "ten_de_xuat" });
     const detailField = makeField({
       id: "f2",
@@ -61,16 +65,17 @@ describe("trichXuatPayload", () => {
       },
     });
 
-    const payload = trichXuatPayload(request);
+    const payload = await trichXuatPayload(request);
     expect(payload).not.toBeNull();
     expect(payload?.congTrinhChuoi).toBe("30/2025/HĐXD/UNICE-HPCS - UNICE QUẢNG NGÃI");
     expect(payload?.vatTu).toEqual([
       { tenVatTu: "Xi măng", quyCach: "Nghi sơn", dvt: "bao", soLuong: 500, mucDichSuDung: "Xây tô nhà ăn" },
       { tenVatTu: "Cát", quyCach: "Xây", dvt: "m3", soLuong: 20, mucDichSuDung: "Xây tô nhà ăn" },
     ]);
+    expect(payload?.taiLieuDinhKem).toBeUndefined();
   });
 
-  it("vẫn tìm được field qua tên hiển thị khi field CHƯA có code (fallback theo tên)", () => {
+  it("vẫn tìm được field qua tên hiển thị khi field CHƯA có code (fallback theo tên)", async () => {
     const titleField = makeField({ id: "f1", name: "Tên đề xuất" }); // không có code
     const detailField = makeField({
       id: "f2",
@@ -86,13 +91,13 @@ describe("trichXuatPayload", () => {
       },
     });
 
-    const payload = trichXuatPayload(request);
+    const payload = await trichXuatPayload(request);
     expect(payload).not.toBeNull();
     expect(payload?.congTrinhChuoi).toBe("12/2025/HĐXD/ABC - KHU CÔNG NGHIỆP ABC");
     expect(payload?.vatTu[0].tenVatTu).toBe("Thép phi 10");
   });
 
-  it("vẫn map đúng khi thứ tự cột bảng bị đảo (ĐVT đứng trước Số lượng)", () => {
+  it("vẫn map đúng khi thứ tự cột bảng bị đảo (ĐVT đứng trước Số lượng)", async () => {
     const titleField = makeField({ id: "f1", name: "Tên đề xuất", code: "ten_de_xuat" });
     const detailField = makeField({
       id: "f2",
@@ -109,7 +114,7 @@ describe("trichXuatPayload", () => {
       },
     });
 
-    const payload = trichXuatPayload(request);
+    const payload = await trichXuatPayload(request);
     expect(payload?.vatTu[0]).toEqual({
       tenVatTu: "Cát vàng",
       quyCach: undefined,
@@ -119,16 +124,16 @@ describe("trichXuatPayload", () => {
     });
   });
 
-  it("trả về null khi không có field bảng chi tiết nào", () => {
+  it("trả về null khi không có field bảng chi tiết nào", async () => {
     const titleField = makeField({ id: "f1", name: "Tên đề xuất", code: "ten_de_xuat" });
     const request = makeRequest({
       fieldsSnapshot: [titleField],
       values: { f1: "Công trình test" },
     });
-    expect(trichXuatPayload(request)).toBeNull();
+    expect(await trichXuatPayload(request)).toBeNull();
   });
 
-  it("trả về null khi bảng chi tiết thiếu cột bắt buộc (không có Số lượng)", () => {
+  it("trả về null khi bảng chi tiết thiếu cột bắt buộc (không có Số lượng)", async () => {
     const titleField = makeField({ id: "f1", name: "Tên đề xuất", code: "ten_de_xuat" });
     const detailField = makeField({
       id: "f2",
@@ -141,14 +146,70 @@ describe("trichXuatPayload", () => {
       fieldsSnapshot: [titleField, detailField],
       values: { f1: "Công trình test", f2: serializeTableRows([["Cát", "abc"]]) },
     });
-    expect(trichXuatPayload(request)).toBeNull();
+    expect(await trichXuatPayload(request)).toBeNull();
   });
 
-  it("trả về null khi đề xuất không liên quan gì (không có field nào khớp)", () => {
+  it("trả về null khi đề xuất không liên quan gì (không có field nào khớp)", async () => {
     const request = makeRequest({
       fieldsSnapshot: [makeField({ id: "f1", name: "Lý do nghỉ phép" })],
       values: { f1: "Nghỉ ốm" },
     });
-    expect(trichXuatPayload(request)).toBeNull();
+    expect(await trichXuatPayload(request)).toBeNull();
+  });
+
+  it("gửi kèm link tải (chữ ký) cho file đính kèm ở field kiểu file, không đọc dữ liệu vật tư từ đó", async () => {
+    const titleField = makeField({ id: "f1", name: "Tên đề xuất", code: "ten_de_xuat" });
+    const detailField = makeField({
+      id: "f2",
+      name: "Chi tiết",
+      dataType: "table",
+      code: "chi_tiet",
+      tableColumns: CHI_TIET_COLS_THUONG,
+    });
+    const fileField = makeField({ id: "f3", name: "Tài liệu đính kèm", dataType: "file" });
+    const request = makeRequest({
+      fieldsSnapshot: [titleField, detailField, fileField],
+      values: {
+        f1: "Công trình test",
+        f2: serializeTableRows([["Cát vàng", "", "20", "m3", ""]]),
+        f3: [{ name: "bao-gia.pdf", path: "requests/req1/bao-gia.pdf", size: 12345 }],
+      },
+    });
+
+    const payload = await trichXuatPayload(request);
+    expect(payload?.taiLieuDinhKem).toEqual([
+      { ten: "bao-gia.pdf", url: "https://signed.example/requests/req1/bao-gia.pdf?sig=test" },
+    ]);
+    // File đính kèm không được lẫn vào danh sách vật tư.
+    expect(payload?.vatTu).toEqual([
+      { tenVatTu: "Cát vàng", quyCach: undefined, dvt: "m3", soLuong: 20, mucDichSuDung: undefined },
+    ]);
+  });
+
+  it("bỏ qua êm nếu tạo link tải cho 1 file thất bại, không chặn cả đề nghị", async () => {
+    const { createSignedReadUrl } = await import("./r2");
+    vi.mocked(createSignedReadUrl).mockRejectedValueOnce(new Error("R2 lỗi"));
+
+    const titleField = makeField({ id: "f1", name: "Tên đề xuất", code: "ten_de_xuat" });
+    const detailField = makeField({
+      id: "f2",
+      name: "Chi tiết",
+      dataType: "table",
+      code: "chi_tiet",
+      tableColumns: CHI_TIET_COLS_THUONG,
+    });
+    const fileField = makeField({ id: "f3", name: "Tài liệu đính kèm", dataType: "file" });
+    const request = makeRequest({
+      fieldsSnapshot: [titleField, detailField, fileField],
+      values: {
+        f1: "Công trình test",
+        f2: serializeTableRows([["Cát vàng", "", "20", "m3", ""]]),
+        f3: [{ name: "loi.pdf", path: "requests/req1/loi.pdf", size: 1 }],
+      },
+    });
+
+    const payload = await trichXuatPayload(request);
+    expect(payload).not.toBeNull();
+    expect(payload?.taiLieuDinhKem).toBeUndefined();
   });
 });

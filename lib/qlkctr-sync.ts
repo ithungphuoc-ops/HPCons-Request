@@ -1,6 +1,7 @@
+import { createSignedReadUrl } from "@/lib/r2";
 import { TITLE_FIELD_CODES } from "@/lib/request-title";
 import { deserializeTableRows } from "@/lib/table-field";
-import type { ProposalField, RequestInstance } from "@/lib/types";
+import type { ProposalField, RequestAttachment, RequestInstance } from "@/lib/types";
 
 /**
  * Đồng bộ đề xuất đã duyệt xong sang QLK CTR (app quản lý kho công trình) — xem
@@ -42,6 +43,8 @@ export type QlkCtrVatTu = {
   mucDichSuDung?: string;
 };
 
+export type QlkCtrTaiLieuDinhKem = { ten: string; url: string };
+
 export type QlkCtrPayload = {
   requestId: string;
   requestCode: string;
@@ -50,14 +53,44 @@ export type QlkCtrPayload = {
   ngayDuyet: string;
   congTrinhChuoi: string;
   vatTu: QlkCtrVatTu[];
+  taiLieuDinhKem?: QlkCtrTaiLieuDinhKem[];
 };
+
+/**
+ * Lấy tất cả file đính kèm ở MỌI field kiểu "file" của đề xuất (không giới hạn 1 field cụ thể —
+ * BCH có thể đính kèm PDF/Excel ở bất kỳ field file nào nhóm cấu hình), quy đổi mỗi file thành 1
+ * link tải có chữ ký (hết hạn sau 5 phút — đủ dùng vì QLK CTR tải ngay trong lúc xử lý request
+ * duyệt này, xem lib/r2.ts::createSignedReadUrl). QLK CTR chỉ lưu lại để xem sau, không đọc dữ
+ * liệu vật tư từ các file này (vật tư luôn lấy từ bảng "Chi tiết" như cũ).
+ */
+async function layTaiLieuDinhKem(request: RequestInstance): Promise<QlkCtrTaiLieuDinhKem[]> {
+  const files: RequestAttachment[] = [];
+  for (const field of request.fieldsSnapshot) {
+    if (field.dataType !== "file") continue;
+    const value = request.values[field.id];
+    if (!Array.isArray(value)) continue;
+    for (const item of value) {
+      const path = (item as Partial<RequestAttachment> | undefined)?.path;
+      const name = (item as Partial<RequestAttachment> | undefined)?.name;
+      if (typeof path === "string" && typeof name === "string") files.push({ path, name, size: 0 });
+    }
+  }
+  if (files.length === 0) return [];
+
+  const ketQua = await Promise.allSettled(files.map((f) => createSignedReadUrl(f.path)));
+  const taiLieu: QlkCtrTaiLieuDinhKem[] = [];
+  ketQua.forEach((r, i) => {
+    if (r.status === "fulfilled") taiLieu.push({ ten: files[i].name, url: r.value });
+  });
+  return taiLieu;
+}
 
 /**
  * Trả về `null` nếu không đủ dữ liệu để gửi (thiếu field "Tên đề xuất"/"Chi tiết", thiếu cột
  * bắt buộc "Tên hàng"/"Số lượng", hoặc bảng chi tiết rỗng) — KHÔNG throw, để nơi gọi tự quyết
  * định bỏ qua êm (đề xuất không liên quan công trình vẫn duyệt bình thường).
  */
-export function trichXuatPayload(request: RequestInstance): QlkCtrPayload | null {
+export async function trichXuatPayload(request: RequestInstance): Promise<QlkCtrPayload | null> {
   const titleField = timField(request.fieldsSnapshot, TITLE_FIELD_CODES, ["Tên đề xuất", "Tên đề nghị"]);
   const detailField = timField(request.fieldsSnapshot, DETAIL_FIELD_CODES, ["Chi tiết", "Vật tư đề nghị"]);
   if (!titleField || !detailField) return null;
@@ -85,6 +118,8 @@ export function trichXuatPayload(request: RequestInstance): QlkCtrPayload | null
     .filter((v) => v.tenVatTu && v.soLuong > 0);
   if (vatTu.length === 0) return null;
 
+  const taiLieuDinhKem = await layTaiLieuDinhKem(request);
+
   return {
     requestId: request.id,
     requestCode: request.code ?? request.id,
@@ -93,6 +128,7 @@ export function trichXuatPayload(request: RequestInstance): QlkCtrPayload | null
     ngayDuyet: new Date().toISOString().slice(0, 10),
     congTrinhChuoi,
     vatTu,
+    ...(taiLieuDinhKem.length > 0 ? { taiLieuDinhKem } : {}),
   };
 }
 

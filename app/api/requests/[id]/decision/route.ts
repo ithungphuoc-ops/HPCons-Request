@@ -170,7 +170,7 @@ export async function POST(
     // ở đây làm hỏng response duyệt đề xuất chính (đề xuất vẫn đã duyệt xong dù đồng bộ lỗi).
     if (status === "approved") {
       try {
-        const payload = trichXuatPayload(updated);
+        const payload = await trichXuatPayload(updated);
         if (payload) {
           const ketQua = await guiSangQlkCtr(payload);
           const syncEntry = {
