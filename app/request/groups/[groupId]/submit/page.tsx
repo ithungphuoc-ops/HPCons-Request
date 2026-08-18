@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Loader2, Paperclip, Plus, Trash2, X } from "lucide-react";
 import { useRequestContext } from "@/context/RequestContext";
 import { HPCORE_MEMBER_GROUPS_API } from "@/lib/constants";
@@ -73,6 +73,21 @@ export default function SubmitRequestPage() {
   // duyệt — gửi kèm managerOverrides dạng mảng uid, server tự xác thực lại.
   const [extraApprovers, setExtraApprovers] = useState<Record<number, TaggedUser[]>>({});
   const [editingStepIndex, setEditingStepIndex] = useState<number | null>(null);
+  // Đánh số "Luồng duyệt 1/2/3..." cho các bước "submitter_manager" (Sếp yêu
+  // cầu 18/08/2026) — trước đây mọi bước loại này đều hiện chung nhãn "Quản
+  // lý trực tiếp" giống hệt nhau, nhìn không phân biệt được khi nhóm có nhiều
+  // bước cùng loại. Đánh số theo thứ tự XUẤT HIỆN của step.index (không phải
+  // vị trí trong mảng thô — bước "fixed" nhiều người sinh nhiều dòng CÙNG
+  // step.index, không được tính trùng thành nhiều số thứ tự).
+  const managerFlowNumberByStepIndex = useMemo(() => {
+    const map = new Map<number, number>();
+    if (approverPreview.status === "ok") {
+      for (const s of approverPreview.steps) {
+        if (!map.has(s.index)) map.set(s.index, map.size + 1);
+      }
+    }
+    return map;
+  }, [approverPreview]);
 
   useEffect(() => {
     if (!draftId) return;
@@ -379,7 +394,9 @@ export default function SubmitRequestPage() {
               // withTitle() ở lib/server/requests.ts). Không có chức danh thì
               // dùng tạm tên.
               const rowLabel =
-                step.kind === "submitter_manager" ? "Quản lý trực tiếp" : (displayUser?.title ?? displayUser?.name ?? "Người duyệt");
+                step.kind === "submitter_manager"
+                  ? `Luồng duyệt ${managerFlowNumberByStepIndex.get(step.index) ?? ""}`
+                  : (displayUser?.title ?? displayUser?.name ?? "Người duyệt");
 
               return (
                 // key gộp cả id người: bước "fixed" nhiều người sinh NHIỀU dòng
