@@ -8,6 +8,7 @@ import { HPCORE_MEMBER_GROUPS_API } from "@/lib/constants";
 import { deserializeTableRows, toWireTableRows } from "@/lib/table-field";
 import { evaluateConditionGroup } from "@/lib/server/conditions";
 import { resolveComputedValue } from "@/lib/server/computed-fields";
+import { computeManagerFlowNumbers } from "@/lib/manager-flow-numbering";
 import TagUserInput from "@/components/shared/TagUserInput";
 import DatePicker from "@/components/ui/DatePicker";
 import {
@@ -73,24 +74,13 @@ export default function SubmitRequestPage() {
   // duyệt — gửi kèm managerOverrides dạng mảng uid, server tự xác thực lại.
   const [extraApprovers, setExtraApprovers] = useState<Record<number, TaggedUser[]>>({});
   const [editingStepIndex, setEditingStepIndex] = useState<number | null>(null);
-  // Đánh số "Luồng duyệt 1/2/3..." cho các bước "submitter_manager" (Sếp yêu
-  // cầu 18/08/2026) — trước đây mọi bước loại này đều hiện chung nhãn "Quản
-  // lý trực tiếp" giống hệt nhau, nhìn không phân biệt được khi nhóm có nhiều
-  // bước cùng loại. CHỈ đếm bước kind === "submitter_manager" — resolveApprover
-  // StepsDetailed (lib/server/requests.ts) gán step.index dùng CHUNG 1 dãy số
-  // cho cả "fixed" lẫn "submitter_manager", nên nếu đếm luôn cả "fixed" thì số
-  // "Luồng duyệt" bị nhảy cóc khi 2 loại bước xen kẽ nhau (lỗi phát hiện qua
-  // code review 18/08/2026 — xem lib/server/conditions.test.ts:392-408, đây
-  // là cấu hình xen kẽ có thật, không phải giả thuyết).
-  const managerFlowNumberByStepIndex = useMemo(() => {
-    const map = new Map<number, number>();
-    if (approverPreview.status === "ok") {
-      for (const s of approverPreview.steps) {
-        if (s.kind === "submitter_manager" && !map.has(s.index)) map.set(s.index, map.size + 1);
-      }
-    }
-    return map;
-  }, [approverPreview]);
+  // Đánh số "Luồng duyệt 1/2/3..." — logic tách sang lib/manager-flow-numbering.ts
+  // (test riêng ở manager-flow-numbering.test.ts, kể cả đúng kịch bản bug đã
+  // sửa: bước "fixed" xen giữa các bước "submitter_manager").
+  const managerFlowNumberByStepIndex = useMemo(
+    () => (approverPreview.status === "ok" ? computeManagerFlowNumbers(approverPreview.steps) : new Map()),
+    [approverPreview],
+  );
 
   useEffect(() => {
     if (!draftId) return;
