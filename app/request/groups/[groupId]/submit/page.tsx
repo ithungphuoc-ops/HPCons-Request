@@ -76,14 +76,17 @@ export default function SubmitRequestPage() {
   // Đánh số "Luồng duyệt 1/2/3..." cho các bước "submitter_manager" (Sếp yêu
   // cầu 18/08/2026) — trước đây mọi bước loại này đều hiện chung nhãn "Quản
   // lý trực tiếp" giống hệt nhau, nhìn không phân biệt được khi nhóm có nhiều
-  // bước cùng loại. Đánh số theo thứ tự XUẤT HIỆN của step.index (không phải
-  // vị trí trong mảng thô — bước "fixed" nhiều người sinh nhiều dòng CÙNG
-  // step.index, không được tính trùng thành nhiều số thứ tự).
+  // bước cùng loại. CHỈ đếm bước kind === "submitter_manager" — resolveApprover
+  // StepsDetailed (lib/server/requests.ts) gán step.index dùng CHUNG 1 dãy số
+  // cho cả "fixed" lẫn "submitter_manager", nên nếu đếm luôn cả "fixed" thì số
+  // "Luồng duyệt" bị nhảy cóc khi 2 loại bước xen kẽ nhau (lỗi phát hiện qua
+  // code review 18/08/2026 — xem lib/server/conditions.test.ts:392-408, đây
+  // là cấu hình xen kẽ có thật, không phải giả thuyết).
   const managerFlowNumberByStepIndex = useMemo(() => {
     const map = new Map<number, number>();
     if (approverPreview.status === "ok") {
       for (const s of approverPreview.steps) {
-        if (!map.has(s.index)) map.set(s.index, map.size + 1);
+        if (s.kind === "submitter_manager" && !map.has(s.index)) map.set(s.index, map.size + 1);
       }
     }
     return map;
@@ -393,9 +396,12 @@ export default function SubmitRequestPage() {
               // Base.vn thật hiển thị, tra qua users/{uid}.title lúc gửi (xem
               // withTitle() ở lib/server/requests.ts). Không có chức danh thì
               // dùng tạm tên.
+              const managerFlowNumber = managerFlowNumberByStepIndex.get(step.index);
               const rowLabel =
                 step.kind === "submitter_manager"
-                  ? `Luồng duyệt ${managerFlowNumberByStepIndex.get(step.index) ?? ""}`
+                  ? managerFlowNumber
+                    ? `Luồng duyệt ${managerFlowNumber}`
+                    : "Quản lý trực tiếp" // lưới an toàn — không nên xảy ra, nhưng tránh nhãn rỗng nếu có
                   : (displayUser?.title ?? displayUser?.name ?? "Người duyệt");
 
               return (

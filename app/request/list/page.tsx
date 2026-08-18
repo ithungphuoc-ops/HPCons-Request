@@ -430,8 +430,8 @@ function RequestListPageInner() {
                 <table className="w-full min-w-[1000px] table-fixed border-collapse text-[13px]">
                   <thead>
                     <tr className="border-b border-[var(--color-border)] bg-gray-50 text-left text-[11px] uppercase tracking-wider text-gray-500">
-                      <th className="w-[32%] px-4 py-2.5 font-semibold">Tên đề xuất</th>
-                      <th className="w-[8%] px-4 py-2.5 font-semibold">Nhóm</th>
+                      <th className="w-[26%] px-4 py-2.5 font-semibold">Tên đề xuất</th>
+                      <th className="w-[10%] px-4 py-2.5 font-semibold">Nhóm</th>
                       <th className="px-4 py-2.5 font-semibold">Thông tin</th>
                       <th className="w-[12%] px-4 py-2.5 font-semibold">Người gửi</th>
                       <th className="w-[160px] px-4 py-2.5 font-semibold">Người duyệt</th>
@@ -466,7 +466,7 @@ function RequestListPageInner() {
                           className="group cursor-pointer transition-colors duration-150 hover:bg-blue-50/40 focus-visible:bg-blue-50/60 focus-visible:outline-none"
                         >
                           <td className="px-4 py-2.5">
-                            <span className="flex items-start gap-2.5">
+                            <span className="flex items-center gap-2.5">
                               <Avatar
                                 url={avatars[r.submittedBy.uid]}
                                 initial={submitterInitial(r)}
@@ -476,9 +476,12 @@ function RequestListPageInner() {
                                 }
                               />
                               {/* Bỏ truncate (yêu cầu Sếp 18/08/2026) — Tên đề xuất phải hiện ĐẦY ĐỦ, tự
-                                  xuống dòng thay vì cắt "...", để đổi lấy chỗ đã thu hẹp cột Nhóm/Thông tin. */}
+                                  xuống dòng thay vì cắt "...", để đổi lấy chỗ đã thu hẹp cột Nhóm/Thông tin.
+                                  Vẫn giữ title tooltip làm lưới an toàn phòng khi JSX này được tái sử dụng
+                                  ở chỗ khác có bề rộng hẹp hơn (phát hiện qua code review 18/08/2026). */}
                               <span
                                 className="min-w-0 break-words font-semibold text-gray-800 transition-colors duration-150 group-hover:text-[var(--color-action-blue)]"
+                                title={resolveRequestTitle(r)}
                               >
                                 <HighlightMatch text={resolveRequestTitle(r)} query={searchText} />
                               </span>

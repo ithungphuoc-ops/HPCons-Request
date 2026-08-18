@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { getIsoWeekInfo } from "@/lib/iso-week";
 import { useRouter } from "next/navigation";
 import {
   Check,
@@ -64,21 +65,6 @@ function formatRelativeTime(iso: string): string {
   return `${days} ngày trước`;
 }
 
-/** Số tuần ISO 8601 (tuần bắt đầu thứ Hai, tuần 1 = tuần chứa thứ Năm đầu tiên
- * của năm) — yêu cầu Sếp 18/08/2026, hiện kế bên "Thời gian tạo" để dễ tra
- * cứu theo tuần chẵn/lẻ. Đã kiểm chứng: 17-23/8/2026 ra đúng tuần 34. */
-function getIsoWeekInfo(iso: string): { week: number; isOdd: boolean } {
-  const date = new Date(iso);
-  // Đưa về UTC nửa đêm để tránh lệch múi giờ khi tính thứ trong tuần.
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  // ISO: Chủ nhật = 7 (thay vì 0) để công thức "lùi về thứ Năm cùng tuần" đúng.
-  const dayNum = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  const week = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
-  return { week, isOdd: week % 2 === 1 };
-}
-
 function formatCountdown(deadlineAt: string, now: number): string {
   const diff = new Date(deadlineAt).getTime() - now;
   if (diff <= 0) return "Đã quá hạn";
@@ -106,6 +92,10 @@ export default function RequestDetailView({
   const [rejectOpen, setRejectOpen] = useState(false);
   const [returnOpen, setReturnOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  // `now` đổi mỗi giây (đếm ngược hạn) khiến component re-render liên tục —
+  // memo hoá để không tính lại tuần ISO mỗi lần re-render dù submittedAt
+  // không đổi.
+  const submittedWeekInfo = useMemo(() => getIsoWeekInfo(request.submittedAt), [request.submittedAt]);
   const [duplicating, setDuplicating] = useState(false);
   const [managing, setManaging] = useState(false);
   const [printTemplates, setPrintTemplates] = useState<PrintTemplate[]>([]);
@@ -424,14 +414,9 @@ export default function RequestDetailView({
               <dt className="text-gray-400">Thời gian tạo</dt>
               <dd className="font-medium text-gray-800">
                 {new Date(request.submittedAt).toLocaleString("vi-VN")}
-                {(() => {
-                  const { week, isOdd } = getIsoWeekInfo(request.submittedAt);
-                  return (
-                    <span className="ml-1.5 text-gray-400">
-                      (Tuần {week} - {isOdd ? "lẻ" : "chẵn"})
-                    </span>
-                  );
-                })()}
+                <span className="ml-1.5 text-gray-400">
+                  (Tuần {submittedWeekInfo.week} - {submittedWeekInfo.isOdd ? "lẻ" : "chẵn"})
+                </span>
               </dd>
             </div>
             <div>
