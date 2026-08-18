@@ -243,13 +243,26 @@ export default function SubmitRequestPage() {
       return;
     }
 
+    // Chặn gửi khi CHƯA biết chắc danh sách bước duyệt (đang tải lại preview
+    // do vừa đổi 1 field ảnh hưởng điều kiện, hoặc preview lỗi) — trước đây
+    // guard dưới đây chỉ chạy khi status === "ok" nên bấm Gửi đúng lúc đang
+    // tải/lỗi sẽ lọt qua kiểm tra "phải chọn tay quản lý trực tiếp" hoàn toàn
+    // (bug thật phát hiện qua code review 18/08/2026). Nút Gửi cũng bị khoá
+    // cùng điều kiện này (xem disabled ở bên dưới) — chặn ở đây thêm 1 lớp
+    // phòng trường hợp bấm Enter hoặc race khác ngoài click nút.
+    if (approverPreview.status !== "ok") {
+      setSubmitError(
+        approverPreview.status === "loading"
+          ? "Đang xác định người duyệt, vui lòng đợi rồi bấm Gửi lại."
+          : "Không xác định được người duyệt, vui lòng thử lại hoặc liên hệ admin.",
+      );
+      return;
+    }
+
     // Ô "Quản lý trực tiếp" LUÔN bắt chọn tay (không tự điền sẵn, khớp đúng
     // hành vi Base.vn thật) — chặn gửi nếu còn bước submitter_manager nào
     // chưa được chọn.
-    if (
-      approverPreview.status === "ok" &&
-      approverPreview.steps.some((s) => s.kind === "submitter_manager" && !managerOverrides[s.index])
-    ) {
+    if (approverPreview.steps.some((s) => s.kind === "submitter_manager" && !managerOverrides[s.index])) {
       setSubmitError("Vui lòng chọn quản lý trực tiếp trước khi gửi đề xuất.");
       return;
     }
@@ -512,7 +525,7 @@ export default function SubmitRequestPage() {
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={submitting || savingDraft}
+            disabled={submitting || savingDraft || approverPreview.status !== "ok"}
             className={`${confirmButtonClass} flex-none px-6`}
           >
             {submitting ? "Đang gửi..." : loadedStatus === "pending" ? "Gửi lại đề xuất" : "Gửi đề xuất"}

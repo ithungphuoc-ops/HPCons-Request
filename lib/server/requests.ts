@@ -238,6 +238,16 @@ export interface ResolvedApproverStep {
  * gửi. KHÔNG throw khi 1 bước lỗi — set `error` ở đúng phần tử đó, để nơi gọi
  * (preview UI) hiện được lỗi đúng vị trí thay vì lỗi chung cho cả request.
  * Bước có `condition` không thoả mãn bị lọc bỏ hoàn toàn khỏi kết quả trả về.
+ *
+ * `index` gán cho từng bước = vị trí trong mảng `steps` GỐC (chưa lọc điều
+ * kiện), KHÔNG PHẢI vị trí trong `applicableSteps` sau lọc — cố tình, vì
+ * client (submit/page.tsx) dùng `index` làm khoá lưu lựa chọn thủ công
+ * (managerOverrides/extraApprovers theo từng bước). Nếu dùng vị trí sau lọc,
+ * mỗi lần người gửi đổi 1 field làm điều kiện của MỘT bước khác đổi (bước đó
+ * ẩn/hiện), toàn bộ bước phía sau bị dồn chỉ số → lựa chọn thủ công cũ (vốn
+ * lưu theo chỉ số cũ) bị gán NHẦM sang bước khác (bug thật phát hiện qua code
+ * review 18/08/2026). Chỉ số gốc không đổi dù bước khác ẩn/hiện, nên khoá
+ * luôn khớp đúng 1 bước xuyên suốt cả lúc xem trước lẫn lúc gửi thật.
  */
 export async function resolveApproverStepsDetailed(
   steps: ApproverStepDef[] | undefined,
@@ -246,11 +256,12 @@ export async function resolveApproverStepsDetailed(
   fields: ProposalField[] = [],
   managerOverrides: Record<number, string | string[]> = {},
 ): Promise<ResolvedApproverStep[]> {
-  const applicableSteps = filterApplicableSteps(steps ?? [], values, fields);
+  const allSteps = steps ?? [];
+  const applicableSteps = filterApplicableSteps(allSteps, values, fields);
   const results: ResolvedApproverStep[] = [];
 
-  for (let i = 0; i < applicableSteps.length; i++) {
-    const step = applicableSteps[i];
+  for (const step of applicableSteps) {
+    const i = allSteps.indexOf(step);
     if (step.kind === "fixed") {
       // Bước nhiều người (users) mở rộng thành nhiều phần tử kết quả cùng
       // `index` — danh sách người duyệt phẳng sẵn có + quy trình đồng thời/
