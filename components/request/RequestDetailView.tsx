@@ -29,6 +29,7 @@ import {
 import RequestStatusBadge from "@/components/request/RequestStatusBadge";
 import ForwardModal, { type ForwardMode } from "@/components/request/ForwardModal";
 import ReasonModal from "@/components/request/ReasonModal";
+import FilePreviewModal from "@/components/request/FilePreviewModal";
 import CommentSection from "@/components/request/CommentSection";
 import { canApproverAct } from "@/lib/approval-logic";
 import { useCurrentSession } from "@/lib/useCurrentSession";
@@ -649,26 +650,34 @@ function FileValueView({
   requestId: string;
   attachments: RequestAttachment[];
 }) {
+  // Bấm vào file → mở popup xem trước trước khi tải về (yêu cầu Sếp 2026-08-19), thay vì
+  // href target="_blank" tải/mở thẳng như trước.
+  const [previewing, setPreviewing] = useState<RequestAttachment | null>(null);
+
   if (attachments.length === 0) {
     return <p className="text-[13px] text-gray-400">Chưa có tệp nào</p>;
   }
   return (
-    <ul className="mt-1 flex flex-col gap-1">
-      {attachments.map((att) => (
-        <li key={att.path}>
-          <a
-            href={`/api/requests/${requestId}/attachments?path=${encodeURIComponent(att.path)}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 text-[13px] text-[var(--color-action-blue)] hover:underline"
-          >
-            <Paperclip size={13} className="shrink-0" />
-            <span className="truncate">{att.name}</span>
-            <span className="shrink-0 text-gray-400">({(att.size / 1024 / 1024).toFixed(1)}MB)</span>
-          </a>
-        </li>
-      ))}
-    </ul>
+    <>
+      <ul className="mt-1 flex flex-col gap-1">
+        {attachments.map((att) => (
+          <li key={att.path}>
+            <button
+              type="button"
+              onClick={() => setPreviewing(att)}
+              className="flex w-full items-center gap-1.5 text-left text-[13px] text-[var(--color-action-blue)] hover:underline"
+            >
+              <Paperclip size={13} className="shrink-0" />
+              <span className="truncate">{att.name}</span>
+              <span className="shrink-0 text-gray-400">({(att.size / 1024 / 1024).toFixed(1)}MB)</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      {previewing && (
+        <FilePreviewModal requestId={requestId} attachment={previewing} onClose={() => setPreviewing(null)} />
+      )}
+    </>
   );
 }
 
