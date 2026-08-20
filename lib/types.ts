@@ -65,6 +65,30 @@ export interface ProposalField {
    * văn bản bình thường vì máy chủ đã ghi giá trị tính sẵn vào đó.
    */
   computedFrom?: ComputedFieldConfig;
+  /**
+   * Chỉ cho field kiểu date/datetime: ràng buộc "ngày cần cấp" phải cách hôm
+   * làm đề nghị bao xa — xem DateLeadTimeRule. Đặt RIÊNG theo từng field
+   * (không phải cấu hình chung toàn app) vì mỗi loại đề nghị (mua hàng, tạm
+   * ứng...) cần lề thời gian khác nhau.
+   */
+  dateLeadTimeRule?: DateLeadTimeRule;
+}
+
+/**
+ * Ràng buộc "ngày cần cấp" cho 1 field kiểu date/datetime — Sếp chốt
+ * 20/08/2026. Khi bật (`enabled: true`), lúc gửi đề xuất, ngày người dùng
+ * chọn ở field này được phân loại theo số ngày làm việc (Thứ 2→Thứ 7, trừ
+ * Chủ Nhật — cùng quy ước lib/business-hours.ts) cách hôm làm đề nghị:
+ *   - ≤ 2 ngày làm việc  → CHẶN HẲN không cho gửi (mốc cứng, không đổi được).
+ *   - 3 ngày tới TRƯỚC `standardDays` → coi là "gấp", phải hỏi lại người gửi
+ *     có thật cần thiết không, xác nhận rồi mới đánh dấu màu lên ô ngày.
+ *   - >= `standardDays` → bình thường, không cảnh báo.
+ * `standardDays` do Admin tự chọn khi tạo/sửa field này (5/7/15 ngày làm
+ * việc) — xem lib/date-lead-time.ts (classifyDateLeadTime).
+ */
+export interface DateLeadTimeRule {
+  enabled: boolean;
+  standardDays: 5 | 7 | 15;
 }
 
 /**
