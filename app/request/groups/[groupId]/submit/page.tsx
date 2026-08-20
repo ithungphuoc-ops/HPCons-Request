@@ -9,8 +9,17 @@ import { deserializeTableRows, toWireTableRows } from "@/lib/table-field";
 import { evaluateConditionGroup } from "@/lib/server/conditions";
 import { resolveComputedValue } from "@/lib/server/computed-fields";
 import { computeManagerFlowNumbers } from "@/lib/manager-flow-numbering";
+import {
+  classifyDateLeadTime,
+  countBusinessDaysBetween,
+  DATE_LEAD_TIME_BLOCKED_MESSAGE,
+  DATE_LEAD_TIME_URGENT_NOTE,
+  parseFieldDateOnly,
+  type DateLeadTimeStatus,
+} from "@/lib/date-lead-time";
 import TagUserInput from "@/components/shared/TagUserInput";
 import DatePicker from "@/components/ui/DatePicker";
+import Modal from "@/components/shared/Modal";
 import {
   cancelButtonClass,
   confirmButtonClass,
@@ -57,6 +66,15 @@ export default function SubmitRequestPage() {
   const [values, setValues] = useState<FieldValues>({});
   const [followers, setFollowers] = useState<TaggedUser[]>(group?.followers ?? []);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  // Mức "gấp" hiện tại của từng field có bật dateLeadTimeRule, theo id field —
+  // suy ra lại mỗi lần đổi giá trị ngày (handleDateFieldChange bên dưới).
+  const [dateLeadTimeStatus, setDateLeadTimeStatus] = useState<Record<string, DateLeadTimeStatus>>({});
+  // Field nào đã được người gửi XÁC NHẬN "thật cần thiết" ở hộp hỏi gấp — chỉ
+  // field có mặt ở đây (giá trị true) mới được đánh dấu màu + ghi chú. Đổi
+  // ngày là bị xoá khỏi đây, phải xác nhận lại (xem handleDateFieldChange).
+  const [urgentConfirmed, setUrgentConfirmed] = useState<Record<string, boolean>>({});
+  // Hộp hỏi "có thật cần thiết không" đang mở cho field nào — null = không mở.
+  const [urgentPrompt, setUrgentPrompt] = useState<{ field: ProposalField; days: number } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -186,6 +204,75 @@ export default function SubmitRequestPage() {
     setValues((prev) => ({ ...prev, [fieldId]: value }));
   };
 
+  const clearDateLeadTimeFlags = (fieldId: string) => {
+    setDateLeadTimeStatus((prev) => {
+      if (!(fieldId in prev)) return prev;
+      const next = { ...prev };
+      delete next[fieldId];
+      return next;
+    });
+    setUrgentConfirmed((prev) => {
+      if (!(fieldId in prev)) return prev;
+      const next = { ...prev };
+      delete next[fieldId];
+      return next;
+    });
+    setErrors((prev) => {
+      if (!(fieldId in prev)) return prev;
+      const next = { ...prev };
+      delete next[fieldId];
+      return next;
+    });
+  };
+
+  /**
+   * onChange riêng cho field date/datetime có bật `dateLeadTimeRule` — Sếp
+   * chốt 20/08/2026. Luôn ghi giá trị người dùng chọn (không chặn ở đây),
+   * rồi phân loại mức gấp: "blocked" báo lỗi ngay tại field (chặn gửi thật ở
+   * handleSubmit); "urgent" mở hộp hỏi "có cần thiết không" — xác nhận thì
+   * đánh dấu; "ok" xoá mọi cờ cũ. Đổi ngày LUÔN xoá xác nhận cũ — phải hỏi
+   * lại vì mức gấp có thể đã đổi.
+   */
+  const handleDateFieldChange = (field: ProposalField, value: unknown) => {
+    setFieldValue(field.id, value);
+    const rule = field.dateLeadTimeRule;
+    if (!rule?.enabled) return;
+
+    if (isEmptyValue(value)) {
+      clearDateLeadTimeFlags(field.id);
+      return;
+    }
+    const target = parseFieldDateOnly(value as string);
+    if (!target) return;
+    const days = countBusinessDaysBetween(new Date(), target);
+    const status = classifyDateLeadTime(days, rule.standardDays);
+
+    setDateLeadTimeStatus((prev) => ({ ...prev, [field.id]: status }));
+    setUrgentConfirmed((prev) => {
+      if (!(field.id in prev)) return prev;
+      const next = { ...prev };
+      delete next[field.id];
+      return next;
+    });
+
+    if (status === "blocked") {
+      setErrors((prev) => ({ ...prev, [field.id]: DATE_LEAD_TIME_BLOCKED_MESSAGE }));
+      setUrgentPrompt((prev) => (prev?.field.id === field.id ? null : prev));
+    } else {
+      setErrors((prev) => {
+        if (!(field.id in prev)) return prev;
+        const next = { ...prev };
+        delete next[field.id];
+        return next;
+      });
+      if (status === "urgent") {
+        setUrgentPrompt({ field, days });
+      } else {
+        setUrgentPrompt((prev) => (prev?.field.id === field.id ? null : prev));
+      }
+    }
+  };
+
   const buildPayloadValues = (): FieldValues => {
     const payload: FieldValues = { ...values };
     for (const field of group.fields) {
@@ -235,6 +322,12 @@ export default function SubmitRequestPage() {
       for (const field of visibleFields) {
         if (field.required && isEmptyValue(values[field.id])) {
           nextErrors[field.id] = "Trường này là bắt buộc.";
+        }
+        // Mốc cứng ≤2 ngày làm việc — kiểm lại ở đây (không chỉ tin state đã
+        // set lúc onChange) để phòng field bị ẩn/hiện lại qua visibleWhen mà
+        // không đi lại qua handleDateFieldChange.
+        if (field.dateLeadTimeRule?.enabled && dateLeadTimeStatus[field.id] === "blocked") {
+          nextErrors[field.id] = DATE_LEAD_TIME_BLOCKED_MESSAGE;
         }
       }
     }
@@ -355,7 +448,11 @@ export default function SubmitRequestPage() {
                 field={field}
                 value={values[field.id]}
                 error={errors[field.id]}
-                onChange={(value) => setFieldValue(field.id, value)}
+                onChange={(value) =>
+                  field.dateLeadTimeRule?.enabled
+                    ? handleDateFieldChange(field, value)
+                    : setFieldValue(field.id, value)
+                }
                 // Field "tự tính" đang tính ra được giá trị (có nhánh khớp) →
                 // khoá không cho gõ tay; không nhánh nào khớp → cho gõ tay như
                 // field thường (xem specs/computed-field-values).
@@ -363,8 +460,44 @@ export default function SubmitRequestPage() {
                   !!field.computedFrom &&
                   resolveComputedValue(field.computedFrom, values, group.fields) !== null
                 }
+                dateLeadTimeFlagged={!!urgentConfirmed[field.id]}
               />
             ))}
+
+          {urgentPrompt && (
+            <Modal
+              title="Xác nhận mức độ gấp"
+              width={440}
+              onClose={() => setUrgentPrompt(null)}
+              footer={
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setUrgentPrompt(null)}
+                    className={cancelButtonClass}
+                  >
+                    Không cần thiết, tôi đổi ngày khác
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUrgentConfirmed((prev) => ({ ...prev, [urgentPrompt.field.id]: true }));
+                      setUrgentPrompt(null);
+                    }}
+                    className={confirmButtonClass}
+                  >
+                    Có, thật sự cần thiết
+                  </button>
+                </>
+              }
+            >
+              <p className="text-[13px] leading-relaxed text-gray-700">
+                Trường &quot;<strong>{urgentPrompt.field.name}</strong>&quot; chỉ còn{" "}
+                <strong>{urgentPrompt.days} ngày làm việc</strong> — việc này có thật sự gấp/cần thiết
+                không?
+              </p>
+            </Modal>
+          )}
 
           {approverPreview.status === "loading" && (
             <div className="flex flex-col gap-2 sm:flex-row sm:gap-4">
@@ -564,6 +697,7 @@ function FieldRow({
   error,
   onChange,
   readOnlyComputed,
+  dateLeadTimeFlagged,
 }: {
   field: ProposalField;
   value: unknown;
@@ -571,6 +705,9 @@ function FieldRow({
   onChange: (value: unknown) => void;
   /** true = field "tự tính" đang tính ra được giá trị → ô nhập chỉ đọc. */
   readOnlyComputed?: boolean;
+  /** true = người gửi đã xác nhận "thật cần thiết" cho ngày gấp đang chọn ở
+   * field này (dateLeadTimeRule) — đánh dấu màu + ghi chú (Sếp chốt 20/08/2026). */
+  dateLeadTimeFlagged?: boolean;
 }) {
   if (field.dataType === "section_title") {
     return (
@@ -595,12 +732,21 @@ function FieldRow({
         {field.name}
         {field.required && <span className="ml-0.5 text-[var(--color-danger-red)]">*</span>}
       </label>
-      <div className="min-w-0 flex-1">
+      <div
+        className={
+          dateLeadTimeFlagged
+            ? "min-w-0 flex-1 rounded-md border border-amber-400 bg-amber-50/60 p-1.5"
+            : "min-w-0 flex-1"
+        }
+      >
         <FieldControl field={field} value={value} onChange={onChange} readOnlyComputed={readOnlyComputed} />
         {readOnlyComputed && (
           <p className="mt-1 text-[12px] text-gray-400">
             Tên đề xuất được lấy tự động từ thông tin bên dưới — không nhập tay ở đây.
           </p>
+        )}
+        {dateLeadTimeFlagged && (
+          <p className="mt-1 text-[12px] font-medium text-amber-700">⚠ {DATE_LEAD_TIME_URGENT_NOTE}</p>
         )}
         {error && <p className="mt-1 text-[12px] text-[var(--color-danger-red)]">{error}</p>}
       </div>

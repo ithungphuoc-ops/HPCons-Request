@@ -16,6 +16,7 @@ import {
   fieldDataTypeLabels,
   type ComputedTemplateBranch,
   type ConditionGroup,
+  type DateLeadTimeRule,
   type FieldDataType,
 } from "@/lib/types";
 import { slugifyFieldName } from "@/lib/print-template";
@@ -26,6 +27,9 @@ const choiceTypes: FieldDataType[] = ["single_choice", "multiple_choice"];
 const tableTypes: FieldDataType[] = ["table", "base_table"];
 /** Chỉ field văn bản mới cấu hình được "tự động ghép giá trị từ trường khác". */
 const computedEligibleTypes: FieldDataType[] = ["short_text", "paragraph"];
+/** Chỉ field ngày mới cấu hình được ràng buộc "ngày cần cấp" (dateLeadTimeRule). */
+const dateLeadTimeEligibleTypes: FieldDataType[] = ["date", "datetime"];
+const DATE_LEAD_TIME_STANDARD_OPTIONS: DateLeadTimeRule["standardDays"][] = [5, 7, 15];
 
 export default function AddFieldModal() {
   const { addFieldModalGroupId, editingField, closeAddFieldModal, getGroupById, addField, updateField } =
@@ -46,6 +50,8 @@ export default function AddFieldModal() {
   // null = tắt "tự động ghép giá trị"; mảng (kể cả rỗng) = đang bật, mỗi phần
   // tử là 1 nhánh { điều kiện tuỳ chọn + mẫu chuỗi ${ma_truong} }.
   const [computedBranches, setComputedBranches] = useState<ComputedTemplateBranch[] | null>(null);
+  const [dateLeadTimeEnabled, setDateLeadTimeEnabled] = useState(false);
+  const [dateLeadTimeStandardDays, setDateLeadTimeStandardDays] = useState<DateLeadTimeRule["standardDays"]>(5);
   const [errors, setErrors] = useState<{ name?: string; options?: string; code?: string; computed?: string }>({});
 
   const conditionFields = useMemo(
@@ -82,6 +88,8 @@ export default function AddFieldModal() {
     setFormula("");
     setVisibleWhen(undefined);
     setComputedBranches(null);
+    setDateLeadTimeEnabled(false);
+    setDateLeadTimeStandardDays(5);
     setErrors({});
   };
 
@@ -97,6 +105,8 @@ export default function AddFieldModal() {
       setFormula(editingField.formula ?? "");
       setVisibleWhen(editingField.visibleWhen);
       setComputedBranches(editingField.computedFrom?.branches ?? null);
+      setDateLeadTimeEnabled(editingField.dateLeadTimeRule?.enabled ?? false);
+      setDateLeadTimeStandardDays(editingField.dateLeadTimeRule?.standardDays ?? 5);
       setErrors({});
     } else {
       resetForm();
@@ -165,6 +175,10 @@ export default function AddFieldModal() {
       formula: dataType === "formula" ? formula : undefined,
       visibleWhen,
       computedFrom: cleanedBranches && cleanedBranches.length > 0 ? { branches: cleanedBranches } : undefined,
+      dateLeadTimeRule:
+        dateLeadTimeEligibleTypes.includes(dataType) && dateLeadTimeEnabled
+          ? { enabled: true, standardDays: dateLeadTimeStandardDays }
+          : undefined,
     };
 
     if (isEditMode && editingField) {
@@ -444,6 +458,52 @@ export default function AddFieldModal() {
               )}
               {errors.computed && (
                 <p className="text-[12px] text-[var(--color-danger-red)]">{errors.computed}</p>
+              )}
+            </div>
+          </Row>
+        )}
+
+        {dateLeadTimeEligibleTypes.includes(dataType) && (
+          <Row label="Ràng buộc ngày cần cấp">
+            <div className="flex flex-col gap-3">
+              <label className="flex items-center gap-2 text-[13px] text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={dateLeadTimeEnabled}
+                  onChange={(e) => setDateLeadTimeEnabled(e.target.checked)}
+                />
+                Bật — bắt buộc chọn ngày cách hôm làm đề nghị ít nhất 3 ngày làm việc
+              </label>
+
+              {dateLeadTimeEnabled && (
+                <>
+                  <div>
+                    <p className="mb-1 text-[12px] text-gray-500">
+                      Ngưỡng chuẩn (đủ thời gian chuẩn bị — từ mốc này trở lên không cảnh báo gì):
+                    </p>
+                    <select
+                      className={selectClass}
+                      value={dateLeadTimeStandardDays}
+                      onChange={(e) =>
+                        setDateLeadTimeStandardDays(
+                          Number(e.target.value) as DateLeadTimeRule["standardDays"],
+                        )
+                      }
+                    >
+                      {DATE_LEAD_TIME_STANDARD_OPTIONS.map((d) => (
+                        <option key={d} value={d}>
+                          {d} ngày làm việc
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="rounded-md bg-amber-50 p-2 text-[12px] leading-relaxed text-amber-700">
+                    Chọn ngày cách hôm gửi ≤ 2 ngày làm việc: chặn hẳn, không cho gửi. Chọn từ 3 ngày tới
+                    trước ngưỡng chuẩn ở trên: hỏi lại người gửi có thật cần thiết không — nếu xác nhận
+                    cần thiết, ô ngày được đánh dấu màu kèm ghi chú &quot;chưa có kế hoạch đề nghị rõ
+                    ràng&quot;.
+                  </div>
+                </>
               )}
             </div>
           </Row>

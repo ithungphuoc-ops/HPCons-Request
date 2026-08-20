@@ -9,6 +9,7 @@ import {
   buildInitialApprovers,
   canView,
   computeDeadline,
+  findBlockedDateLeadTimeFields,
   findMissingRequiredFields,
   generateGroupRequestCode,
   generateRequestCode,
@@ -137,6 +138,19 @@ export async function PATCH(
           {
             error: "Còn thiếu trường bắt buộc.",
             missingFields: missing.map((f) => ({ id: f.id, name: f.name })),
+          },
+          { status: 400 },
+        );
+      }
+
+      // Luật "ngày cần cấp" (dateLeadTimeRule) — cùng chặn ở gửi từ nháp,
+      // xem app/api/requests/route.ts (tạo mới) cho lý do đầy đủ.
+      const blockedDates = findBlockedDateLeadTimeFields(group.fields, values);
+      if (blockedDates.length > 0) {
+        return NextResponse.json(
+          {
+            error: "Ngày cần cấp quá gấp — phải cách hôm làm đề nghị ít nhất 3 ngày làm việc.",
+            blockedFields: blockedDates.map((f) => ({ id: f.id, name: f.name })),
           },
           { status: 400 },
         );
