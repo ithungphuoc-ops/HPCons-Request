@@ -12,6 +12,7 @@ import { apiErrorResponse } from "@/lib/http";
 import { requireSession } from "@/lib/session";
 import type { RequestInstance, TaggedUser } from "@/lib/types";
 import { guiSangQlkCtr, trichXuatPayload } from "@/lib/qlkctr-sync";
+import { guiSangThuMua, trichXuatPayloadThuMua } from "@/lib/thumua-sync";
 
 interface DecisionBody {
   decision: "approved" | "rejected" | "approve_and_forward" | "forward_then_approve" | "returned";
@@ -184,6 +185,26 @@ export async function POST(
         }
       } catch (syncError) {
         console.error("Đồng bộ QLK CTR lỗi (không ảnh hưởng thao tác duyệt):", syncError);
+      }
+
+      // Đồng bộ sang App Thu mua (module mua hàng) — NHÁNH SONG SONG với QLK CTR ở trên,
+      // KHÔNG phụ thuộc lẫn nhau (một cái lỗi không cản cái kia). Khác QLK CTR: Thu mua nhận
+      // MỌI đề xuất duyệt xong, có công trình hay không — xem lib/thumua-sync.ts.
+      try {
+        const payloadThuMua = await trichXuatPayloadThuMua(updated);
+        if (payloadThuMua) {
+          const ketQuaThuMua = await guiSangThuMua(payloadThuMua);
+          const syncEntryThuMua = {
+            at: new Date().toISOString(),
+            actor: "Hệ thống",
+            action: ketQuaThuMua.ok ? "Đã đồng bộ sang App Thu mua" : "Đồng bộ App Thu mua thất bại",
+            note: ketQuaThuMua.ok ? `Mã đề nghị: ${ketQuaThuMua.maDeNghi ?? "—"}` : ketQuaThuMua.error,
+          };
+          updated.history = [...updated.history, syncEntryThuMua];
+          await ref.update({ history: updated.history });
+        }
+      } catch (syncError) {
+        console.error("Đồng bộ App Thu mua lỗi (không ảnh hưởng thao tác duyệt):", syncError);
       }
     }
 
