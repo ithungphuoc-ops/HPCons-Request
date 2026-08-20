@@ -84,7 +84,11 @@ export function findBlockedDateLeadTimeFields(
     if (f.visibleWhen && !evaluateConditionGroup(f.visibleWhen, values ?? {}, fields)) return false;
     const raw = values?.[f.id];
     if (isEmptyValue(raw)) return false;
-    const target = parseFieldDateOnly(raw as string);
+    // Không tin kiểu dữ liệu client gửi lên — giá trị field không phải string
+    // (vd số, object do client cố ý/lỗi gửi sai) không phải lỗi của luật này,
+    // bỏ qua thay vì ép kiểu ẩn rồi crash trong parseFieldDateOnly.
+    if (typeof raw !== "string") return false;
+    const target = parseFieldDateOnly(raw);
     if (!target) return false;
     const days = countBusinessDaysBetween(now, target);
     return classifyDateLeadTime(days, f.dateLeadTimeRule.standardDays) === "blocked";
