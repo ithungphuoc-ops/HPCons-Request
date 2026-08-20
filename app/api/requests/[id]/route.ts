@@ -19,6 +19,7 @@ import {
 } from "@/lib/server/requests";
 import { requireSession } from "@/lib/session";
 import type { RequestInstance, TaggedUser } from "@/lib/types";
+import { retryThuMuaSyncNeuLoi } from "@/lib/thumua-sync";
 
 export async function GET(
   _request: Request,
@@ -37,6 +38,8 @@ export async function GET(
         { status: 403 },
       );
     }
+    // Bắn rồi quên — không đợi kết quả, không làm chậm màn hình. Xem lib/thumua-sync.ts.
+    void retryThuMuaSyncNeuLoi(found);
     return NextResponse.json({ request: found });
   } catch (error) {
     return apiErrorResponse(error);

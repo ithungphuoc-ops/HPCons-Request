@@ -177,3 +177,41 @@ export async function guiSangThuMua(payload: ThuMuaPayload): Promise<KetQuaGuiTh
     return { ok: false, error: err instanceof Error ? err.message : "Lỗi không xác định." };
   }
 }
+
+/**
+ * TỰ THỬ LẠI khi lần đồng bộ trước đó thất bại (`thuMuaSyncStatus === "failed"`) — Sếp yêu
+ * cầu 20/08/2026 sau sự cố Thu mua tạm thời trả lỗi vì lệch bản deploy: *"nếu app lỗi như
+ * vậy nữa, khi mình khắc phục xong thì app phải tự đọc lại để nhận lại đề nghị cũ"*.
+ *
+ * Gọi hàm này ở những nơi người dùng hay ghé qua đề xuất đã duyệt — màn danh sách "Tôi gửi
+ * đi"/"Đang theo dõi" và màn chi tiết — nên không cần đợi lịch (cron) mới thử lại: hễ có
+ * người mở lại đúng đề xuất đó SAU KHI Thu mua đã sửa xong, lần mở đó tự vá luôn, không ai
+ * phải tìm và gửi lại tay.
+ *
+ * 🔴 GỌI KIỂU "BẮN RỒI QUÊN" (`void retryThuMuaSyncNeuLoi(...)`, không `await`) ở API route —
+ * không được làm chậm phản hồi của màn hình chỉ vì một lần đồng bộ phụ đang thử lại.
+ * Tự bắt hết lỗi, không throw ra ngoài.
+ */
+export async function retryThuMuaSyncNeuLoi(request: RequestInstance): Promise<void> {
+  if (request.status !== "approved" || request.thuMuaSyncStatus !== "failed") return;
+
+  try {
+    const payload = await trichXuatPayloadThuMua(request);
+    if (!payload) return;
+
+    const ketQua = await guiSangThuMua(payload);
+    const { adminDb } = await import("@/lib/firebase/admin");
+    const syncEntry = {
+      at: new Date().toISOString(),
+      actor: "Hệ thống",
+      action: ketQua.ok ? "Đã đồng bộ sang App Thu mua (tự thử lại)" : "Đồng bộ App Thu mua thất bại (tự thử lại)",
+      note: ketQua.ok ? `Mã đề nghị: ${ketQua.maDeNghi ?? "—"}` : ketQua.error,
+    };
+    await adminDb.collection("requests").doc(request.id).update({
+      thuMuaSyncStatus: ketQua.ok ? "synced" : "failed",
+      history: [...request.history, syncEntry],
+    });
+  } catch (err) {
+    console.error(`Tự thử lại đồng bộ App Thu mua cho đề xuất ${request.id} lỗi:`, err);
+  }
+}

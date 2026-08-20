@@ -413,6 +413,14 @@ export interface RequestInstance {
    * thường (mine/inbox/all/group...), chỉ hiện trong "Tất cả đề xuất hệ
    * thống" (scope=system, admin) để khôi phục khi cần. */
   deletedAt: string | null;
+  /**
+   * Kết quả lần đồng bộ sang App Thu mua GẦN NHẤT — vắng mặt = chưa từng thử (đề xuất
+   * không có công trình/vật tư hợp lệ, xem `trichXuatPayloadThuMua`). "failed" là dấu hiệu
+   * cho `retryThuMuaSyncNeuLoi()` tự thử lại lần sau có người mở xem đề xuất này — xem
+   * `lib/thumua-sync.ts`. Tách field riêng (không chỉ dựa vào `history`) để việc dò "còn ai
+   * đồng bộ lỗi" không phải quét chuỗi trong mảng lịch sử.
+   */
+  thuMuaSyncStatus?: "synced" | "failed";
 }
 
 export type ModalWindowStatus =

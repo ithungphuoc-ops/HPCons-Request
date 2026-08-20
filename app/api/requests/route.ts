@@ -19,6 +19,7 @@ import {
   toProposalGroup,
 } from "@/lib/server/requests";
 import { requireSession } from "@/lib/session";
+import { retryThuMuaSyncNeuLoi } from "@/lib/thumua-sync";
 import type {
   ApprovalFlowType,
   ProposalField,
@@ -44,6 +45,9 @@ export async function GET(request: Request) {
         .map((doc) => ({ id: doc.id, ...doc.data() }) as RequestInstance)
         .filter((r) => !r.deletedAt)
         .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt));
+      // Bắn rồi quên cho từng đề xuất lỡ đồng bộ Thu mua thất bại lần trước — xem
+      // lib/thumua-sync.ts. Đây là màn người gửi hay mở lại nhất, nên tự vá ở đây trước.
+      for (const r of requests) void retryThuMuaSyncNeuLoi(r);
       return NextResponse.json({ requests });
     }
 

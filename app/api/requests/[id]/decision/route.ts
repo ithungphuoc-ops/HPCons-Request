@@ -201,10 +201,19 @@ export async function POST(
             note: ketQuaThuMua.ok ? `Mã đề nghị: ${ketQuaThuMua.maDeNghi ?? "—"}` : ketQuaThuMua.error,
           };
           updated.history = [...updated.history, syncEntryThuMua];
-          await ref.update({ history: updated.history });
+          updated.thuMuaSyncStatus = ketQuaThuMua.ok ? "synced" : "failed";
+          await ref.update({ history: updated.history, thuMuaSyncStatus: updated.thuMuaSyncStatus });
         }
       } catch (syncError) {
         console.error("Đồng bộ App Thu mua lỗi (không ảnh hưởng thao tác duyệt):", syncError);
+        // Đánh dấu "failed" dù lỗi xảy ra NGOÀI guiSangThuMua (vốn tự bắt hết lỗi rồi trả
+        // { ok:false } — hiếm khi tới đây, nhưng nếu tới thì vẫn cần cờ này để lần sau có
+        // người mở đề xuất, retryThuMuaSyncNeuLoi() còn biết mà tự thử lại.
+        try {
+          await ref.update({ thuMuaSyncStatus: "failed" });
+        } catch {
+          // Bỏ qua — không để lỗi ghi cờ phụ này làm hỏng response duyệt chính.
+        }
       }
     }
 

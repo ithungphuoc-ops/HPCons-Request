@@ -8,7 +8,14 @@ import type { ProposalField, RequestInstance } from "./types";
 // test `qlkctr-sync.ts`, không phải lỗi riêng của file mới này.
 vi.mock("@/lib/r2", () => ({ createSignedReadUrl: vi.fn() }));
 
-const { trichXuatPayloadThuMua } = await import("./thumua-sync");
+// Cùng lý do với @/lib/r2 ở trên — lib/firebase/admin.ts cũng khai `import "server-only"`.
+// updateMock cho phép từng test kiểm được đã ghi đúng field/history chưa.
+const updateMock = vi.fn().mockResolvedValue(undefined);
+vi.mock("@/lib/firebase/admin", () => ({
+  adminDb: { collection: () => ({ doc: () => ({ update: updateMock }) }) },
+}));
+
+const { trichXuatPayloadThuMua, retryThuMuaSyncNeuLoi } = await import("./thumua-sync");
 
 function baseRequest(overrides: Partial<RequestInstance>): RequestInstance {
   return {
@@ -113,5 +120,77 @@ describe("trichXuatPayloadThuMua", () => {
       values: { f_bp: "Bộ phận Thi công", f_ct: [] },
     });
     expect(await trichXuatPayloadThuMua(req)).toBeNull();
+  });
+});
+
+describe("retryThuMuaSyncNeuLoi", () => {
+  const reqDaLoi = baseRequest({
+    thuMuaSyncStatus: "failed",
+    fieldsSnapshot: [deptField, detailField],
+    values: { f_bp: "Bộ phận Thi công", f_ct: [["Xi măng", "", "bao", "1", ""]] },
+    history: [{ at: "2026-08-20T10:00:00.000Z", actor: "Hệ thống", action: "Đồng bộ App Thu mua thất bại" }],
+  });
+
+  it("không làm gì nếu status khác 'approved' — không gọi fetch, không ghi Firestore", async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    updateMock.mockClear();
+
+    await retryThuMuaSyncNeuLoi({ ...reqDaLoi, status: "pending" as RequestInstance["status"] });
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(updateMock).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it("không làm gì nếu thuMuaSyncStatus khác 'failed' (đã đồng bộ xong, hoặc chưa từng thử)", async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    updateMock.mockClear();
+
+    await retryThuMuaSyncNeuLoi({ ...reqDaLoi, thuMuaSyncStatus: "synced" });
+    await retryThuMuaSyncNeuLoi({ ...reqDaLoi, thuMuaSyncStatus: undefined });
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(updateMock).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it("thử lại thành công thì ghi thuMuaSyncStatus='synced' + thêm dòng lịch sử", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ ok: true, trangThai: "da_tao", maDeNghi: "260001-HPCS-PR-001" }),
+      }),
+    );
+    updateMock.mockClear();
+    process.env.THUMUA_API_URL = "https://thumua.hpcore.vn";
+
+    await retryThuMuaSyncNeuLoi(reqDaLoi);
+
+    expect(updateMock).toHaveBeenCalledTimes(1);
+    const patch = updateMock.mock.calls[0][0];
+    expect(patch.thuMuaSyncStatus).toBe("synced");
+    expect(patch.history).toHaveLength(2);
+    expect(patch.history[1].action).toContain("tự thử lại");
+    vi.unstubAllGlobals();
+  });
+
+  it("thử lại vẫn thất bại thì giữ nguyên thuMuaSyncStatus='failed', vẫn ghi thêm lịch sử (không throw)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: false, status: 404, json: async () => { throw new SyntaxError("Unexpected token '<'"); } }),
+    );
+    updateMock.mockClear();
+    process.env.THUMUA_API_URL = "https://thumua.hpcore.vn";
+
+    await expect(retryThuMuaSyncNeuLoi(reqDaLoi)).resolves.toBeUndefined();
+
+    expect(updateMock).toHaveBeenCalledTimes(1);
+    const patch = updateMock.mock.calls[0][0];
+    expect(patch.thuMuaSyncStatus).toBe("failed");
+    vi.unstubAllGlobals();
   });
 });
