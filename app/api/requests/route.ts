@@ -10,6 +10,7 @@ import {
   buildInitialApprovers,
   canView,
   computeDeadline,
+  findBlockedDateLeadTimeFields,
   findMissingRequiredFields,
   generateGroupRequestCode,
   generateRequestCode,
@@ -255,6 +256,22 @@ export async function POST(request: Request) {
             {
               error: "Còn thiếu trường bắt buộc.",
               missingFields: missing.map((f) => ({ id: f.id, name: f.name })),
+            },
+            { status: 400 },
+          );
+        }
+      }
+
+      // Luật "ngày cần cấp" (dateLeadTimeRule) — mốc ≤2 ngày làm việc là mốc
+      // cứng bắt buộc, chặn ở đây phòng trường hợp gọi thẳng API né qua
+      // validate phía trình duyệt (xem findBlockedDateLeadTimeFields).
+      if (!isDraft) {
+        const blockedDates = findBlockedDateLeadTimeFields(group.fields, body.values ?? {});
+        if (blockedDates.length > 0) {
+          return NextResponse.json(
+            {
+              error: "Ngày cần cấp quá gấp — phải cách hôm làm đề nghị ít nhất 3 ngày làm việc.",
+              blockedFields: blockedDates.map((f) => ({ id: f.id, name: f.name })),
             },
             { status: 400 },
           );

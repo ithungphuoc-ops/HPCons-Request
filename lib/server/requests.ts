@@ -1,6 +1,11 @@
 import "server-only";
 import { fixedStepUsers, type ApproverState } from "@/lib/approval-logic";
 import { addBusinessHours } from "@/lib/business-hours";
+import {
+  classifyDateLeadTime,
+  countBusinessDaysBetween,
+  parseFieldDateOnly,
+} from "@/lib/date-lead-time";
 import { adminDb } from "@/lib/firebase/admin";
 import { evaluateConditionGroup, filterApplicableSteps } from "@/lib/server/conditions";
 import { getHpcoreDb } from "@/lib/hpcore";
@@ -56,6 +61,34 @@ export function findMissingRequiredFields(
       isEmptyValue(values?.[f.id]) &&
       (!f.visibleWhen || evaluateConditionGroup(f.visibleWhen, values ?? {}, fields)),
   );
+}
+
+/**
+ * Field date/datetime có bật `dateLeadTimeRule` mà giá trị đang chọn cách hôm
+ * gửi ≤2 ngày làm việc — mốc cứng "bắt buộc", CHẶN gửi chính thức (không dùng
+ * khi lưu nháp) — xem lib/date-lead-time.ts. Trước đây chỉ chặn ở trình
+ * duyệt (submit/page.tsx handleSubmit), ai gọi thẳng API vẫn né được luật
+ * này (CodeRabbit phát hiện ở PR #2, 20/08/2026) — nay chặn thêm ở đây, dùng
+ * chung cho cả tạo mới (POST) và gửi từ nháp (PATCH). Field bị ẩn (visibleWhen
+ * không thoả) hoặc giá trị rỗng/không hợp lệ thì bỏ qua — không phải lỗi của
+ * luật này (rỗng đã có findMissingRequiredFields xử lý riêng nếu field đó
+ * cũng required).
+ */
+export function findBlockedDateLeadTimeFields(
+  fields: ProposalField[],
+  values: Record<string, unknown>,
+  now: Date = new Date(),
+): ProposalField[] {
+  return fields.filter((f) => {
+    if (!f.dateLeadTimeRule?.enabled) return false;
+    if (f.visibleWhen && !evaluateConditionGroup(f.visibleWhen, values ?? {}, fields)) return false;
+    const raw = values?.[f.id];
+    if (isEmptyValue(raw)) return false;
+    const target = parseFieldDateOnly(raw as string);
+    if (!target) return false;
+    const days = countBusinessDaysBetween(now, target);
+    return classifyDateLeadTime(days, f.dateLeadTimeRule.standardDays) === "blocked";
+  });
 }
 
 /** Khởi tạo approvers "pending" theo đúng thứ tự của danh sách người duyệt. */

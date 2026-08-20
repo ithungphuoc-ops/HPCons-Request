@@ -66,7 +66,7 @@ export function classifyDateLeadTime(businessDays: number, standardDays: number)
 }
 
 export const DATE_LEAD_TIME_BLOCKED_MESSAGE =
-  "Ngày cần cấp phải cách hôm làm đề nghị hơn 3 ngày làm việc (Thứ 2–Thứ 7, trừ Chủ Nhật) — vui lòng chọn ngày khác.";
+  "Ngày cần cấp phải cách hôm làm đề nghị ÍT NHẤT 3 ngày làm việc (Thứ 2–Thứ 7, trừ Chủ Nhật) — vui lòng chọn ngày khác.";
 
 export const DATE_LEAD_TIME_URGENT_NOTE =
   "Yêu cầu gấp — chưa có kế hoạch đề nghị rõ ràng.";

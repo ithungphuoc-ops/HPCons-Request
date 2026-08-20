@@ -472,7 +472,7 @@ export default function AddFieldModal() {
                   checked={dateLeadTimeEnabled}
                   onChange={(e) => setDateLeadTimeEnabled(e.target.checked)}
                 />
-                Bật — bắt buộc chọn ngày cách hôm làm đề nghị hơn 3 ngày làm việc
+                Bật — bắt buộc chọn ngày cách hôm làm đề nghị ít nhất 3 ngày làm việc
               </label>
 
               {dateLeadTimeEnabled && (
