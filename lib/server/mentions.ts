@@ -1,4 +1,5 @@
 import "server-only";
+import { unstable_cache } from "next/cache";
 import { getHpcoreDb } from "@/lib/hpcore";
 import type { TaggedUser } from "@/lib/types";
 
@@ -14,8 +15,12 @@ export interface MentionableEntry extends TaggedUser {
  * cho users, mở rộng thêm memberGroups + departments). Dùng RIÊNG cho mention
  * bình luận — KHÔNG dùng để mở rộng usedFor/approverSteps/followers (những
  * chỗ đó vẫn chỉ nhận cá nhân qua /api/directory hiện có).
+ *
+ * Cache 60 giây (thêm 21/08/2026) — đọc 3 collection toàn bộ mỗi lần ô @mention
+ * hiện ra, không có field Timestamp nên an toàn cache trực tiếp.
  */
-export async function listMentionableEntries(): Promise<MentionableEntry[]> {
+export const listMentionableEntries = unstable_cache(
+  async (): Promise<MentionableEntry[]> => {
   const db = getHpcoreDb();
   const [usersSnap, groupsSnap, deptsSnap] = await Promise.all([
     db.collection("users").where("isActive", "==", true).get(),
@@ -63,7 +68,10 @@ export async function listMentionableEntries(): Promise<MentionableEntry[]> {
   });
 
   return [...users, ...groups, ...departments];
-}
+  },
+  ["mentionable-entries"],
+  { revalidate: 60 },
+);
 
 /**
  * Giãn `mentionIds` (uid người HOẶC id nhóm thành viên/phòng ban) thành tập

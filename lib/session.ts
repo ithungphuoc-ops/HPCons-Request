@@ -1,6 +1,7 @@
 import "server-only";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { unstable_cache } from "next/cache";
 import { SSO_COOKIE_NAME, getHpcoreDb, hpcoreLoginUrl, verifyHpcore } from "@/lib/hpcore";
 import { canManageGroupsAtAppScope, type Role } from "@/lib/permissions";
 
@@ -18,32 +19,40 @@ const VALID_ROLES: readonly Role[] = ["owner", "admin", "manager", "employee"];
 
 /**
  * Đọc thẳng hồ sơ users/{uid} của app tổng — vai trò TOÀN CỤC (không phải
- * per-app), họ tên, và ảnh đại diện, gộp 1 lần đọc SỐNG (không cache) mỗi
- * lần xác minh phiên, để avatar cập nhật ở app tổng lan sang ngay lần đăng
- * nhập/SSO check kế tiếp. Không dùng app_permissions: app này không có hệ
- * vai trò riêng, không cần bước gán quyền thủ công nào thêm.
+ * per-app), họ tên, và ảnh đại diện. Không dùng app_permissions: app này
+ * không có hệ vai trò riêng, không cần bước gán quyền thủ công nào thêm.
  * Lỗi đọc cross-project → rơi về "employee" + email + không avatar (không
  * chặn đăng nhập).
+ *
+ * Cache 30 giây (thêm 21/08/2026, sau sự cố hết hạn mức Firestore project
+ * trung tâm — cùng cách đã vá ở HPCons-portal/lib/session.ts): trước đây
+ * đọc SỐNG mỗi lần xác minh phiên (mọi F5/chuyển trang), giờ nhiều lượt gọi
+ * liên tiếp của CÙNG 1 người trong 30s chỉ tốn 1 lượt đọc thật. Đánh đổi:
+ * avatar/vai trò đổi ở app tổng mất tới 30s mới lan sang, chấp nhận được.
  */
-async function fetchProfile(
-  uid: string,
-  email: string,
-): Promise<{ role: Role; name: string; avatarUrl: string | null }> {
-  try {
-    const snap = await getHpcoreDb().collection("users").doc(uid).get();
-    const data = snap.data();
-    const role = data?.role;
-    const fullName = (data?.fullName as string | undefined)?.trim();
-    const avatarUrl = (data?.avatarUrl as string | undefined)?.trim();
-    return {
-      role: typeof role === "string" && VALID_ROLES.includes(role as Role) ? (role as Role) : "employee",
-      name: fullName || email.split("@")[0],
-      avatarUrl: avatarUrl || null,
-    };
-  } catch {
-    return { role: "employee", name: email.split("@")[0], avatarUrl: null };
-  }
-}
+const fetchProfile = unstable_cache(
+  async (
+    uid: string,
+    email: string,
+  ): Promise<{ role: Role; name: string; avatarUrl: string | null }> => {
+    try {
+      const snap = await getHpcoreDb().collection("users").doc(uid).get();
+      const data = snap.data();
+      const role = data?.role;
+      const fullName = (data?.fullName as string | undefined)?.trim();
+      const avatarUrl = (data?.avatarUrl as string | undefined)?.trim();
+      return {
+        role: typeof role === "string" && VALID_ROLES.includes(role as Role) ? (role as Role) : "employee",
+        name: fullName || email.split("@")[0],
+        avatarUrl: avatarUrl || null,
+      };
+    } catch {
+      return { role: "employee", name: email.split("@")[0], avatarUrl: null };
+    }
+  },
+  ["request-app-profile"],
+  { revalidate: 30 },
+);
 
 const DEV_FALLBACK_USER: Session = {
   uid: "dev-owner",
