@@ -12,11 +12,13 @@ import { getHpcoreDb } from "@/lib/hpcore";
 import { canManageGroupsAtAppScope, type Role } from "@/lib/permissions";
 import { nextCounterCode } from "@/lib/validation";
 import type {
+  ApprovalFlowType,
   ApproverStepDef,
   ApproverStepMeta,
   ProposalField,
   ProposalGroup,
   RequestInstance,
+  RequestStatus,
   TaggedUser,
 } from "@/lib/types";
 
@@ -124,13 +126,12 @@ export function computeDeadline(
  * `group.slaHours` chung; tắt cờ hoặc bước đầu không có `slaHours` riêng →
  * dùng `group.slaHours` như hành vi cũ (tương thích ngược hoàn toàn).
  *
- * LƯU Ý PHẠM VI: đây CHỈ tính deadline 1 LẦN lúc gửi/gửi lại — KHÔNG tự động
- * tính lại deadline mới khi đề xuất chuyển sang bước duyệt tiếp theo (luồng
- * "Lần lượt" nhiều bước, mỗi bước có `slaHours` khác nhau). Việc "làm mới
- * đồng hồ đếm ngược mỗi khi sang bước mới" là 1 quyết định hành vi lớn hơn
- * (đụng `/api/requests/[id]/decision`, ảnh hưởng badge "Quá hạn" đang chạy
- * thật) — CHƯA triển khai trong change này, cần Sếp xác nhận rõ trước khi
- * làm (xem báo cáo cuối change add-base-vn-approver-and-approval-form-parity).
+ * LƯU Ý: đây tính deadline lúc gửi/gửi lại — khi đề xuất chuyển sang bước
+ * duyệt tiếp theo (luồng "Lần lượt"), deadline được TÍNH LẠI riêng bằng
+ * `recomputeDeadlineForNextStep()` bên dưới (Sếp xác nhận 23/08/2026 cần làm
+ * — trước đó cố ý chưa làm, xem Open Question #5 của change
+ * add-base-vn-approver-and-approval-form-parity, và design.md của change
+ * recompute-approver-step-deadline).
  */
 export function resolveInitialSlaHours(group: ProposalGroup): number | null {
   if (group.approverSlaEnabled) {
@@ -138,6 +139,44 @@ export function resolveInitialSlaHours(group: ProposalGroup): number | null {
     if (typeof firstStepSla === "number") return firstStepSla;
   }
   return group.slaHours;
+}
+
+/**
+ * Tính lại `deadlineAt` khi đề xuất CHUYỂN SANG bước duyệt tiếp theo (luồng
+ * "Lần lượt" nhiều bước, mỗi bước có thể có `slaHours` riêng) — mỗi bước có
+ * "đồng hồ đếm ngược" riêng tính từ lúc TỚI LƯỢT bước đó, không phải cộng dồn
+ * từ lúc gửi đề xuất. Sếp xác nhận 23/08/2026 cần làm, xem design.md của
+ * change recompute-approver-step-deadline.
+ *
+ * CHỈ tính lại khi ĐỦ 4 điều kiện: `group.approverSlaEnabled` bật, luồng xử
+ * lý là "sequential" (đồng thời/1-người không có khái niệm "lượt kế tiếp" —
+ * mọi người đã cùng bắt đầu từ lúc gửi), đề xuất vẫn còn "pending" sau quyết
+ * định (đã xong hết thì không còn "bước tiếp theo" nào để tính), và còn ít
+ * nhất 1 người pending kế tiếp. Bước kế tiếp không có `slaHours` riêng → rơi
+ * về `groupSlaHours` (hành vi fallback giống `resolveInitialSlaHours`).
+ *
+ * Trả về `undefined` nghĩa là "giữ nguyên deadlineAt hiện có" (không thuộc
+ * phạm vi tính lại) — phân biệt với `null` (có tính, nhưng nhóm không đặt
+ * SLA nào) để nơi gọi biết có nên ghi đè field hay không.
+ */
+export function recomputeDeadlineForNextStep(params: {
+  approvalFlow: ApprovalFlowType;
+  status: RequestStatus;
+  approvers: ApproverState[];
+  approverStepMeta: ApproverStepMeta[] | undefined;
+  approverSlaEnabled: boolean | undefined;
+  groupSlaHours: number | null;
+  slaByWorkCalendar: boolean | undefined;
+  now: Date;
+}): string | null | undefined {
+  const { approvalFlow, status, approvers, approverStepMeta, approverSlaEnabled, groupSlaHours, slaByWorkCalendar, now } =
+    params;
+  if (!approverSlaEnabled || approvalFlow !== "sequential" || status !== "pending") return undefined;
+  const nextIndex = approvers.findIndex((a) => a.decision === "pending");
+  if (nextIndex === -1) return undefined;
+  const nextStepSla = approverStepMeta?.[nextIndex]?.slaHours;
+  const slaHours = typeof nextStepSla === "number" ? nextStepSla : groupSlaHours;
+  return computeDeadline(slaHours, now, slaByWorkCalendar ?? false);
 }
 
 /** true nếu đề xuất đang pending và đã qua deadlineAt — nhãn phái sinh, không lưu. */

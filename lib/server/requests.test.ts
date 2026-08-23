@@ -22,8 +22,13 @@ vi.mock("@/lib/hpcore", () => ({
   }),
 }));
 
-const { resolveApproverStepsDetailed, resolveApproverSteps, resolveInitialSlaHours, MissingApproverError } =
-  await import("./requests");
+const {
+  resolveApproverStepsDetailed,
+  resolveApproverSteps,
+  resolveInitialSlaHours,
+  recomputeDeadlineForNextStep,
+  MissingApproverError,
+} = await import("./requests");
 
 import type { ApproverStepDef, ProposalGroup, TaggedUser } from "@/lib/types";
 
@@ -131,5 +136,94 @@ describe("resolveInitialSlaHours — quan hệ approverSlaEnabled / slaHours ri�
   it("nhóm cũ không có approverSlaEnabled/slaHours ở bước nào → giống hệt hành vi cũ", () => {
     const g = group({ slaHours: 24, approverSteps: [fixedStep(userA)] });
     expect(resolveInitialSlaHours(g)).toBe(24);
+  });
+});
+
+describe("recomputeDeadlineForNextStep — tính lại deadline khi qua bước tiếp theo", () => {
+  const now = new Date("2026-08-24T00:00:00.000Z");
+
+  it("bỏ qua (undefined) nếu approverSlaEnabled tắt", () => {
+    const result = recomputeDeadlineForNextStep({
+      approvalFlow: "sequential",
+      status: "pending",
+      approvers: [
+        { id: "uA", decision: "approved" },
+        { id: "uB", decision: "pending" },
+      ],
+      approverStepMeta: [{ slaHours: 4 }, { slaHours: 8 }],
+      approverSlaEnabled: false,
+      groupSlaHours: 24,
+      slaByWorkCalendar: false,
+      now,
+    });
+    expect(result).toBeUndefined();
+  });
+
+  it("bỏ qua nếu luồng không phải 'sequential' (concurrent/single không có khái niệm lượt kế tiếp)", () => {
+    const result = recomputeDeadlineForNextStep({
+      approvalFlow: "concurrent",
+      status: "pending",
+      approvers: [
+        { id: "uA", decision: "approved" },
+        { id: "uB", decision: "pending" },
+      ],
+      approverStepMeta: [{ slaHours: 4 }, { slaHours: 8 }],
+      approverSlaEnabled: true,
+      groupSlaHours: 24,
+      slaByWorkCalendar: false,
+      now,
+    });
+    expect(result).toBeUndefined();
+  });
+
+  it("bỏ qua nếu đề xuất đã xong (approved/rejected) — không còn bước kế tiếp", () => {
+    const result = recomputeDeadlineForNextStep({
+      approvalFlow: "sequential",
+      status: "approved",
+      approvers: [
+        { id: "uA", decision: "approved" },
+        { id: "uB", decision: "approved" },
+      ],
+      approverStepMeta: [{ slaHours: 4 }, { slaHours: 8 }],
+      approverSlaEnabled: true,
+      groupSlaHours: 24,
+      slaByWorkCalendar: false,
+      now,
+    });
+    expect(result).toBeUndefined();
+  });
+
+  it("tính deadline mới theo SLA riêng của bước kế tiếp, TỪ THỜI ĐIỂM HIỆN TẠI (không cộng dồn)", () => {
+    const result = recomputeDeadlineForNextStep({
+      approvalFlow: "sequential",
+      status: "pending",
+      approvers: [
+        { id: "uA", decision: "approved" },
+        { id: "uB", decision: "pending" },
+      ],
+      approverStepMeta: [{ slaHours: 4 }, { slaHours: 8 }],
+      approverSlaEnabled: true,
+      groupSlaHours: 24,
+      slaByWorkCalendar: false,
+      now,
+    });
+    expect(result).toBe(new Date(now.getTime() + 8 * 60 * 60 * 1000).toISOString());
+  });
+
+  it("bước kế tiếp không có SLA riêng → rơi về SLA chung của nhóm", () => {
+    const result = recomputeDeadlineForNextStep({
+      approvalFlow: "sequential",
+      status: "pending",
+      approvers: [
+        { id: "uA", decision: "approved" },
+        { id: "uB", decision: "pending" },
+      ],
+      approverStepMeta: [{ slaHours: 4 }, {}],
+      approverSlaEnabled: true,
+      groupSlaHours: 24,
+      slaByWorkCalendar: false,
+      now,
+    });
+    expect(result).toBe(new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString());
   });
 });

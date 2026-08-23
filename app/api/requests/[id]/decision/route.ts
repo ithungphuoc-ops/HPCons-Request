@@ -11,6 +11,7 @@ import {
 } from "@/lib/approval-logic";
 import { adminDb } from "@/lib/firebase/admin";
 import { apiErrorResponse } from "@/lib/http";
+import { recomputeDeadlineForNextStep } from "@/lib/server/requests";
 import { requireSession } from "@/lib/session";
 import type { ApprovalTimeField, ProposalGroup, RequestInstance, TaggedUser } from "@/lib/types";
 import { guiSangQlkCtr, trichXuatPayload } from "@/lib/qlkctr-sync";
@@ -61,6 +62,11 @@ export async function POST(
       body.decision === "approve_and_forward" || body.decision === "forward_then_approve";
     let requireDecisionNote: { approve?: boolean; forward?: boolean } | undefined;
     let approvalTimeFields: ApprovalTimeField[] = [];
+    // 3 field dùng để TÍNH LẠI deadlineAt khi chuyển sang bước duyệt tiếp
+    // theo — xem recomputeDeadlineForNextStep() (lib/server/requests.ts).
+    let approverSlaEnabled: boolean | undefined;
+    let slaByWorkCalendar: boolean | undefined;
+    let groupSlaHours: number | null = null;
     // Tải nhóm 1 LẦN nếu có groupId — cần cho cả requireDecisionNote (đã có
     // từ trước) VÀ "Mẫu form phê duyệt" (mới) — trước đây chỉ tải khi
     // approved/forward, giờ tải luôn cả "rejected" vì field cũng áp dụng
@@ -70,6 +76,9 @@ export async function POST(
       const groupData = groupSnap.data() as Partial<ProposalGroup> | undefined;
       requireDecisionNote = groupData?.requireDecisionNote;
       approvalTimeFields = groupData?.approvalTimeFields ?? [];
+      approverSlaEnabled = groupData?.approverSlaEnabled;
+      slaByWorkCalendar = groupData?.slaByWorkCalendar;
+      groupSlaHours = groupData?.slaHours ?? null;
     }
     if (missingRequiredNote(body.decision, body.note, requireDecisionNote)) {
       const message =
@@ -151,12 +160,21 @@ export async function POST(
           ? approveAndForward(current.approvalFlow, current.approvers, session.uid, body.target.id)
           : forwardThenApprove(current.approvalFlow, current.approvers, session.uid, body.target.id);
       const selfIndex = current.approversSnapshot.findIndex((a) => a.id === session.uid);
+      const insertIndex = body.decision === "approve_and_forward" ? selfIndex + 1 : selfIndex;
       const approversSnapshot = [...current.approversSnapshot];
-      approversSnapshot.splice(
-        body.decision === "approve_and_forward" ? selfIndex + 1 : selfIndex,
-        0,
-        body.target,
-      );
+      approversSnapshot.splice(insertIndex, 0, body.target);
+      // Phát hiện + vá lỗi có sẵn: `approverStepMeta` PHẢI cùng độ dài/thứ tự
+      // với `approversSnapshot`/`approvers` (đọc bằng index ở nhiều nơi, vd
+      // tra "Mẫu form phê duyệt" phía trên) — trước đây route này chèn người
+      // mới vào approversSnapshot nhưng KHÔNG chèn gì vào approverStepMeta,
+      // khiến 2 mảng lệch độ dài/thứ tự ngay sau lần chuyển tiếp ĐẦU TIÊN,
+      // làm sai lệch mọi thứ tra theo index từ đó về sau (kể cả bước duyệt
+      // của chính người bị chuyển tới lẫn tính SLA riêng bước bên dưới).
+      // Người được chuyển tới là bổ sung tạm thời (không thuộc approverSteps
+      // cấu hình sẵn của nhóm) nên chèn 1 mục rỗng {} — coi như "không có
+      // tên/mã/SLA riêng", rơi về hành vi mặc định giống bước không cấu hình gì.
+      const approverStepMeta = current.approverStepMeta ? [...current.approverStepMeta] : undefined;
+      approverStepMeta?.splice(insertIndex, 0, {});
       const history = [
         ...current.history,
         {
@@ -168,16 +186,28 @@ export async function POST(
         },
       ];
       const viewedAt = { ...current.viewedAt, [session.uid]: nowIso };
-      await ref.update({ approvers, approversSnapshot, history, updatedAt: nowIso, approvalTimeValues, viewedAt });
-      const updated: RequestInstance = {
-        ...current,
+      const deadlineAt = recomputeDeadlineForNextStep({
+        approvalFlow: current.approvalFlow,
+        status: current.status,
+        approvers,
+        approverStepMeta,
+        approverSlaEnabled,
+        groupSlaHours,
+        slaByWorkCalendar,
+        now: new Date(nowIso),
+      });
+      const patch: Partial<RequestInstance> = {
         approvers,
         approversSnapshot,
+        approverStepMeta,
         history,
         updatedAt: nowIso,
         approvalTimeValues,
         viewedAt,
       };
+      if (deadlineAt !== undefined) patch.deadlineAt = deadlineAt;
+      await ref.update(patch);
+      const updated: RequestInstance = { ...current, ...patch };
       return NextResponse.json({ request: updated });
     }
 
@@ -203,10 +233,17 @@ export async function POST(
     ];
 
     const viewedAt = { ...current.viewedAt, [session.uid]: nowIso };
-    await ref.update({ approvers, status, history, updatedAt: nowIso, approvalTimeValues, viewedAt });
-
-    const updated: RequestInstance = {
-      ...current,
+    const deadlineAt = recomputeDeadlineForNextStep({
+      approvalFlow: current.approvalFlow,
+      status,
+      approvers,
+      approverStepMeta: current.approverStepMeta,
+      approverSlaEnabled,
+      groupSlaHours,
+      slaByWorkCalendar,
+      now: new Date(nowIso),
+    });
+    const decisionPatch: Partial<RequestInstance> = {
       approvers,
       status,
       history,
@@ -214,6 +251,10 @@ export async function POST(
       approvalTimeValues,
       viewedAt,
     };
+    if (deadlineAt !== undefined) decisionPatch.deadlineAt = deadlineAt;
+    await ref.update(decisionPatch);
+
+    const updated: RequestInstance = { ...current, ...decisionPatch };
 
     // Đồng bộ sang QLK CTR (app quản lý kho công trình) khi duyệt xong hoàn toàn — xem
     // openspec/changes/add-qlkctr-sync-webhook. Bọc try/catch riêng, tuyệt đối không được để lỗi
