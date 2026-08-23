@@ -15,6 +15,8 @@ import type { ProposalField, RequestAttachment, RequestInstance } from "@/lib/ty
  */
 
 const DETAIL_FIELD_CODES = new Set(["chi_tiet", "vat_tu", "vat_tu_de_nghi", "danh_sach_vat_tu"]);
+const LUA_CHON_DE_NGHI_FIELD_CODES = new Set(["lua_chon_de_nghi"]);
+const NGAY_CAN_CAP_FIELD_CODES = new Set(["ngay_de_nghi_cap", "ngay_can_cap", "ngay_can_giao"]);
 
 function chuanHoaSoSanh(s: string): string {
   return s
@@ -35,6 +37,8 @@ function timCotBang(cot: string[], ...tenGanDung: string[]): number {
   return cot.findIndex((c) => tenGanDung.some((t) => chuanHoaSoSanh(c).includes(chuanHoaSoSanh(t))));
 }
 
+const GIA_TRI_DE_NGHI_CONG_TRINH = chuanHoaSoSanh("Đề nghị công trình");
+
 export type QlkCtrVatTu = {
   tenVatTu: string;
   quyCach?: string;
@@ -51,6 +55,7 @@ export type QlkCtrPayload = {
   tieuDe?: string;
   nguoiGui: string;
   ngayDuyet: string;
+  ngayCanGiao?: string;
   congTrinhChuoi: string;
   vatTu: QlkCtrVatTu[];
   taiLieuDinhKem?: QlkCtrTaiLieuDinhKem[];
@@ -87,13 +92,22 @@ async function layTaiLieuDinhKem(request: RequestInstance): Promise<QlkCtrTaiLie
 
 /**
  * Trả về `null` nếu không đủ dữ liệu để gửi (thiếu field "Tên đề xuất"/"Chi tiết", thiếu cột
- * bắt buộc "Tên hàng"/"Số lượng", hoặc bảng chi tiết rỗng) — KHÔNG throw, để nơi gọi tự quyết
- * định bỏ qua êm (đề xuất không liên quan công trình vẫn duyệt bình thường).
+ * bắt buộc "Tên hàng"/"Số lượng", hoặc bảng chi tiết rỗng), HOẶC nếu field "Lựa chọn đề nghị" có
+ * mặt nhưng giá trị KHÔNG phải "Đề nghị công trình" (VD "Đề nghị phòng ban" — không có công trình,
+ * QLK CTR không giữ loại này) — KHÔNG throw, để nơi gọi tự quyết định bỏ qua êm (đề xuất không
+ * liên quan công trình vẫn duyệt bình thường). Field không tồn tại (nhóm cũ chưa có) thì vẫn cho
+ * qua như trước, để không phá luồng đã chạy ổn định.
  */
 export async function trichXuatPayload(request: RequestInstance): Promise<QlkCtrPayload | null> {
   const titleField = timField(request.fieldsSnapshot, TITLE_FIELD_CODES, ["Tên đề xuất", "Tên đề nghị"]);
   const detailField = timField(request.fieldsSnapshot, DETAIL_FIELD_CODES, ["Chi tiết", "Vật tư đề nghị"]);
   if (!titleField || !detailField) return null;
+
+  const luaChonField = timField(request.fieldsSnapshot, LUA_CHON_DE_NGHI_FIELD_CODES, ["Lựa chọn đề nghị"]);
+  if (luaChonField) {
+    const giaTri = chuanHoaSoSanh(String(request.values[luaChonField.id] ?? ""));
+    if (giaTri && giaTri !== GIA_TRI_DE_NGHI_CONG_TRINH) return null;
+  }
 
   const congTrinhChuoi = String(request.values[titleField.id] ?? "").trim();
   if (!congTrinhChuoi) return null;
@@ -120,12 +134,18 @@ export async function trichXuatPayload(request: RequestInstance): Promise<QlkCtr
 
   const taiLieuDinhKem = await layTaiLieuDinhKem(request);
 
+  const ngayCanCapField = timField(request.fieldsSnapshot, NGAY_CAN_CAP_FIELD_CODES, ["Ngày đề nghị cấp"]);
+  const ngayCanGiao = ngayCanCapField
+    ? String(request.values[ngayCanCapField.id] ?? "").trim() || undefined
+    : undefined;
+
   return {
     requestId: request.id,
     requestCode: request.code ?? request.id,
     tieuDe: congTrinhChuoi,
     nguoiGui: request.submittedBy.name,
     ngayDuyet: new Date().toISOString().slice(0, 10),
+    ...(ngayCanGiao ? { ngayCanGiao } : {}),
     congTrinhChuoi,
     vatTu,
     ...(taiLieuDinhKem.length > 0 ? { taiLieuDinhKem } : {}),

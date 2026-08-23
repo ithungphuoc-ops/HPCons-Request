@@ -212,4 +212,89 @@ describe("trichXuatPayload", () => {
     expect(payload).not.toBeNull();
     expect(payload?.taiLieuDinhKem).toBeUndefined();
   });
+
+  it("gửi kèm Ngày đề nghị cấp khi phiếu có field này", async () => {
+    const titleField = makeField({ id: "f1", name: "Tên đề xuất", code: "ten_de_xuat" });
+    const detailField = makeField({
+      id: "f2",
+      name: "Chi tiết",
+      dataType: "table",
+      code: "chi_tiet",
+      tableColumns: CHI_TIET_COLS_THUONG,
+    });
+    const ngayCanCapField = makeField({ id: "f3", name: "Ngày đề nghị cấp", dataType: "date" });
+    const request = makeRequest({
+      fieldsSnapshot: [titleField, detailField, ngayCanCapField],
+      values: {
+        f1: "Công trình test",
+        f2: serializeTableRows([["Cát vàng", "", "20", "m3", ""]]),
+        f3: "2026-08-28",
+      },
+    });
+
+    const payload = await trichXuatPayload(request);
+    expect(payload?.ngayCanGiao).toBe("2026-08-28");
+  });
+
+  it("không gửi Ngày đề nghị cấp nếu phiếu không có field này (nhóm cũ, không phá luồng cũ)", async () => {
+    const titleField = makeField({ id: "f1", name: "Tên đề xuất", code: "ten_de_xuat" });
+    const detailField = makeField({
+      id: "f2",
+      name: "Chi tiết",
+      dataType: "table",
+      code: "chi_tiet",
+      tableColumns: CHI_TIET_COLS_THUONG,
+    });
+    const request = makeRequest({
+      fieldsSnapshot: [titleField, detailField],
+      values: { f1: "Công trình test", f2: serializeTableRows([["Cát vàng", "", "20", "m3", ""]]) },
+    });
+
+    const payload = await trichXuatPayload(request);
+    expect(payload?.ngayCanGiao).toBeUndefined();
+  });
+
+  it("vẫn gửi bình thường khi Lựa chọn đề nghị = Đề nghị công trình", async () => {
+    const titleField = makeField({ id: "f1", name: "Tên đề xuất", code: "ten_de_xuat" });
+    const detailField = makeField({
+      id: "f2",
+      name: "Chi tiết",
+      dataType: "table",
+      code: "chi_tiet",
+      tableColumns: CHI_TIET_COLS_THUONG,
+    });
+    const luaChonField = makeField({ id: "f3", name: "Lựa chọn đề nghị", dataType: "single_choice" });
+    const request = makeRequest({
+      fieldsSnapshot: [titleField, detailField, luaChonField],
+      values: {
+        f1: "Công trình test",
+        f2: serializeTableRows([["Cát vàng", "", "20", "m3", ""]]),
+        f3: "Đề nghị công trình",
+      },
+    });
+
+    expect(await trichXuatPayload(request)).not.toBeNull();
+  });
+
+  it("bỏ qua (trả null) khi Lựa chọn đề nghị = Đề nghị phòng ban — không có công trình, QLK CTR không giữ", async () => {
+    const titleField = makeField({ id: "f1", name: "Tên đề xuất", code: "ten_de_xuat" });
+    const detailField = makeField({
+      id: "f2",
+      name: "Chi tiết",
+      dataType: "table",
+      code: "chi_tiet",
+      tableColumns: CHI_TIET_COLS_THUONG,
+    });
+    const luaChonField = makeField({ id: "f3", name: "Lựa chọn đề nghị", dataType: "single_choice" });
+    const request = makeRequest({
+      fieldsSnapshot: [titleField, detailField, luaChonField],
+      values: {
+        f1: "Công trình test",
+        f2: serializeTableRows([["Cát vàng", "", "20", "m3", ""]]),
+        f3: "Đề nghị phòng ban",
+      },
+    });
+
+    expect(await trichXuatPayload(request)).toBeNull();
+  });
 });
