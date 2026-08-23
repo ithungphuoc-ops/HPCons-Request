@@ -42,6 +42,7 @@ export default function AddFieldModal() {
   const [code, setCode] = useState("");
   const [dataType, setDataType] = useState<FieldDataType>("short_text");
   const [required, setRequired] = useState(false);
+  const [helpText, setHelpText] = useState("");
   const [afterFieldId, setAfterFieldId] = useState<string>("");
   const [options, setOptions] = useState<string[]>([""]);
   const [tableColumns, setTableColumns] = useState<string[]>([""]);
@@ -82,6 +83,7 @@ export default function AddFieldModal() {
     setCode("");
     setDataType("short_text");
     setRequired(false);
+    setHelpText("");
     setAfterFieldId("");
     setOptions([""]);
     setTableColumns([""]);
@@ -100,6 +102,7 @@ export default function AddFieldModal() {
       setCode(editingField.code ?? "");
       setDataType(editingField.dataType);
       setRequired(editingField.required);
+      setHelpText(editingField.helpText ?? "");
       setOptions(editingField.options?.length ? editingField.options : [""]);
       setTableColumns(editingField.tableColumns?.length ? editingField.tableColumns : [""]);
       setFormula(editingField.formula ?? "");
@@ -168,6 +171,7 @@ export default function AddFieldModal() {
       code: normalizedCode,
       dataType,
       required,
+      helpText: helpText.trim() || undefined,
       options: choiceTypes.includes(dataType) ? cleanedOptions : undefined,
       tableColumns: tableTypes.includes(dataType)
         ? tableColumns.map((c) => c.trim()).filter(Boolean)
@@ -255,6 +259,17 @@ export default function AddFieldModal() {
             <option value="yes">Có</option>
             <option value="no">Không</option>
           </select>
+        </Row>
+
+        <Row label="Giải thích trường dữ liệu">
+          <textarea
+            className={textareaClass}
+            rows={2}
+            maxLength={300}
+            value={helpText}
+            onChange={(e) => setHelpText(e.target.value)}
+            placeholder="Ghi chú/hướng dẫn LUÔN hiện dưới ô nhập cho người gửi — khác placeholder (biến mất khi bắt đầu gõ)"
+          />
         </Row>
 
         {!isEditMode && (

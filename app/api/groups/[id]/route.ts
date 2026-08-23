@@ -10,6 +10,7 @@ import {
   recordGroupHistory,
   sanitizeDescriptionHtml,
 } from "@/lib/server/groups";
+import { sanitizeHelpText } from "@/lib/validation";
 import { validateConditionGroupFieldCodes } from "@/lib/server/conditions";
 import { findReferencedComputedFieldCode } from "@/lib/server/computed-fields";
 import { requireWriteAccess } from "@/lib/session";
@@ -23,6 +24,9 @@ export async function PATCH(
     const session = await requireWriteAccess();
     const { id } = await params;
     const patch = (await request.json()) as Partial<Omit<ProposalGroup, "id">>;
+    // `createdBy` chỉ set 1 LẦN lúc tạo nhóm (POST /api/groups) — không tin
+    // client, luôn bỏ qua field này nếu lỡ có trong body PATCH.
+    delete patch.createdBy;
 
     const ref = adminDb.collection("groups").doc(id);
     const snap = await ref.get();
@@ -44,9 +48,10 @@ export async function PATCH(
     if (patch.fields) {
       // Chuẩn hoá mã trường người dùng tự gõ (sửa tay ở Giai đoạn "sửa mã trường") rồi
       // mới backfill mã còn thiếu — không tin client, luôn kiểm tra trùng ở server.
-      const normalized = patch.fields.map((f) =>
-        f.code ? { ...f, code: slugifyFieldName(f.code) || undefined } : f,
-      );
+      const normalized = patch.fields.map((f) => ({
+        ...(f.code ? { ...f, code: slugifyFieldName(f.code) || undefined } : f),
+        helpText: f.helpText !== undefined ? sanitizeHelpText(f.helpText) || undefined : undefined,
+      }));
       const seen = new Set<string>();
       for (const f of normalized) {
         if (!f.code) continue;
@@ -135,6 +140,25 @@ export async function PATCH(
 
     if (patch.approverSteps) {
       patch.approverSteps = ensureApproverStepCodes(patch.approverSteps).steps;
+    }
+
+    // "Mẫu form phê duyệt" — chặn 2 field cùng gắn (approverStepCode,
+    // decisionAction), vì mỗi (bước × hành động) chỉ nên hiện ĐÚNG 1 field
+    // trong hộp thoại quyết định (xem design.md Decision #3, Risk).
+    if (patch.approvalTimeFields) {
+      const seenPairs = new Set<string>();
+      for (const atf of patch.approvalTimeFields) {
+        const pairKey = `${atf.approverStepCode}::${atf.decisionAction}`;
+        if (seenPairs.has(pairKey)) {
+          return NextResponse.json(
+            {
+              error: `Đã có 1 trường gắn với đúng bước "${atf.approverStepCode}" và hành động này rồi — mỗi (bước × hành động) chỉ được 1 trường.`,
+            },
+            { status: 400 },
+          );
+        }
+        seenPairs.add(pairKey);
+      }
     }
 
     await ref.update({ ...patch });

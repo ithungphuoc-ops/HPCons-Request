@@ -1,5 +1,5 @@
 import "server-only";
-import { fixedStepUsers, type ApproverState } from "@/lib/approval-logic";
+import { assertNeverApproverKind, fixedStepUsers, type ApproverState } from "@/lib/approval-logic";
 import { addBusinessHours } from "@/lib/business-hours";
 import {
   classifyDateLeadTime,
@@ -13,6 +13,7 @@ import { canManageGroupsAtAppScope, type Role } from "@/lib/permissions";
 import { nextCounterCode } from "@/lib/validation";
 import type {
   ApproverStepDef,
+  ApproverStepMeta,
   ProposalField,
   ProposalGroup,
   RequestInstance,
@@ -114,6 +115,29 @@ export function computeDeadline(
   if (slaHours === null || slaHours === undefined) return null;
   if (useBusinessHours) return addBusinessHours(from, slaHours).toISOString();
   return new Date(from.getTime() + slaHours * 60 * 60 * 1000).toISOString();
+}
+
+/**
+ * SLA (giờ) dùng để tính `deadlineAt` LÚC GỬI đề xuất — khi
+ * `group.approverSlaEnabled` bật VÀ bước duyệt ĐẦU TIÊN (theo thứ tự cấu
+ * hình, bất kể kind) có `slaHours` riêng, dùng giá trị đó thay cho
+ * `group.slaHours` chung; tắt cờ hoặc bước đầu không có `slaHours` riêng →
+ * dùng `group.slaHours` như hành vi cũ (tương thích ngược hoàn toàn).
+ *
+ * LƯU Ý PHẠM VI: đây CHỈ tính deadline 1 LẦN lúc gửi/gửi lại — KHÔNG tự động
+ * tính lại deadline mới khi đề xuất chuyển sang bước duyệt tiếp theo (luồng
+ * "Lần lượt" nhiều bước, mỗi bước có `slaHours` khác nhau). Việc "làm mới
+ * đồng hồ đếm ngược mỗi khi sang bước mới" là 1 quyết định hành vi lớn hơn
+ * (đụng `/api/requests/[id]/decision`, ảnh hưởng badge "Quá hạn" đang chạy
+ * thật) — CHƯA triển khai trong change này, cần Sếp xác nhận rõ trước khi
+ * làm (xem báo cáo cuối change add-base-vn-approver-and-approval-form-parity).
+ */
+export function resolveInitialSlaHours(group: ProposalGroup): number | null {
+  if (group.approverSlaEnabled) {
+    const firstStepSla = group.approverSteps[0]?.slaHours;
+    if (typeof firstStepSla === "number") return firstStepSla;
+  }
+  return group.slaHours;
 }
 
 /** true nếu đề xuất đang pending và đã qua deadlineAt — nhãn phái sinh, không lưu. */
@@ -266,6 +290,10 @@ export interface ResolvedApproverStep {
   kind: ApproverStepDef["kind"];
   user: TaggedUser | null;
   error?: string;
+  /** Nhãn hiển thị riêng của bước, nếu Admin đã đặt (mọi kind) — undefined nếu
+   * chưa đặt, để client tự rơi về nhãn mặc định theo kind như hành vi cũ
+   * (xem `approverStepDisplayName()` trong lib/approval-logic.ts). */
+  name?: string;
 }
 
 /**
@@ -299,45 +327,64 @@ export async function resolveApproverStepsDetailed(
 
   for (const step of applicableSteps) {
     const i = allSteps.indexOf(step);
+
     if (step.kind === "fixed") {
       // Bước nhiều người (users) mở rộng thành nhiều phần tử kết quả cùng
       // `index` — danh sách người duyệt phẳng sẵn có + quy trình đồng thời/
       // lần lượt tự cho đúng ngữ nghĩa "TẤT CẢ phải duyệt" (Sếp chốt
       // 16/08/2026), không cần đổi lib/approval-logic.ts.
       for (const user of fixedStepUsers(step)) {
-        results.push({ index: i, kind: "fixed", user: await withTitle(user) });
+        results.push({ index: i, kind: "fixed", user: await withTitle(user), name: step.name });
       }
       continue;
     }
 
-    // Bước "quản lý trực tiếp" nhận được NHIỀU người từ 16/08/2026 (Sếp yêu
-    // cầu thêm người cùng duyệt ngay tại hàng này trên form gửi) — người đầu
-    // là quản lý được chọn, những người sau là người duyệt thêm; TẤT CẢ đều
-    // phải duyệt (danh sách phẳng + quy trình đồng thời/lần lượt tự bảo đảm).
-    // Vẫn xác thực TỪNG uid qua resolveManagerOverride, không tin client.
-    const overrideRaw = managerOverrides[i];
-    const overrideIds = Array.isArray(overrideRaw) ? overrideRaw : overrideRaw ? [overrideRaw] : [];
-    const overrideUsers = (
-      await Promise.all(overrideIds.map((id) => resolveManagerOverride(id)))
-    ).filter((u): u is TaggedUser => u !== null);
-    if (overrideUsers.length > 0) {
-      for (const user of overrideUsers) {
-        results.push({ index: i, kind: "submitter_manager", user });
+    if (step.kind === "flexible_approver") {
+      // Bước "linh động" RỖNG (chưa gán ai) → BỎ QUA hoàn toàn khỏi kết quả,
+      // KHÔNG đẩy phần tử lỗi/null nào — khác hẳn "fixed"/"submitter_manager"
+      // (luôn có 1 kết quả, kể cả lỗi). Đây là hành vi cố ý (Sếp chốt), xem
+      // design.md Decision #1 — không chặn gửi chỉ vì 1 bước linh động rỗng,
+      // miễn còn bước khác duyệt được.
+      for (const user of step.users) {
+        results.push({ index: i, kind: "flexible_approver", user: await withTitle(user), name: step.name });
       }
       continue;
     }
 
-    try {
-      const user = await resolveSubmitterManager(submitterUid);
-      results.push({ index: i, kind: "submitter_manager", user });
-    } catch (err) {
-      results.push({
-        index: i,
-        kind: "submitter_manager",
-        user: null,
-        error: err instanceof Error ? err.message : "Không xác định được người duyệt.",
-      });
+    if (step.kind === "submitter_manager") {
+      // Bước "quản lý trực tiếp" nhận được NHIỀU người từ 16/08/2026 (Sếp yêu
+      // cầu thêm người cùng duyệt ngay tại hàng này trên form gửi) — người đầu
+      // là quản lý được chọn, những người sau là người duyệt thêm; TẤT CẢ đều
+      // phải duyệt (danh sách phẳng + quy trình đồng thời/lần lượt tự bảo đảm).
+      // Vẫn xác thực TỪNG uid qua resolveManagerOverride, không tin client.
+      const overrideRaw = managerOverrides[i];
+      const overrideIds = Array.isArray(overrideRaw) ? overrideRaw : overrideRaw ? [overrideRaw] : [];
+      const overrideUsers = (
+        await Promise.all(overrideIds.map((id) => resolveManagerOverride(id)))
+      ).filter((u): u is TaggedUser => u !== null);
+      if (overrideUsers.length > 0) {
+        for (const user of overrideUsers) {
+          results.push({ index: i, kind: "submitter_manager", user, name: step.name });
+        }
+        continue;
+      }
+
+      try {
+        const user = await resolveSubmitterManager(submitterUid);
+        results.push({ index: i, kind: "submitter_manager", user, name: step.name });
+      } catch (err) {
+        results.push({
+          index: i,
+          kind: "submitter_manager",
+          user: null,
+          name: step.name,
+          error: err instanceof Error ? err.message : "Không xác định được người duyệt.",
+        });
+      }
+      continue;
     }
+
+    assertNeverApproverKind(step);
   }
 
   return results;
@@ -346,10 +393,54 @@ export async function resolveApproverStepsDetailed(
 /**
  * Phân giải danh sách bước duyệt của nhóm thành danh sách người duyệt cụ thể
  * tại thời điểm gửi đề xuất (kết quả SNAPSHOT vào đề xuất, không tự đổi nếu
- * trưởng đơn vị đổi sau này) — wrapper giữ NGUYÊN hành vi cũ (throw
- * MissingApproverError khi thiếu người duyệt) trên nền resolveApproverStepsDetailed(),
- * cộng thêm hỗ trợ managerOverrides tuỳ chọn cho bước submitter_manager.
+ * trưởng đơn vị đổi sau này) — throw MissingApproverError khi thiếu người
+ * duyệt, cộng thêm hỗ trợ managerOverrides tuỳ chọn cho bước submitter_manager.
+ * Trả kèm `meta` (tên bước/SLA riêng) — gộp validate+resolve trong ĐÚNG 1 lượt
+ * gọi `resolveApproverStepsDetailed()` (tránh gọi Firestore 2 lần cho cùng 1
+ * lượt gửi nếu cần cả `approvers` lẫn `meta`, xem `resolveApproverSteps()` bên
+ * dưới — giữ nguyên hành vi cũ, chỉ delegate sang đây).
  */
+export async function resolveApproverStepsWithMeta(
+  steps: ApproverStepDef[] | undefined,
+  submitterUid: string,
+  values: Record<string, unknown> = {},
+  fields: ProposalField[] = [],
+  managerOverrides: Record<number, string | string[]> = {},
+): Promise<{ approvers: TaggedUser[]; meta: ApproverStepMeta[] }> {
+  const allSteps = steps ?? [];
+  const applicableSteps = filterApplicableSteps(allSteps, values, fields);
+  if (allSteps.length > 0 && applicableSteps.length === 0) {
+    throw new MissingApproverError(
+      "Không xác định được người duyệt nào phù hợp điều kiện hiện tại của đề xuất này. Liên hệ admin để kiểm tra lại cấu hình người duyệt của nhóm.",
+    );
+  }
+
+  const detailed = await resolveApproverStepsDetailed(steps, submitterUid, values, fields, managerOverrides);
+  // Mọi bước áp dụng đều là "flexible_approver" rỗng (bị resolveApproverStepsDetailed
+  // bỏ qua hoàn toàn, không đẩy phần tử nào) → không còn ai duyệt cả, dù không
+  // có bước nào báo lỗi riêng lẻ. Chặn gửi ở đây, không để lọt qua thành đề
+  // xuất "đã gửi" nhưng không ai duyệt được (xem design.md Decision #1 + tasks.md 1.7).
+  if (applicableSteps.length > 0 && detailed.length === 0) {
+    throw new MissingApproverError(
+      "Nhóm này chưa có người duyệt hợp lệ — mọi bước duyệt linh động đều chưa được gán người. Liên hệ admin để cấu hình lại.",
+    );
+  }
+  const failed = detailed.find((d) => d.error || !d.user);
+  if (failed) {
+    throw new MissingApproverError(failed.error ?? "Không xác định được người duyệt.");
+  }
+  return {
+    approvers: detailed.map((d) => d.user!),
+    meta: detailed.map((d) => ({
+      name: d.name,
+      slaHours: allSteps[d.index]?.slaHours,
+      code: allSteps[d.index]?.code,
+    })),
+  };
+}
+
+/** Giữ nguyên chữ ký/hành vi cũ cho các nơi chỉ cần danh sách người duyệt
+ * phẳng, không cần `meta` — xem `resolveApproverStepsWithMeta()`. */
 export async function resolveApproverSteps(
   steps: ApproverStepDef[] | undefined,
   submitterUid: string,
@@ -357,17 +448,6 @@ export async function resolveApproverSteps(
   fields: ProposalField[] = [],
   managerOverrides: Record<number, string | string[]> = {},
 ): Promise<TaggedUser[]> {
-  const applicableSteps = filterApplicableSteps(steps ?? [], values, fields);
-  if ((steps ?? []).length > 0 && applicableSteps.length === 0) {
-    throw new MissingApproverError(
-      "Không xác định được người duyệt nào phù hợp điều kiện hiện tại của đề xuất này. Liên hệ admin để kiểm tra lại cấu hình người duyệt của nhóm.",
-    );
-  }
-
-  const detailed = await resolveApproverStepsDetailed(steps, submitterUid, values, fields, managerOverrides);
-  const failed = detailed.find((d) => d.error || !d.user);
-  if (failed) {
-    throw new MissingApproverError(failed.error ?? "Không xác định được người duyệt.");
-  }
-  return detailed.map((d) => d.user!);
+  const { approvers } = await resolveApproverStepsWithMeta(steps, submitterUid, values, fields, managerOverrides);
+  return approvers;
 }

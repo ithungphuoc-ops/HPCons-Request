@@ -64,7 +64,8 @@ export function ensureFieldCodes(fields: ProposalField[]): {
  * `ensureFieldCodes` ở trên (dùng chung `slugifyFieldName`, backfill 1 lần,
  * không đổi lại nếu đã có). "submitter_manager" luôn dùng gốc cố định
  * "quan_ly_truc_tiep" (không có tên riêng để slug); "fixed" slug từ tên
- * người được chỉ định.
+ * người được chỉ định; "flexible_approver" slug từ TÊN BƯỚC (`name`, bắt
+ * buộc phải có với kind này) — vd "QL BP" → "ql_bp".
  */
 export function ensureApproverStepCodes(steps: ApproverStepDef[]): {
   steps: ApproverStepDef[];
@@ -75,10 +76,14 @@ export function ensureApproverStepCodes(steps: ApproverStepDef[]): {
   const next = steps.map((s) => {
     if (s.code) return s;
     changed = true;
-    const base =
-      s.kind === "submitter_manager"
-        ? "quan_ly_truc_tiep"
-        : slugifyFieldName(s.user.name) || "nguoi_duyet";
+    let base: string;
+    if (s.kind === "submitter_manager") {
+      base = "quan_ly_truc_tiep";
+    } else if (s.kind === "fixed") {
+      base = slugifyFieldName(s.user.name) || "nguoi_duyet";
+    } else {
+      base = slugifyFieldName(s.name) || "duyet_linh_dong";
+    }
     let candidate = base;
     let suffix = 2;
     while (used.has(candidate)) {

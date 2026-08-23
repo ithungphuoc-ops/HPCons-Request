@@ -59,7 +59,7 @@ type CreateGroupBody = Omit<
 
 export async function POST(request: Request) {
   try {
-    await requireWriteAccess();
+    const session = await requireWriteAccess();
     const body = (await request.json()) as CreateGroupBody;
 
     const categoryName = body.category?.trim() || "Chưa phân loại";
@@ -75,6 +75,10 @@ export async function POST(request: Request) {
       pinned: false,
       createdAt: new Date().toISOString().slice(0, 10),
       status: "active",
+      // Set 1 LẦN lúc tạo — không đọc từ `body` (không tin client tự khai
+      // người tạo), và route PATCH nhóm không nhận field này nên không sửa
+      // lại được sau (xem app/api/groups/[id]/route.ts).
+      createdBy: { uid: session.uid, name: session.name },
     };
     await groupRef.set(newGroup);
 

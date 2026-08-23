@@ -205,7 +205,7 @@ export default function CreateGroupModal() {
               </datalist>
             </FieldRow>
 
-            <FieldRow label="Thời hạn SLA (giờ)" description="Thời gian chuẩn để xử lý đề xuất.">
+            <FieldRow label="Thời hạn xử lý (giờ)" description="Thời gian chuẩn để xử lý đề xuất.">
               <input
                 type="number"
                 min={0}

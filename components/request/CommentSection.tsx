@@ -3,9 +3,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { doc, onSnapshot } from "firebase/firestore";
 import { signInWithCustomToken } from "firebase/auth";
-import { Check, Pencil, Reply, Send, Trash2, X } from "lucide-react";
+import { Check, Paperclip, Pencil, Send, Trash2, X } from "lucide-react";
 import { getFirebaseAuth, getFirebaseFirestore } from "@/lib/firebase/client";
-import type { RequestComment, TaggedUser } from "@/lib/types";
+import FilePreviewModal from "@/components/request/FilePreviewModal";
+import type { RequestAttachment, RequestComment, TaggedUser } from "@/lib/types";
+
+/** Hạn sửa/xóa của tác giả — PHẢI khớp `AUTHOR_EDIT_WINDOW_MS` phía server
+ * (app/api/requests/[id]/comments/[commentId]/route.ts). Đây chỉ để ẩn/hiện
+ * nút cho gọn UI — server luôn tự kiểm tra lại, không tin giá trị này. */
+const AUTHOR_EDIT_WINDOW_MS = 10 * 60 * 1000;
+const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024; // khớp /api/uploads
 
 /** Tìm "@" đang gõ dở ngay trước con trỏ (không tính @ dính liền chữ trước đó). */
 function findActiveMention(textUpToCursor: string): { start: number; query: string } | null {
@@ -33,32 +40,53 @@ function extractMentionIds(text: string, directory: TaggedUser[]): string[] {
   return Array.from(ids);
 }
 
+function formatCountdown(remainingMs: number): string {
+  const total = Math.max(0, Math.floor(remainingMs / 1000));
+  const mm = Math.floor(total / 60);
+  const ss = total % 60;
+  return `Còn ${mm}:${String(ss).padStart(2, "0")} để sửa/xóa`;
+}
+
 /**
  * Khung "Thảo luận" — @mention (người + nhóm/phòng ban), cập nhật real-time
- * qua Firestore Client SDK, sửa/xóa bình luận của mình, trả lời 1 cấp, Admin/
- * Owner kiểm duyệt xóa được bình luận bất kỳ. Xem design.md của change
- * add-comment-mentions-realtime.
+ * qua Firestore Client SDK, đính kèm file, sửa/xóa của tác giả CHỈ trong 10
+ * phút kể từ lúc đăng, sau đó CHỈ Owner mới xóa được (không sửa hộ). KHÔNG
+ * còn "Trả lời" (bỏ 24/08/2026) — danh sách hiển thị phẳng. Xem design.md
+ * của change add-comment-mentions-realtime.
  */
 export default function CommentSection({
   requestId,
   initialComments,
   currentUid,
-  isAdmin,
+  isOwner,
 }: {
   requestId: string;
   initialComments: RequestComment[];
   currentUid: string | null;
-  isAdmin: boolean;
+  /** `session.role === "owner"` — KHÔNG dùng "admin" gộp chung nữa (đổi
+   * hướng 24/08/2026, xem design.md Decision #7). */
+  isOwner: boolean;
 }) {
   const [comments, setComments] = useState<RequestComment[]>(initialComments);
   const [text, setText] = useState("");
-  const [replyTarget, setReplyTarget] = useState<RequestComment | null>(null);
   const [posting, setPosting] = useState(false);
   const [postError, setPostError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
+  const [composerAttachment, setComposerAttachment] = useState<File | null>(null);
+  const [previewing, setPreviewing] = useState<RequestAttachment | null>(null);
+  const [now, setNow] = useState(() => Date.now());
   const bootstrapped = useRef(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Đếm ngược hạn sửa/xóa — chỉ cần tick khi có bình luận nào còn trong hạn,
+  // nhưng tick mỗi giây vô điều kiện đơn giản hơn, chi phí không đáng kể cho
+  // vài chục bình luận/lần render.
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Danh bạ @mention (người + nhóm/phòng ban) — tải 1 lần, dùng để gợi ý khi
   // gõ "@" ngay trong ô bình luận và để suy ra mentionIds từ nội dung lúc gửi.
@@ -130,9 +158,10 @@ export default function CommentSection({
 
   const resetComposer = () => {
     setText("");
-    setReplyTarget(null);
     setMentionStart(null);
     setMentionQuery(null);
+    setComposerAttachment(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -192,19 +221,44 @@ export default function CommentSection({
     }
   };
 
+  const handlePickAttachment = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    if (!file) return;
+    if (file.size > MAX_ATTACHMENT_SIZE) {
+      setPostError(`Tệp "${file.name}" vượt quá 10MB.`);
+      e.target.value = "";
+      return;
+    }
+    setPostError(null);
+    setComposerAttachment(file);
+  };
+
   const submit = async () => {
     const value = text.trim();
-    if (!value) return;
+    if (!value && !composerAttachment) return;
     setPosting(true);
     setPostError(null);
     try {
+      let attachment: RequestAttachment | null = null;
+      if (composerAttachment) {
+        const formData = new FormData();
+        formData.append("files", composerAttachment);
+        const uploadRes = await fetch("/api/uploads", { method: "POST", body: formData });
+        if (!uploadRes.ok) {
+          const body = await uploadRes.json().catch(() => ({}) as { error?: string });
+          throw new Error(body.error ?? "Không thể tải tệp đính kèm lên.");
+        }
+        const uploadData = (await uploadRes.json()) as { attachments: RequestAttachment[] };
+        attachment = uploadData.attachments[0] ?? null;
+      }
+
       const res = await fetch(`/api/requests/${requestId}/comments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           text: value,
           mentionIds: extractMentionIds(value, directory),
-          parentId: replyTarget?.id ?? null,
+          attachment,
         }),
       });
       if (!res.ok) {
@@ -262,17 +316,21 @@ export default function CommentSection({
     }
   };
 
-  const topLevel = comments.filter((c) => !c.parentId).slice().reverse();
-  const repliesFor = (id: string) =>
-    comments.filter((c) => c.parentId === id).slice().sort((a, b) => a.at.localeCompare(b.at));
+  // "Trả lời" đã bỏ — danh sách phẳng, mới nhất lên đầu. Bình luận cũ (nếu
+  // còn `parentId` từ trước khi bỏ tính năng) vẫn hiển thị bình thường, chỉ
+  // không còn được nhóm/thụt lề theo cha nữa.
+  const flatComments = comments.slice().reverse();
 
-  const renderComment = (comment: RequestComment, isReply: boolean) => {
+  const renderComment = (comment: RequestComment) => {
     const isAuthor = currentUid !== null && currentUid === comment.authorUid;
-    const canDelete = isAuthor || isAdmin;
+    const elapsed = now - new Date(comment.at).getTime();
+    const withinWindow = elapsed <= AUTHOR_EDIT_WINDOW_MS;
+    const showEditDelete = isAuthor && withinWindow;
+    const showDeleteOnly = !showEditDelete && isOwner && !withinWindow;
     const editing = editingId === comment.id;
 
     return (
-      <div key={comment.id} className={`flex items-start gap-2 ${isReply ? "ml-9" : ""}`}>
+      <div key={comment.id} className="flex items-start gap-2">
         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-400 text-[11px] font-semibold text-white">
           {comment.avatarInitial}
         </span>
@@ -304,19 +362,28 @@ export default function CommentSection({
             <>
               <p className="text-[13px] font-medium text-gray-800">{comment.authorName}</p>
               <p className="whitespace-pre-wrap text-[13px] text-gray-700">{comment.text}</p>
+              {comment.attachment && (
+                <button
+                  type="button"
+                  onClick={() => setPreviewing(comment.attachment ?? null)}
+                  className="mt-1.5 flex items-center gap-1.5 rounded bg-white px-2 py-1 text-[12px] text-[var(--color-action-blue)] ring-1 ring-inset ring-[var(--color-border)] hover:bg-blue-50"
+                >
+                  <Paperclip size={12} className="shrink-0" />
+                  <span className="truncate">{comment.attachment.name}</span>
+                  <span className="shrink-0 text-gray-400">
+                    ({(comment.attachment.size / 1024 / 1024).toFixed(1)}MB)
+                  </span>
+                </button>
+              )}
               <div className="mt-0.5 flex items-center gap-2 text-[11px] text-gray-400">
                 <span>{new Date(comment.at).toLocaleString("vi-VN")}</span>
                 {comment.editedAt && <span>(đã sửa)</span>}
-                {!isReply && (
-                  <button
-                    type="button"
-                    onClick={() => setReplyTarget(comment)}
-                    className="flex items-center gap-0.5 text-gray-400 hover:text-[var(--color-action-blue)]"
-                  >
-                    <Reply size={11} /> Trả lời
-                  </button>
+                {showEditDelete && (
+                  <span className="text-orange-500">
+                    {formatCountdown(AUTHOR_EDIT_WINDOW_MS - elapsed)}
+                  </span>
                 )}
-                {isAuthor && (
+                {showEditDelete && (
                   <button
                     type="button"
                     onClick={() => startEdit(comment)}
@@ -325,7 +392,7 @@ export default function CommentSection({
                     <Pencil size={11} /> Sửa
                   </button>
                 )}
-                {canDelete && (
+                {(showEditDelete || showDeleteOnly) && (
                   <button
                     type="button"
                     onClick={() => removeComment(comment.id)}
@@ -344,16 +411,38 @@ export default function CommentSection({
 
   return (
     <div>
-      {replyTarget && (
-        <div className="mb-2 flex items-center justify-between rounded bg-blue-50 px-3 py-1.5 text-[12px] text-[var(--color-action-blue)]">
-          <span>Đang trả lời {replyTarget.authorName}</span>
-          <button type="button" onClick={() => setReplyTarget(null)} className="hover:text-blue-800">
+      {composerAttachment && (
+        <div className="mb-2 flex items-center gap-2 rounded bg-gray-50 px-3 py-1.5 text-[12px] text-gray-600 ring-1 ring-inset ring-[var(--color-border)]">
+          <Paperclip size={12} className="shrink-0" />
+          <span className="min-w-0 flex-1 truncate">{composerAttachment.name}</span>
+          <span className="shrink-0 text-gray-400">
+            ({(composerAttachment.size / 1024 / 1024).toFixed(1)}MB)
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setComposerAttachment(null);
+              if (fileInputRef.current) fileInputRef.current.value = "";
+            }}
+            className="shrink-0 text-gray-400 hover:text-[var(--color-danger-red)]"
+            aria-label="Bỏ đính kèm"
+          >
             <X size={13} />
           </button>
         </div>
       )}
 
       <div className="relative flex items-start gap-2">
+        <input ref={fileInputRef} type="file" className="hidden" onChange={handlePickAttachment} />
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          title="Đính kèm file"
+          aria-label="Đính kèm file"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded border border-[var(--color-border)] text-gray-500 hover:border-[var(--color-action-blue)] hover:text-[var(--color-action-blue)]"
+        >
+          <Paperclip size={15} />
+        </button>
         <textarea
           ref={textareaRef}
           value={text}
@@ -370,7 +459,7 @@ export default function CommentSection({
         <button
           type="button"
           onClick={submit}
-          disabled={posting || !text.trim()}
+          disabled={posting || (!text.trim() && !composerAttachment)}
           aria-label="Gửi thảo luận"
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-[var(--color-action-blue)] text-white hover:brightness-95 disabled:opacity-50"
         >
@@ -410,14 +499,13 @@ export default function CommentSection({
       {postError && <p className="mt-1 text-[12px] text-[var(--color-danger-red)]">{postError}</p>}
 
       <div className="mt-4 flex flex-col gap-3">
-        {topLevel.length === 0 && <p className="text-[13px] text-gray-400">Chưa có thảo luận nào.</p>}
-        {topLevel.map((comment) => (
-          <div key={comment.id} className="flex flex-col gap-2">
-            {renderComment(comment, false)}
-            {repliesFor(comment.id).map((reply) => renderComment(reply, true))}
-          </div>
-        ))}
+        {flatComments.length === 0 && <p className="text-[13px] text-gray-400">Chưa có thảo luận nào.</p>}
+        {flatComments.map((comment) => renderComment(comment))}
       </div>
+
+      {previewing && (
+        <FilePreviewModal requestId={requestId} attachment={previewing} onClose={() => setPreviewing(null)} />
+      )}
     </div>
   );
 }

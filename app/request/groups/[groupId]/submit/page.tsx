@@ -1,8 +1,8 @@
 "use client";
 
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
-import { Loader2, Paperclip, Plus, Trash2, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { FileDown, Loader2, Paperclip, Plus, Trash2, Upload, X } from "lucide-react";
 import { useRequestContext } from "@/context/RequestContext";
 import { HPCORE_MEMBER_GROUPS_API } from "@/lib/constants";
 import { deserializeTableRows, toWireTableRows } from "@/lib/table-field";
@@ -20,6 +20,8 @@ import {
 import TagUserInput from "@/components/shared/TagUserInput";
 import DatePicker from "@/components/ui/DatePicker";
 import Modal from "@/components/shared/Modal";
+import { useCurrentSession } from "@/lib/useCurrentSession";
+import { DEFAULT_GROUP_PERMISSION_RULES } from "@/lib/types";
 import {
   cancelButtonClass,
   confirmButtonClass,
@@ -39,9 +41,10 @@ type FieldValues = Record<string, unknown>;
  * tiếp vì file đó có "server-only", chỉ dùng được ở route handler). */
 type ApproverStepPreview = {
   index: number;
-  kind: "fixed" | "submitter_manager";
+  kind: "fixed" | "submitter_manager" | "flexible_approver";
   user: TaggedUser | null;
   error?: string;
+  name?: string;
 };
 
 function isEmptyValue(value: unknown): boolean {
@@ -55,8 +58,15 @@ export default function SubmitRequestPage() {
   const params = useParams<{ groupId: string }>();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { getGroupById } = useRequestContext();
+  const { getGroupById, updateField } = useRequestContext();
   const group = getGroupById(params.groupId);
+  const { isAdmin } = useCurrentSession();
+  const permissionRules = { ...DEFAULT_GROUP_PERMISSION_RULES, ...group?.permissionRules };
+  // "Quyền được chỉnh sửa danh sách người theo dõi": "system_owners_only" thì
+  // người gửi thường (không phải Owner/Admin) CHỈ xem, không sửa được danh
+  // sách người theo dõi lúc soạn đề xuất — xem design.md Decision #5, Open
+  // Questions #1 (enum có thể chưa đủ, tạm 2 giá trị đã xác nhận).
+  const followersEditable = isAdmin || permissionRules.followersEditableBy === "all_viewers";
 
   const [draftId, setDraftId] = useState<string | null>(searchParams.get("draftId"));
   // Trạng thái GỐC của đề xuất đang sửa (null = đang tạo mới, không phải sửa
@@ -453,6 +463,11 @@ export default function SubmitRequestPage() {
                     ? handleDateFieldChange(field, value)
                     : setFieldValue(field.id, value)
                 }
+                // Field bảng — "+ Thêm file" phát hiện cột lạ trong file import
+                // thì tự thêm vào cấu hình cột của field (thuộc GROUP, áp dụng
+                // chung cho mọi đề xuất sau này của nhóm) — xem design.md của
+                // change add-request-detail-base-parity, Decision #10.
+                onTableColumnsChange={(columns) => updateField(group.id, field.id, { ...field, tableColumns: columns })}
                 // Field "tự tính" đang tính ra được giá trị (có nhánh khớp) →
                 // khoá không cho gõ tay; không nhánh nào khớp → cho gõ tay như
                 // field thường (xem specs/computed-field-values).
@@ -523,29 +538,32 @@ export default function SubmitRequestPage() {
               // ảnh chụp thật từ request.base.vn (Base.vn gốc) cho thấy ô này
               // LUÔN để trống, bắt người gửi tự tag tay mỗi lần, dù server vẫn
               // có auto-resolve theo department.leaderId làm lưới an toàn lúc
-              // gửi nếu người dùng bỏ trống (xem lib/server/requests.ts). "fixed"
-              // thì luôn hiện đúng người server trả về (không có gì để "chọn").
-              const displayUser = step.kind === "fixed" ? step.user : managerOverrides[step.index];
-              const editing = step.kind === "submitter_manager" && (editingStepIndex === step.index || !displayUser);
-              // "fixed": nhãn là CHỨC DANH người được gán (vd "Trưởng phòng Kỹ
-              // thuật Thi công Khối 2"), không phải tên suông — khớp cách
-              // Base.vn thật hiển thị, tra qua users/{uid}.title lúc gửi (xem
-              // withTitle() ở lib/server/requests.ts). Không có chức danh thì
-              // dùng tạm tên.
+              // gửi nếu người dùng bỏ trống (xem lib/server/requests.ts).
+              // "fixed"/"flexible_approver" thì luôn hiện đúng người server trả
+              // về (không có gì để "chọn" — cả 2 đều do Admin gán sẵn ở cấu
+              // hình nhóm, khác nhau CHỈ ở việc flexible_approver được phép
+              // rỗng lúc chưa gán ai).
+              const isEditableKind = step.kind === "submitter_manager";
+              const displayUser = isEditableKind ? managerOverrides[step.index] : step.user;
+              const editing = isEditableKind && (editingStepIndex === step.index || !displayUser);
+              // "fixed"/"flexible_approver": ưu tiên TÊN BƯỚC do Admin đặt
+              // (`step.name`, vd "QL BP") — khớp cách Base.vn thật hiển thị
+              // tên vai trò thay vì tên người; không có thì rơi về chức danh/tên
+              // người được gán (tra qua users/{uid}.title lúc gửi, xem
+              // withTitle() ở lib/server/requests.ts).
               const managerFlowNumber = managerFlowNumberByStepIndex.get(step.index);
-              const rowLabel =
-                step.kind === "submitter_manager"
-                  ? managerFlowNumber
-                    ? `Luồng duyệt ${managerFlowNumber}`
-                    : "Quản lý trực tiếp" // lưới an toàn — không nên xảy ra, nhưng tránh nhãn rỗng nếu có
-                  : (displayUser?.title ?? displayUser?.name ?? "Người duyệt");
+              const rowLabel = isEditableKind
+                ? managerFlowNumber
+                  ? `Luồng duyệt ${managerFlowNumber}`
+                  : "Quản lý trực tiếp" // lưới an toàn — không nên xảy ra, nhưng tránh nhãn rỗng nếu có
+                : (step.name ?? displayUser?.title ?? displayUser?.name ?? "Người duyệt");
 
               return (
-                // key gộp cả id người: bước "fixed" nhiều người sinh NHIỀU dòng
-                // cùng step.index (xem resolveApproverStepsDetailed) — chỉ dùng
-                // index sẽ trùng key React.
+                // key gộp cả id người: bước "fixed"/"flexible_approver" nhiều
+                // người sinh NHIỀU dòng cùng step.index (xem
+                // resolveApproverStepsDetailed) — chỉ dùng index sẽ trùng key React.
                 <div
-                  key={`${step.index}-${step.kind === "fixed" ? (step.user?.id ?? "") : "manager"}`}
+                  key={`${step.index}-${isEditableKind ? "manager" : (step.user?.id ?? "empty")}`}
                   className="flex flex-col gap-1 sm:flex-row sm:gap-4"
                 >
                   <div className="shrink-0 sm:w-[220px]">
@@ -560,7 +578,7 @@ export default function SubmitRequestPage() {
                     )}
                   </div>
                   <div className="min-w-0 flex-1 pt-1.5">
-                    {step.kind === "fixed" ? (
+                    {!isEditableKind ? (
                       <div className="flex items-center gap-2">
                         <span className="flex items-center gap-1.5 rounded-full bg-gray-100 py-0.5 pl-1 pr-2.5 text-[12px] text-gray-700">
                           {displayUser && (
@@ -640,7 +658,43 @@ export default function SubmitRequestPage() {
               Người theo dõi
             </label>
             <div className="min-w-0 flex-1">
-              <TagUserInput value={followers} onChange={setFollowers} />
+              {followersEditable ? (
+                <TagUserInput
+                  value={followers}
+                  onChange={(next) => {
+                    // "Người tạo có thể thêm nhưng không thể bỏ người theo
+                    // dõi mặc định của nhóm" — nếu bật, hợp lại người mặc
+                    // định bị lỡ bỏ (chip biến mất rồi hiện lại ngay, chưa có
+                    // UI khoá riêng từng chip — xem tasks.md 5.5).
+                    if (permissionRules.creatorCanAddButNotRemoveDefaultFollowers) {
+                      const defaultIds = new Set((group?.followers ?? []).map((f) => f.id));
+                      const missingDefaults = (group?.followers ?? []).filter(
+                        (f) => defaultIds.has(f.id) && !next.some((n) => n.id === f.id),
+                      );
+                      setFollowers([...next, ...missingDefaults]);
+                      return;
+                    }
+                    setFollowers(next);
+                  }}
+                />
+              ) : (
+                <div className="flex min-h-[36px] flex-wrap items-center gap-1.5 rounded border border-[var(--color-border)] bg-gray-50 px-3 py-1.5">
+                  {followers.length === 0 ? (
+                    <span className="text-[12px] text-gray-400">Chưa có người theo dõi</span>
+                  ) : (
+                    followers.map((f) => (
+                      <span key={f.id} className="rounded-full bg-white px-2 py-0.5 text-[12px] text-gray-700 ring-1 ring-inset ring-gray-200">
+                        {f.name}
+                      </span>
+                    ))
+                  )}
+                </div>
+              )}
+              {!followersEditable && (
+                <p className="mt-1 text-[11px] text-gray-400">
+                  Nhóm này chỉ Owner/Admin được sửa danh sách người theo dõi.
+                </p>
+              )}
             </div>
           </div>
         </div>
@@ -698,6 +752,7 @@ function FieldRow({
   onChange,
   readOnlyComputed,
   dateLeadTimeFlagged,
+  onTableColumnsChange,
 }: {
   field: ProposalField;
   value: unknown;
@@ -708,6 +763,10 @@ function FieldRow({
   /** true = người gửi đã xác nhận "thật cần thiết" cho ngày gấp đang chọn ở
    * field này (dateLeadTimeRule) — đánh dấu màu + ghi chú (Sếp chốt 20/08/2026). */
   dateLeadTimeFlagged?: boolean;
+  /** Chỉ có ý nghĩa với field kiểu "table"/"base_table" — gọi khi "+ Thêm
+   * file" phát hiện cột lạ trong file import, ghi lại cấu hình cột mới cho
+   * field (thuộc GROUP). */
+  onTableColumnsChange?: (columns: string[]) => void;
 }) {
   if (field.dataType === "section_title") {
     return (
@@ -739,7 +798,14 @@ function FieldRow({
             : "min-w-0 flex-1"
         }
       >
-        <FieldControl field={field} value={value} onChange={onChange} readOnlyComputed={readOnlyComputed} />
+        <FieldControl
+          field={field}
+          value={value}
+          onChange={onChange}
+          readOnlyComputed={readOnlyComputed}
+          onTableColumnsChange={onTableColumnsChange}
+        />
+        {field.helpText && <p className="mt-1 text-[12px] text-gray-400">{field.helpText}</p>}
         {readOnlyComputed && (
           <p className="mt-1 text-[12px] text-gray-400">
             Tên đề xuất được lấy tự động từ thông tin bên dưới — không nhập tay ở đây.
@@ -759,12 +825,16 @@ function FieldControl({
   value,
   onChange,
   readOnlyComputed,
+  onTableColumnsChange,
 }: {
   field: ProposalField;
   value: unknown;
   onChange: (value: unknown) => void;
   readOnlyComputed?: boolean;
+  onTableColumnsChange?: (columns: string[]) => void;
 }) {
+  const [tableImportStatus, setTableImportStatus] = useState<string | null>(null);
+  const tableFileInputRef = useRef<HTMLInputElement>(null);
   switch (field.dataType) {
     case "short_text":
       return (
@@ -890,70 +960,170 @@ function FieldControl({
         onChange(rows.filter((_, i) => i !== rowIndex));
       };
 
+      // "Tải file mẫu" — sinh .xlsx dòng đầu đúng cột hiện có, để điền offline.
+      const downloadTemplateFile = async () => {
+        const XLSX = await import("xlsx");
+        const ws = XLSX.utils.aoa_to_sheet([columns]);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Mẫu");
+        XLSX.writeFile(wb, `mau-${field.code ?? field.name}.xlsx`);
+      };
+
+      // "+ Thêm file" — đọc file đã điền: cột khớp tên (không phân biệt hoa/
+      // thường, trim khoảng trắng) nối dòng vào cột đó; cột LẠ tự thêm vào
+      // cấu hình cột của field (thuộc GROUP, áp dụng chung nhóm — xem
+      // design.md của change add-request-detail-base-parity, Decision #10).
+      const importTableFile = async (file: File) => {
+        setTableImportStatus("Đang đọc file...");
+        try {
+          const XLSX = await import("xlsx");
+          const buffer = await file.arrayBuffer();
+          const wb = XLSX.read(buffer, { type: "array" });
+          const sheet = wb.Sheets[wb.SheetNames[0]];
+          const rowsFromFile = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1, defval: "" });
+          const [headerRow, ...dataRows] = rowsFromFile;
+          if (!headerRow || headerRow.every((h) => !String(h).trim())) {
+            setTableImportStatus("File không có dòng tiêu đề hợp lệ.");
+            return;
+          }
+          const fileHeaders = headerRow.map((h) => String(h).trim());
+          const normalize = (s: string) => s.trim().toLowerCase();
+          const existingByNormalized = new Map(columns.map((c) => [normalize(c), c]));
+
+          // Cột mới = có trong file nhưng chưa khớp tên cột nào đã có.
+          const newHeaders = fileHeaders.filter((h) => h && !existingByNormalized.has(normalize(h)));
+          const finalColumns = [...columns, ...newHeaders];
+          if (newHeaders.length > 0) onTableColumnsChange?.(finalColumns);
+
+          const filledDataRows = dataRows.filter((r) => r.some((cell) => String(cell ?? "").trim()));
+          if (filledDataRows.length === 0) {
+            setTableImportStatus("File không có dòng dữ liệu nào để nhập.");
+            return;
+          }
+
+          const newRows = filledDataRows.map((r) =>
+            finalColumns.map((col) => {
+              const fileColIndex = fileHeaders.findIndex((h) => normalize(h) === normalize(col));
+              return fileColIndex >= 0 ? String(r[fileColIndex] ?? "") : "";
+            }),
+          );
+          // Dòng cũ cần bù thêm ô trống cho (các) cột mới vừa thêm để số cột khớp.
+          const paddedOldRows = rows.map((r) => finalColumns.map((_, i) => r[i] ?? ""));
+          onChange([...paddedOldRows, ...newRows]);
+          setTableImportStatus(
+            newHeaders.length > 0
+              ? `Đã thêm ${newHeaders.length} cột mới + ${newRows.length} dòng dữ liệu.`
+              : `Đã thêm ${newRows.length} dòng dữ liệu.`,
+          );
+        } catch {
+          setTableImportStatus("Không đọc được file — kiểm tra lại định dạng .xlsx/.csv.");
+        } finally {
+          if (tableFileInputRef.current) tableFileInputRef.current.value = "";
+        }
+      };
+
+      const importButtons = (
+        <div className="mb-1.5 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={downloadTemplateFile}
+            disabled={columns.length === 0}
+            className="flex h-7 items-center gap-1 rounded border border-[var(--color-border)] px-2 text-[11px] font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+          >
+            <FileDown size={12} /> Tải file mẫu
+          </button>
+          <button
+            type="button"
+            onClick={() => tableFileInputRef.current?.click()}
+            className="flex h-7 items-center gap-1 rounded border border-[var(--color-action-blue)] px-2 text-[11px] font-medium text-[var(--color-action-blue)] hover:bg-blue-50"
+          >
+            <Upload size={12} /> Thêm file
+          </button>
+          <input
+            ref={tableFileInputRef}
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) importTableFile(file);
+            }}
+          />
+          {tableImportStatus && <span className="text-[11px] text-gray-500">{tableImportStatus}</span>}
+        </div>
+      );
+
       if (columns.length === 0) {
         return (
-          <p className="text-[12px] text-gray-400">
-            Trường bảng này chưa cấu hình cột — vào Mẫu biểu đề xuất để thêm cột.
-          </p>
+          <div>
+            {importButtons}
+            <p className="text-[12px] text-gray-400">
+              Trường bảng này chưa cấu hình cột — vào Mẫu biểu đề xuất để thêm cột, hoặc bấm &quot;Thêm
+              file&quot; để tự tạo cột từ file.
+            </p>
+          </div>
         );
       }
 
       return (
-        <div className="overflow-hidden rounded border border-[var(--color-border)]">
-          <div className="overflow-x-auto">
-            <table className="w-full text-[12px]">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="w-8 px-2 py-1.5 text-left text-gray-400">#</th>
-                  {columns.map((col, i) => (
-                    <th
-                      key={i}
-                      title={col}
-                      className="min-w-[96px] max-w-[220px] truncate px-2 py-1.5 text-left font-medium text-gray-600"
-                    >
-                      {col}
-                    </th>
-                  ))}
-                  <th className="w-8" />
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row, rowIndex) => (
-                  <tr key={rowIndex} className="border-t border-gray-100">
-                    <td className="px-2 py-1 text-gray-400">{rowIndex + 1}</td>
-                    {columns.map((_, colIndex) => (
-                      <td key={colIndex} className="px-1 py-1">
-                        <input
-                          value={row[colIndex] ?? ""}
-                          onChange={(e) => updateCell(rowIndex, colIndex, e.target.value)}
-                          className="h-8 w-full rounded border border-transparent px-2 text-[12px] outline-none hover:border-[var(--color-border)] focus:border-[var(--color-action-blue)]"
-                        />
-                      </td>
+        <div>
+          {importButtons}
+          <div className="overflow-hidden rounded border border-[var(--color-border)]">
+            <div className="overflow-x-auto">
+              <table className="w-full text-[12px]">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="w-8 px-2 py-1.5 text-left text-gray-400">#</th>
+                    {columns.map((col, i) => (
+                      <th
+                        key={i}
+                        title={col}
+                        className="min-w-[96px] max-w-[220px] truncate px-2 py-1.5 text-left font-medium text-gray-600"
+                      >
+                        {col}
+                      </th>
                     ))}
-                    <td className="px-1 py-1 text-center">
-                      {rows.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => removeRow(rowIndex)}
-                          aria-label="Xóa dòng"
-                          className="text-gray-300 hover:text-[var(--color-danger-red)]"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      )}
-                    </td>
+                    <th className="w-8" />
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {rows.map((row, rowIndex) => (
+                    <tr key={rowIndex} className="border-t border-gray-100">
+                      <td className="px-2 py-1 text-gray-400">{rowIndex + 1}</td>
+                      {columns.map((_, colIndex) => (
+                        <td key={colIndex} className="px-1 py-1">
+                          <input
+                            value={row[colIndex] ?? ""}
+                            onChange={(e) => updateCell(rowIndex, colIndex, e.target.value)}
+                            className="h-8 w-full rounded border border-transparent px-2 text-[12px] outline-none hover:border-[var(--color-border)] focus:border-[var(--color-action-blue)]"
+                          />
+                        </td>
+                      ))}
+                      <td className="px-1 py-1 text-center">
+                        {rows.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => removeRow(rowIndex)}
+                            aria-label="Xóa dòng"
+                            className="text-gray-300 hover:text-[var(--color-danger-red)]"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <button
+              type="button"
+              onClick={addRow}
+              className="flex w-full items-center justify-center gap-1 border-t border-gray-100 py-2 text-[12px] text-[var(--color-action-blue)] hover:bg-blue-50"
+            >
+              <Plus size={13} /> Thêm dòng
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={addRow}
-            className="flex w-full items-center justify-center gap-1 border-t border-gray-100 py-2 text-[12px] text-[var(--color-action-blue)] hover:bg-blue-50"
-          >
-            <Plus size={13} /> Thêm dòng
-          </button>
         </div>
       );
     }

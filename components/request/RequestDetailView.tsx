@@ -9,34 +9,75 @@ import {
   ChevronDown,
   Clock,
   Copy,
+  Download,
+  ExternalLink,
   Eye,
   FileDown,
   Forward,
   History,
   Info,
+  Link2,
   ListChecks,
   MessageSquare,
   MoreHorizontal,
   Paperclip,
   PenLine,
+  Pin,
+  Plus,
+  Printer,
   RotateCcw,
+  Star,
   Trash2,
   Undo2,
+  UserPlus,
   Users,
+  Webhook,
   X,
   XCircle,
 } from "lucide-react";
 import RequestStatusBadge from "@/components/request/RequestStatusBadge";
 import ForwardModal, { type ForwardMode } from "@/components/request/ForwardModal";
 import ReasonModal from "@/components/request/ReasonModal";
+import ApproveConfirmModal from "@/components/request/ApproveConfirmModal";
+import AddFollowerModal from "@/components/request/modals/AddFollowerModal";
 import FilePreviewModal from "@/components/request/FilePreviewModal";
 import CommentSection from "@/components/request/CommentSection";
 import { canApproverAct } from "@/lib/approval-logic";
 import { useCurrentSession } from "@/lib/useCurrentSession";
 import { fieldDataTypeLabels } from "@/lib/types";
-import type { PrintTemplate, RequestAttachment, RequestInstance, TaggedUser } from "@/lib/types";
+import { DEFAULT_GROUP_PRINT_OPTIONS } from "@/lib/types";
+import type {
+  ApprovalTimeField,
+  GroupPrintOptions,
+  PrintTemplate,
+  RequestAttachment,
+  RequestInstance,
+  TaggedUser,
+} from "@/lib/types";
 import { deserializeTableRows } from "@/lib/table-field";
 import { resolveRequestTitle } from "@/lib/request-title";
+
+/** Sinh 1 file CSV từ field/giá trị của ĐÚNG 1 đề xuất — "Xuất dữ liệu cho
+ * bảng" trong menu "Thêm", thuần phía client, không gọi server (xem
+ * design.md của change add-request-detail-base-parity, Decision #6). */
+function exportRequestToCsv(request: RequestInstance): void {
+  const header = ["Tên đề xuất", ...request.fieldsSnapshot.map((f) => f.name)];
+  const row = [
+    resolveRequestTitle(request),
+    ...request.fieldsSnapshot.map((f) => formatValue(request.values[f.id])),
+  ];
+  const escapeCsv = (v: string) => `"${v.replace(/"/g, '""')}"`;
+  const csv = [header.map(escapeCsv).join(","), row.map(escapeCsv).join(",")].join("\r\n");
+  const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${resolveRequestTitle(request).slice(0, 60)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 
 function editLinkFor(request: RequestInstance): string {
   return request.groupId
@@ -86,7 +127,11 @@ export default function RequestDetailView({
   onActed: () => void;
 }) {
   const router = useRouter();
-  const { isAdmin } = useCurrentSession();
+  const { isAdmin, session } = useCurrentSession();
+  // Xóa bình luận đã khóa (quá 10 phút) CHỈ dành cho Owner — thu hẹp hơn
+  // "Admin/Owner" (isAdmin) dùng cho các hành động quản lý khác trên trang
+  // này, xem design.md của change add-comment-mentions-realtime, Decision #7.
+  const isOwner = session?.role === "owner";
   const [actingOn, setActingOn] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [forwardOpen, setForwardOpen] = useState(false);
@@ -100,10 +145,49 @@ export default function RequestDetailView({
   const [duplicating, setDuplicating] = useState(false);
   const [managing, setManaging] = useState(false);
   const [printTemplates, setPrintTemplates] = useState<PrintTemplate[]>([]);
+  const [printOptions, setPrintOptions] = useState<GroupPrintOptions>(DEFAULT_GROUP_PRINT_OPTIONS);
   const [printMenuOpen, setPrintMenuOpen] = useState(false);
   const printMenuRef = useRef<HTMLDivElement>(null);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const moreMenuRef = useRef<HTMLDivElement>(null);
+  // "Mẫu form phê duyệt" — đọc LIVE từ nhóm (không snapshot), xem design.md
+  // của change add-base-vn-approver-and-approval-form-parity, Decision #3.
+  const [approvalTimeFields, setApprovalTimeFields] = useState<ApprovalTimeField[]>([]);
+  const [approveConfirmOpen, setApproveConfirmOpen] = useState(false);
+  // "Đánh dấu đề xuất" (bookmark) — THEO TỪNG NGƯỜI XEM, cập nhật tối ưu
+  // (optimistic) trước khi có response, xem tasks.md 3.1 của change
+  // add-request-detail-base-parity.
+  const [bookmarked, setBookmarked] = useState(
+    currentUid !== null && (request.bookmarkedByUids ?? []).includes(currentUid),
+  );
+  const [bookmarking, setBookmarking] = useState(false);
+  const [printHideDiscussion, setPrintHideDiscussion] = useState(false);
+  const [attachments, setAttachments] = useState<RequestAttachment[]>(request.attachments ?? []);
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
+  const [previewingAttachment, setPreviewingAttachment] = useState<RequestAttachment | null>(null);
+  const [followers, setFollowers] = useState<TaggedUser[]>(request.followers);
+  const [addFollowerOpen, setAddFollowerOpen] = useState(false);
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setBookmarked(currentUid !== null && (request.bookmarkedByUids ?? []).includes(currentUid));
+    setAttachments(request.attachments ?? []);
+    setFollowers(request.followers);
+  }, [request.bookmarkedByUids, request.attachments, request.followers, currentUid]);
+
+  useEffect(() => {
+    const reset = () => setPrintHideDiscussion(false);
+    window.addEventListener("afterprint", reset);
+    return () => window.removeEventListener("afterprint", reset);
+  }, []);
+
+  // Đánh dấu "đã xem" đề xuất này — dùng để chuông thông báo biết còn thấy
+  // "mới" hay không cho 3 loại vốn không có khái niệm đã đọc (được nhắc tên/
+  // đang theo dõi/đã xử lý xong phần mình) — xem design.md của change
+  // fix-notification-bell-stale-gaps. Bắn rồi quên, không cần chờ/hiện lỗi.
+  useEffect(() => {
+    fetch(`/api/requests/${request.id}/view`, { method: "POST" }).catch(() => {});
+  }, [request.id]);
 
   const isOwnRequest = currentUid !== null && currentUid === request.submittedBy.uid;
   const canManage = isOwnRequest || isAdmin;
@@ -112,8 +196,19 @@ export default function RequestDetailView({
     if (!request.groupId) return;
     fetch(`/api/groups/${request.groupId}/print-templates`)
       .then((res) => (res.ok ? res.json() : { templates: [] }))
-      .then((data: { templates: PrintTemplate[] }) => setPrintTemplates(data.templates ?? []))
+      .then((data: { templates: PrintTemplate[]; printOptions?: GroupPrintOptions }) => {
+        setPrintTemplates(data.templates ?? []);
+        setPrintOptions({ ...DEFAULT_GROUP_PRINT_OPTIONS, ...data.printOptions });
+      })
       .catch(() => setPrintTemplates([]));
+  }, [request.groupId]);
+
+  useEffect(() => {
+    if (!request.groupId) return;
+    fetch(`/api/groups/${request.groupId}/approval-time-fields`)
+      .then((res) => (res.ok ? res.json() : { fields: [] }))
+      .then((data: { fields: ApprovalTimeField[] }) => setApprovalTimeFields(data.fields ?? []))
+      .catch(() => setApprovalTimeFields([]));
   }, [request.groupId]);
 
   useEffect(() => {
@@ -193,6 +288,93 @@ export default function RequestDetailView({
     }
   };
 
+  const toggleBookmark = async () => {
+    if (!currentUid || bookmarking) return;
+    setBookmarked((v) => !v); // optimistic
+    setBookmarking(true);
+    try {
+      const res = await fetch(`/api/requests/${request.id}/bookmark`, { method: "POST" });
+      if (!res.ok) throw new Error();
+      const data = (await res.json()) as { bookmarkedByUids: string[] };
+      setBookmarked(data.bookmarkedByUids.includes(currentUid));
+    } catch {
+      setBookmarked((v) => !v); // rollback
+      setActionError("Không thể đánh dấu đề xuất — thử lại.");
+    } finally {
+      setBookmarking(false);
+    }
+  };
+
+  const copyLink = async () => {
+    setMoreMenuOpen(false);
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setActionError(null);
+    } catch {
+      setActionError("Không thể sao chép đường dẫn.");
+    }
+  };
+
+  const openInNewTab = () => {
+    setMoreMenuOpen(false);
+    window.open(window.location.href, "_blank");
+  };
+
+  const printRequest = (withDiscussion: boolean) => {
+    setMoreMenuOpen(false);
+    setPrintHideDiscussion(!withDiscussion);
+    setTimeout(() => window.print(), 50);
+  };
+
+  const uploadAttachment = async (file: File) => {
+    setUploadingAttachment(true);
+    setActionError(null);
+    try {
+      const formData = new FormData();
+      formData.append("files", file);
+      const uploadRes = await fetch("/api/uploads", { method: "POST", body: formData });
+      if (!uploadRes.ok) {
+        const body = await uploadRes.json().catch(() => ({}) as { error?: string });
+        throw new Error(body.error ?? "Không thể tải tệp lên.");
+      }
+      const uploadData = (await uploadRes.json()) as { attachments: RequestAttachment[] };
+      const attachment = uploadData.attachments[0];
+      if (!attachment) throw new Error("Không thể tải tệp lên.");
+
+      const res = await fetch(`/api/requests/${request.id}/attachments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ attachment }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}) as { error?: string });
+        throw new Error(body.error ?? "Không thể thêm tài liệu.");
+      }
+      const data = (await res.json()) as { attachments: RequestAttachment[] };
+      setAttachments(data.attachments);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Có lỗi xảy ra.");
+    } finally {
+      setUploadingAttachment(false);
+      if (attachmentInputRef.current) attachmentInputRef.current.value = "";
+    }
+  };
+
+  const addFollower = async (user: TaggedUser) => {
+    const res = await fetch(`/api/requests/${request.id}/followers`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}) as { error?: string });
+      throw new Error(body.error ?? "Không thể thêm người theo dõi.");
+    }
+    const data = (await res.json()) as { followers: TaggedUser[] };
+    setFollowers(data.followers);
+    setAddFollowerOpen(false);
+  };
+
   useEffect(() => {
     if (request.status !== "pending" || !request.deadlineAt) return;
     const interval = setInterval(() => setNow(Date.now()), 1000);
@@ -202,14 +384,57 @@ export default function RequestDetailView({
   const canAct =
     currentUid !== null && canApproverAct(request.approvalFlow, request.approvers, currentUid);
 
-  const decide = async (decision: "approved" | "rejected" | "returned", note?: string) => {
+  // Mã bước của NGƯỜI ĐANG XEM (nếu họ là 1 trong các người duyệt) — dùng để
+  // khớp "Mẫu form phê duyệt". `approverStepMeta` chỉ có ở đề xuất tạo sau
+  // change này (đề xuất cũ hơn → luôn undefined → không field nào khớp, giữ
+  // đúng hành vi cũ).
+  const myApproverIndex = currentUid ? request.approvers.findIndex((a) => a.id === currentUid) : -1;
+  const myApproverStepCode =
+    myApproverIndex >= 0 ? request.approverStepMeta?.[myApproverIndex]?.code : undefined;
+
+  const findApprovalTimeFieldRecord = (
+    decisionAction: ApprovalTimeField["decisionAction"],
+  ): ApprovalTimeField | undefined => {
+    if (!myApproverStepCode) return undefined;
+    return approvalTimeFields.find(
+      (f) => f.approverStepCode === myApproverStepCode && f.decisionAction === decisionAction,
+    );
+  };
+
+  const approveFieldRecord = findApprovalTimeFieldRecord("approve");
+  const rejectFieldRecord = findApprovalTimeFieldRecord("reject");
+  const approveField = approveFieldRecord?.field;
+  const rejectField = rejectFieldRecord?.field;
+  // Quy đổi 2 ForwardMode thật (approve_and_forward/forward_then_approve)
+  // sang 2 decisionAction của "Mẫu form phê duyệt" (approveAndForward/forward)
+  // — xem ghi chú ở ForwardModal.tsx.
+  const forwardRecordByMode: Partial<Record<ForwardMode, ApprovalTimeField>> = {
+    approve_and_forward: findApprovalTimeFieldRecord("approveAndForward"),
+    forward_then_approve: findApprovalTimeFieldRecord("forward"),
+  };
+  const forwardFieldsByMode: Partial<Record<ForwardMode, ApprovalTimeField["field"]>> = {
+    approve_and_forward: forwardRecordByMode.approve_and_forward?.field,
+    forward_then_approve: forwardRecordByMode.forward_then_approve?.field,
+  };
+
+  const decide = async (
+    decision: "approved" | "rejected" | "returned",
+    note?: string,
+    approvalTimeValue?: unknown,
+    approvalTimeFieldId?: string,
+  ) => {
     setActingOn(true);
     setActionError(null);
     try {
       const res = await fetch(`/api/requests/${request.id}/decision`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ decision, note }),
+        body: JSON.stringify({
+          decision,
+          note,
+          approvalTimeFieldId,
+          approvalTimeValue,
+        }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}) as { error?: string });
@@ -217,6 +442,7 @@ export default function RequestDetailView({
       }
       setRejectOpen(false);
       setReturnOpen(false);
+      setApproveConfirmOpen(false);
       onActed();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Có lỗi xảy ra.");
@@ -226,11 +452,18 @@ export default function RequestDetailView({
     }
   };
 
-  const forward = async (mode: ForwardMode, target: TaggedUser, note: string) => {
+  const forward = async (mode: ForwardMode, target: TaggedUser, note: string, approvalTimeValue?: unknown) => {
+    const matchedRecord = forwardRecordByMode[mode];
     const res = await fetch(`/api/requests/${request.id}/decision`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ decision: mode, target, note }),
+      body: JSON.stringify({
+        decision: mode,
+        target,
+        note,
+        approvalTimeValue: matchedRecord ? approvalTimeValue : undefined,
+        approvalTimeFieldId: matchedRecord?.id,
+      }),
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}) as { error?: string });
@@ -252,6 +485,21 @@ export default function RequestDetailView({
                 <span className="inline-flex h-6 items-center rounded-full bg-red-100 px-2.5 text-[12px] font-medium text-[var(--color-danger-red)]">
                   Quá hạn
                 </span>
+              )}
+              {currentUid && (
+                <button
+                  type="button"
+                  onClick={toggleBookmark}
+                  disabled={bookmarking}
+                  title="Đánh dấu đề xuất quan trọng"
+                  aria-label="Đánh dấu đề xuất quan trọng"
+                  aria-pressed={bookmarked}
+                  className={`print-hide flex h-6 w-6 items-center justify-center rounded-full transition-colors hover:bg-gray-100 disabled:opacity-60 ${
+                    bookmarked ? "text-amber-500" : "text-gray-300"
+                  }`}
+                >
+                  <Star size={16} fill={bookmarked ? "currentColor" : "none"} />
+                </button>
               )}
             </div>
           </div>
@@ -276,8 +524,8 @@ export default function RequestDetailView({
           </div>
         )}
 
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          {request.status !== "draft" && printTemplates.length > 0 && (
+        <div className="print-hide mt-3 flex flex-wrap items-center gap-2">
+          {request.status !== "draft" && printTemplates.length > 0 && printOptions.allowPrintToWord && (
             <div ref={printMenuRef} className="relative">
               <button
                 type="button"
@@ -329,7 +577,86 @@ export default function RequestDetailView({
                 <MoreHorizontal size={13} /> Thêm
               </button>
               {moreMenuOpen && (
-                <div className="absolute left-0 top-full z-20 mt-1 w-[180px] overflow-hidden rounded border border-[var(--color-border)] bg-white shadow-lg">
+                <div className="absolute left-0 top-full z-20 mt-1 w-[260px] overflow-hidden rounded border border-[var(--color-border)] bg-white py-1 shadow-lg">
+                  <button type="button" onClick={copyLink} className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] text-gray-700 transition-colors hover:bg-gray-50">
+                    <Link2 size={13} /> Sao chép đường dẫn
+                  </button>
+                  <button type="button" onClick={openInNewTab} className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] text-gray-700 transition-colors hover:bg-gray-50">
+                    <ExternalLink size={13} /> Xem ở trong tab mới
+                  </button>
+
+                  <div className="my-1 border-t border-gray-100" />
+
+                  {printOptions.allowPrintProposal && (
+                    <button type="button" onClick={() => printRequest(false)} className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] text-gray-700 transition-colors hover:bg-gray-50">
+                      <Printer size={13} /> In đề xuất
+                    </button>
+                  )}
+                  {printOptions.allowPrintProposalWithDiscussion && (
+                    <button type="button" onClick={() => printRequest(true)} className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] text-gray-700 transition-colors hover:bg-gray-50">
+                      <Printer size={13} /> In đề xuất và thảo luận
+                    </button>
+                  )}
+                  {printOptions.allowPrintToWord && printTemplates.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMoreMenuOpen(false);
+                        setPrintMenuOpen(true);
+                      }}
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] text-gray-700 transition-colors hover:bg-gray-50"
+                    >
+                      <FileDown size={13} /> In đề xuất theo mẫu ra file Word
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    disabled
+                    title="Chờ hạ tầng xuất PDF (add-pdf-export)"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] text-gray-400 cursor-not-allowed"
+                  >
+                    <FileDown size={13} /> In đề xuất theo mẫu ra file PDF
+                    <span className="ml-auto shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-[10px]">⏳</span>
+                  </button>
+
+                  <div className="my-1 border-t border-gray-100" />
+
+                  {currentUid && (
+                    <button type="button" onClick={() => { setMoreMenuOpen(false); toggleBookmark(); }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] text-gray-700 transition-colors hover:bg-gray-50">
+                      <Star size={13} /> Đánh dấu đề xuất
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    disabled
+                    title="Chưa có hạ tầng webhook cho từng đề xuất"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] text-gray-400 cursor-not-allowed"
+                  >
+                    <Webhook size={13} /> Lịch sử webhook
+                    <span className="ml-auto shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-[10px]">⏳</span>
+                  </button>
+
+                  <div className="my-1 border-t border-gray-100" />
+
+                  {currentUid && (
+                    <button
+                      type="button"
+                      onClick={() => { setMoreMenuOpen(false); setAddFollowerOpen(true); }}
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] text-gray-700 transition-colors hover:bg-gray-50"
+                    >
+                      <UserPlus size={13} /> Thêm nhiều người theo dõi
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => { setMoreMenuOpen(false); exportRequestToCsv(request); }}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] text-gray-700 transition-colors hover:bg-gray-50"
+                  >
+                    <Download size={13} /> Xuất dữ liệu cho bảng
+                  </button>
+
+                  <div className="my-1 border-t border-gray-100" />
+
                   {currentUid && (
                     <button
                       type="button"
@@ -357,10 +684,12 @@ export default function RequestDetailView({
         </div>
 
         {canAct && (
-          <div className="mt-4 flex items-center gap-2">
+          <div className="print-hide mt-4 flex items-center gap-2">
             <button
               type="button"
-              onClick={() => decide("approved").catch(() => {})}
+              onClick={() =>
+                approveField ? setApproveConfirmOpen(true) : decide("approved").catch(() => {})
+              }
               disabled={actingOn}
               className="flex h-9 items-center gap-1.5 rounded bg-[var(--color-confirm-green)] px-4 text-[13px] font-medium text-white shadow-sm transition-all hover:brightness-95 active:scale-[0.98] disabled:opacity-60"
             >
@@ -504,7 +833,86 @@ export default function RequestDetailView({
           </div>
         )}
 
+        {request.approvalTimeValues && Object.keys(request.approvalTimeValues).length > 0 && (
+          <div className="mt-4 rounded-[3px] border border-[var(--color-border)] bg-white p-4">
+            <h2 className="mb-3 flex items-center gap-1.5 text-[13px] font-semibold uppercase tracking-wide text-gray-500">
+              <ListChecks size={14} /> Thông tin phê duyệt
+            </h2>
+            <dl className="flex flex-col gap-3 text-[13px]">
+              {Object.entries(request.approvalTimeValues).map(([fieldId, value]) => {
+                const atf = approvalTimeFields.find((f) => f.id === fieldId);
+                return (
+                  <div key={fieldId}>
+                    <dt className="text-gray-400">
+                      {atf?.field.name ?? "Trường đã xoá"}
+                      {atf && (
+                        <span className="ml-2 text-[11px] text-gray-300">
+                          {fieldDataTypeLabels[atf.field.dataType]}
+                        </span>
+                      )}
+                    </dt>
+                    <dd className="font-medium text-gray-800">{formatValue(value)}</dd>
+                  </div>
+                );
+              })}
+            </dl>
+          </div>
+        )}
+
         <div className="mt-4 rounded-[3px] border border-[var(--color-border)] bg-white p-4">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h2 className="flex items-center gap-1.5 text-[13px] font-semibold uppercase tracking-wide text-gray-500">
+              <Paperclip size={14} /> Tài liệu đính kèm
+            </h2>
+            {(isOwnRequest || canManage) && (
+              <button
+                type="button"
+                onClick={() => attachmentInputRef.current?.click()}
+                disabled={uploadingAttachment}
+                className="print-hide flex items-center gap-1 text-[12px] font-medium text-[var(--color-action-blue)] hover:underline disabled:opacity-60"
+              >
+                <Plus size={13} /> {uploadingAttachment ? "Đang tải lên..." : "Thêm tài liệu"}
+              </button>
+            )}
+            <input
+              ref={attachmentInputRef}
+              type="file"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) uploadAttachment(file);
+              }}
+            />
+          </div>
+          {attachments.length === 0 ? (
+            <p className="text-[13px] text-gray-400">Chưa có tài liệu nào.</p>
+          ) : (
+            <ul className="flex flex-col gap-1">
+              {attachments.map((att) => (
+                <li key={att.path}>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewingAttachment(att)}
+                    className="flex w-full items-center gap-1.5 text-left text-[13px] text-[var(--color-action-blue)] hover:underline"
+                  >
+                    <Paperclip size={13} className="shrink-0" />
+                    <span className="truncate">{att.name}</span>
+                    <span className="shrink-0 text-gray-400">({(att.size / 1024 / 1024).toFixed(1)}MB)</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {previewingAttachment && (
+            <FilePreviewModal
+              requestId={request.id}
+              attachment={previewingAttachment}
+              onClose={() => setPreviewingAttachment(null)}
+            />
+          )}
+        </div>
+
+        <div className={`mt-4 rounded-[3px] border border-[var(--color-border)] bg-white p-4 ${printHideDiscussion ? "print-hide" : ""}`}>
           <h2 className="mb-3 flex items-center gap-1.5 text-[13px] font-semibold uppercase tracking-wide text-gray-500">
             <MessageSquare size={14} /> Thảo luận
           </h2>
@@ -512,19 +920,20 @@ export default function RequestDetailView({
             requestId={request.id}
             initialComments={request.comments ?? []}
             currentUid={currentUid}
-            isAdmin={isAdmin}
+            isOwner={isOwner}
           />
         </div>
       </div>
 
-      <div className="flex w-[300px] shrink-0 flex-col gap-4">
+      <div className="print-hide flex w-[300px] shrink-0 flex-col gap-4">
         <div className="rounded-[3px] border border-[var(--color-border)] bg-white p-4">
           <h3 className="mb-3 flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide text-gray-500">
             <Users size={13} /> Người xét duyệt
           </h3>
           <div className="flex flex-col gap-2">
-            {request.approversSnapshot.map((approver) => {
+            {request.approversSnapshot.map((approver, index) => {
               const state = request.approvers.find((a) => a.id === approver.id);
+              const stepMeta = request.approverStepMeta?.[index];
               const StatusIcon =
                 state?.decision === "approved"
                   ? CheckCircle2
@@ -536,7 +945,16 @@ export default function RequestDetailView({
                   <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-action-blue)] text-[10px] font-semibold text-white">
                     {approver.avatarInitial}
                   </span>
-                  <span className="min-w-0 flex-1 truncate text-gray-700">{approver.name}</span>
+                  <span className="min-w-0 flex-1 text-gray-700">
+                    <span className="block truncate">{approver.name}</span>
+                    {(stepMeta?.name || stepMeta?.slaHours) && (
+                      <span className="block truncate text-[11px] text-gray-400">
+                        {stepMeta?.name}
+                        {stepMeta?.name && stepMeta?.slaHours ? " · " : ""}
+                        {stepMeta?.slaHours ? `Hạn xử lý: ${stepMeta.slaHours} giờ` : ""}
+                      </span>
+                    )}
+                  </span>
                   <span
                     className={`flex shrink-0 items-center gap-1 text-[11px] ${
                       state?.decision === "approved"
@@ -559,23 +977,61 @@ export default function RequestDetailView({
           </div>
         </div>
 
-        {request.followers.length > 0 && (
-          <div className="rounded-[3px] border border-[var(--color-border)] bg-white p-4">
-            <h3 className="mb-3 flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide text-gray-500">
-              <Eye size={13} /> Người theo dõi
-            </h3>
-            <div className="flex flex-col gap-2">
-              {request.followers.map((f) => (
-                <div key={f.id} className="flex items-center gap-2 text-[13px] text-gray-700">
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gray-400 text-[10px] font-semibold text-white">
-                    {f.avatarInitial}
-                  </span>
-                  {f.name}
-                </div>
-              ))}
+        <div className="rounded-[3px] border border-[var(--color-border)] bg-white p-4">
+          <h3 className="mb-3 flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide text-gray-500">
+            <Eye size={13} /> Người theo dõi
+          </h3>
+          <div className="flex items-center">
+            {followers.length === 0 && <span className="text-[12px] text-gray-400">Chưa có người theo dõi.</span>}
+            {followers.map((f, i) => (
+              <span
+                key={f.id}
+                title={f.name}
+                style={{ marginLeft: i === 0 ? 0 : -9 }}
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-white bg-gray-400 text-[10px] font-semibold text-white"
+              >
+                {f.avatarInitial}
+              </span>
+            ))}
+            {currentUid && (
+              <button
+                type="button"
+                onClick={() => setAddFollowerOpen(true)}
+                title="Thêm người theo dõi"
+                aria-label="Thêm người theo dõi"
+                style={{ marginLeft: followers.length === 0 ? 0 : -9 }}
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-white bg-gray-100 text-gray-500 hover:bg-gray-200"
+              >
+                <Plus size={14} />
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-[3px] border border-[var(--color-border)] bg-white p-4">
+          <h3 className="mb-3 flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide text-gray-500">
+            <Pin size={13} /> Hành động chính
+          </h3>
+          <div className="flex items-start gap-3">
+            <div className="shrink-0 rounded-md bg-gray-50 px-2 py-1 text-center">
+              <div className="text-[11px] font-bold text-gray-600">
+                {new Date(request.submittedAt).toLocaleDateString("vi-VN", { day: "2-digit", month: "short" }).toUpperCase()}
+              </div>
+              <div className="text-[10px] text-gray-400">
+                {new Date(request.submittedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}
+              </div>
+            </div>
+            <div className="mt-0.5 flex h-[19px] w-[19px] shrink-0 items-center justify-center rounded-full bg-[var(--color-action-blue)] text-[12px] font-bold text-white">
+              +
+            </div>
+            <div className="text-[13px]">
+              <p className="font-semibold text-gray-800">Request created</p>
+              <p className="mt-0.5 text-gray-600">
+                <span className="font-medium text-[var(--color-action-blue)]">{request.submittedBy.name}</span> đã tạo đề xuất này
+              </p>
             </div>
           </div>
-        )}
+        </div>
 
         <div className="rounded-[3px] border border-[var(--color-border)] bg-white p-4">
           <h3 className="mb-3 flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide text-gray-500">
@@ -609,14 +1065,21 @@ export default function RequestDetailView({
       </div>
 
       {forwardOpen && (
-        <ForwardModal onClose={() => setForwardOpen(false)} onConfirm={forward} />
+        <ForwardModal
+          extraFieldByMode={forwardFieldsByMode}
+          onClose={() => setForwardOpen(false)}
+          onConfirm={forward}
+        />
       )}
       {rejectOpen && (
         <ReasonModal
           title="Từ chối đề xuất"
           confirmLabel="Từ chối"
+          extraField={rejectField}
           onClose={() => setRejectOpen(false)}
-          onConfirm={(note) => decide("rejected", note)}
+          onConfirm={(note, approvalTimeValue) =>
+            decide("rejected", note, approvalTimeValue, rejectFieldRecord?.id)
+          }
         />
       )}
       {returnOpen && (
@@ -627,6 +1090,27 @@ export default function RequestDetailView({
           onConfirm={(note) => decide("returned", note)}
         />
       )}
+      {approveConfirmOpen && approveField && (
+        <ApproveConfirmModal
+          field={approveField}
+          onClose={() => setApproveConfirmOpen(false)}
+          onConfirm={(approvalTimeValue) => decide("approved", undefined, approvalTimeValue, approveFieldRecord?.id)}
+        />
+      )}
+      {addFollowerOpen && (
+        <AddFollowerModal onClose={() => setAddFollowerOpen(false)} onConfirm={addFollower} />
+      )}
+      {/* "In đề xuất"/"In đề xuất và thảo luận" (menu Thêm) — window.print()
+          thuần, khác hẳn "In theo mẫu" (sinh file .docx thật). `.print-hide`
+          áp cho sidebar/nút bấm; card Thảo luận thêm class này CÓ ĐIỀU KIỆN
+          qua `printHideDiscussion` khi in KHÔNG kèm thảo luận. */}
+      <style jsx global>{`
+        @media print {
+          .print-hide {
+            display: none !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }

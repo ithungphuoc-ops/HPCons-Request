@@ -3,14 +3,16 @@ import {
   applyApproverDecision,
   approveAndForward,
   canApproverAct,
+  DECISION_TO_APPROVAL_TIME_ACTION,
   forwardThenApprove,
   getRequestStatus,
+  isApprovalTimeValueMissing,
   missingRequiredNote,
 } from "@/lib/approval-logic";
 import { adminDb } from "@/lib/firebase/admin";
 import { apiErrorResponse } from "@/lib/http";
 import { requireSession } from "@/lib/session";
-import type { RequestInstance, TaggedUser } from "@/lib/types";
+import type { ApprovalTimeField, ProposalGroup, RequestInstance, TaggedUser } from "@/lib/types";
 import { guiSangQlkCtr, trichXuatPayload } from "@/lib/qlkctr-sync";
 import { guiSangThuMua, trichXuatPayloadThuMua } from "@/lib/thumua-sync";
 
@@ -20,6 +22,11 @@ interface DecisionBody {
   target?: TaggedUser;
   /** Bắt buộc khi decision = "rejected" hoặc "returned" (§4.4 quy định phải có lý do). */
   note?: string;
+  /** "Mẫu form phê duyệt" — CHỈ tham khảo, server tự xác định lại field thật
+   * khớp (bước × hành động) của người đang quyết định, không tin nguyên giá
+   * trị 2 field này từ client (xem đoạn validate approvalTimeField bên dưới). */
+  approvalTimeFieldId?: string;
+  approvalTimeValue?: unknown;
 }
 
 const ACTION_LABEL: Record<DecisionBody["decision"], string> = {
@@ -53,11 +60,16 @@ export async function POST(
     const isForwardDecision =
       body.decision === "approve_and_forward" || body.decision === "forward_then_approve";
     let requireDecisionNote: { approve?: boolean; forward?: boolean } | undefined;
-    if (current.groupId && (body.decision === "approved" || isForwardDecision)) {
+    let approvalTimeFields: ApprovalTimeField[] = [];
+    // Tải nhóm 1 LẦN nếu có groupId — cần cho cả requireDecisionNote (đã có
+    // từ trước) VÀ "Mẫu form phê duyệt" (mới) — trước đây chỉ tải khi
+    // approved/forward, giờ tải luôn cả "rejected" vì field cũng áp dụng
+    // được cho hành động Từ chối.
+    if (current.groupId) {
       const groupSnap = await adminDb.collection("groups").doc(current.groupId).get();
-      requireDecisionNote = (
-        groupSnap.data() as { requireDecisionNote?: { approve?: boolean; forward?: boolean } } | undefined
-      )?.requireDecisionNote;
+      const groupData = groupSnap.data() as Partial<ProposalGroup> | undefined;
+      requireDecisionNote = groupData?.requireDecisionNote;
+      approvalTimeFields = groupData?.approvalTimeFields ?? [];
     }
     if (missingRequiredNote(body.decision, body.note, requireDecisionNote)) {
       const message =
@@ -66,6 +78,35 @@ export async function POST(
           : `Nhóm này yêu cầu nhập ý kiến khi ${body.decision === "approved" ? "chấp thuận" : "chuyển tiếp"}.`;
       return NextResponse.json({ error: message }, { status: 400 });
     }
+
+    // "Mẫu form phê duyệt" — server TỰ xác định lại field khớp (bước × hành
+    // động của NGƯỜI ĐANG QUYẾT ĐỊNH), không tin `body.approvalTimeFieldId`
+    // — chỉ dùng để biết field nào, còn có áp dụng được không do server tính.
+    // `current.approverStepMeta` cùng thứ tự với `current.approvers`.
+    let matchedApprovalTimeField: ApprovalTimeField | undefined;
+    const decisionAction = DECISION_TO_APPROVAL_TIME_ACTION[body.decision];
+    if (decisionAction) {
+      const myIndex = current.approvers.findIndex((a) => a.id === session.uid);
+      const myStepCode = myIndex >= 0 ? current.approverStepMeta?.[myIndex]?.code : undefined;
+      if (myStepCode) {
+        matchedApprovalTimeField = approvalTimeFields.find(
+          (f) => f.approverStepCode === myStepCode && f.decisionAction === decisionAction,
+        );
+      }
+    }
+    if (matchedApprovalTimeField && isApprovalTimeValueMissing(matchedApprovalTimeField.field, body.approvalTimeValue)) {
+      return NextResponse.json(
+        { error: `Cần điền "${matchedApprovalTimeField.field.name}" trước khi tiếp tục.` },
+        { status: 400 },
+      );
+    }
+    // Lưu vào `approvalTimeValues` (TÁCH BIỆT `values` — dữ liệu form gửi ban
+    // đầu), key = id field đã được SERVER xác nhận khớp — không dùng thẳng
+    // `body.approvalTimeFieldId` của client. Không có field khớp → giữ
+    // nguyên `approvalTimeValues` cũ, không đổi.
+    const approvalTimeValues = matchedApprovalTimeField
+      ? { ...(current.approvalTimeValues ?? {}), [matchedApprovalTimeField.id]: body.approvalTimeValue }
+      : current.approvalTimeValues;
 
     if (body.decision === "returned") {
       if (!canApproverAct(current.approvalFlow, current.approvers, session.uid)) {
@@ -81,13 +122,15 @@ export async function POST(
         ...current.history,
         { at: nowIso, actor: session.name, action: ACTION_LABEL.returned, note: body.note },
       ];
-      await ref.update({ approvers, status: "returned", history, updatedAt: nowIso });
+      const viewedAt = { ...current.viewedAt, [session.uid]: nowIso };
+      await ref.update({ approvers, status: "returned", history, updatedAt: nowIso, viewedAt });
       const updated: RequestInstance = {
         ...current,
         approvers,
         status: "returned",
         history,
         updatedAt: nowIso,
+        viewedAt,
       };
       return NextResponse.json({ request: updated });
     }
@@ -124,13 +167,16 @@ export async function POST(
           note: body.note,
         },
       ];
-      await ref.update({ approvers, approversSnapshot, history, updatedAt: nowIso });
+      const viewedAt = { ...current.viewedAt, [session.uid]: nowIso };
+      await ref.update({ approvers, approversSnapshot, history, updatedAt: nowIso, approvalTimeValues, viewedAt });
       const updated: RequestInstance = {
         ...current,
         approvers,
         approversSnapshot,
         history,
         updatedAt: nowIso,
+        approvalTimeValues,
+        viewedAt,
       };
       return NextResponse.json({ request: updated });
     }
@@ -156,7 +202,8 @@ export async function POST(
       { at: nowIso, actor: session.name, action: ACTION_LABEL[body.decision], note: body.note },
     ];
 
-    await ref.update({ approvers, status, history, updatedAt: nowIso });
+    const viewedAt = { ...current.viewedAt, [session.uid]: nowIso };
+    await ref.update({ approvers, status, history, updatedAt: nowIso, approvalTimeValues, viewedAt });
 
     const updated: RequestInstance = {
       ...current,
@@ -164,6 +211,8 @@ export async function POST(
       status,
       history,
       updatedAt: nowIso,
+      approvalTimeValues,
+      viewedAt,
     };
 
     // Đồng bộ sang QLK CTR (app quản lý kho công trình) khi duyệt xong hoàn toàn — xem

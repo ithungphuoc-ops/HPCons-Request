@@ -6,7 +6,7 @@ import { AlertTriangle, CheckCircle2, Download, FileText, Pencil, Plus, RefreshC
 import RequireAdminRole from "@/components/request/RequireAdminRole";
 import { useRequestContext } from "@/context/RequestContext";
 import { cancelButtonClass, confirmButtonClass, inputClass, selectClass, textareaClass } from "@/components/shared/form-styles";
-import { fieldDataTypeLabels, type FieldDataType } from "@/lib/types";
+import { DEFAULT_GROUP_PRINT_OPTIONS, fieldDataTypeLabels, type FieldDataType, type GroupPrintOptions } from "@/lib/types";
 import type { PrintTemplate } from "@/lib/types";
 import { COMPANY_NAME } from "@/lib/constants";
 import { SYSTEM_TEMPLATE_KEYS, fieldTemplateKeys, isKnownSystemKey } from "@/lib/print-template";
@@ -65,6 +65,11 @@ function PrintSettingsPageInner() {
   }, [group?.id]);
 
   if (!group) return null;
+
+  const printOptions: GroupPrintOptions = { ...DEFAULT_GROUP_PRINT_OPTIONS, ...group.printOptions };
+  const setPrintOption = <K extends keyof GroupPrintOptions>(key: K, value: GroupPrintOptions[K]) => {
+    updateGroup(group.id, { printOptions: { ...printOptions, [key]: value } });
+  };
 
   const save = () => {
     updateGroup(group.id, { printFooterNote: footerNote });
@@ -501,6 +506,77 @@ function PrintSettingsPageInner() {
           />
           Chỉ cho phép &quot;In theo mẫu&quot; khi đề xuất đã được duyệt hoàn toàn
         </label>
+      </div>
+
+      <div className="mb-6 rounded-[3px] border border-[var(--color-border)] bg-white p-4">
+        <h3 className="text-[13px] font-semibold text-gray-800">
+          Tuỳ chỉnh in đề xuất <span className="ml-1 rounded-full bg-[var(--color-cat-bg)] px-2 py-0.5 text-[10px] font-bold text-[var(--color-cat-text)]">MỚI</span>
+        </h3>
+        <p className="mt-1 text-[12px] text-gray-500">
+          Chỉ lưu cấu hình / ẩn-hiện nút ở trang chi tiết đề xuất, chưa tự sinh file thật.
+        </p>
+
+        <div className="mt-3 flex flex-col gap-1">
+          <label className="flex items-center gap-2 text-[13px] text-gray-700">
+            <input type="checkbox" checked={printOptions.allowPrintProposal} onChange={(e) => setPrintOption("allowPrintProposal", e.target.checked)} />
+            In đề xuất
+          </label>
+          <label className="flex items-center gap-2 text-[13px] text-gray-700">
+            <input type="checkbox" checked={printOptions.allowPrintProposalWithDiscussion} onChange={(e) => setPrintOption("allowPrintProposalWithDiscussion", e.target.checked)} />
+            In đề xuất và thảo luận
+          </label>
+          <label className="flex items-center gap-2 text-[13px] text-gray-700">
+            <input type="checkbox" checked={printOptions.allowPrintToWord} onChange={(e) => setPrintOption("allowPrintToWord", e.target.checked)} />
+            In đề xuất theo mẫu ra file word
+          </label>
+          <label className="flex items-center gap-2 text-[13px] text-gray-700">
+            <input type="checkbox" checked={printOptions.allowPrintToPdf} onChange={(e) => setPrintOption("allowPrintToPdf", e.target.checked)} />
+            In đề xuất theo mẫu ra file pdf{" "}
+            <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500">⏳ chờ tính năng xuất PDF</span>
+          </label>
+          <label className="flex items-center gap-2 text-[13px] text-gray-700">
+            <input type="checkbox" checked={printOptions.allowPrintWithQrCode} onChange={(e) => setPrintOption("allowPrintWithQrCode", e.target.checked)} />
+            In đề xuất theo mẫu với qrcode{" "}
+            <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500">⏳ chưa sinh QR thật</span>
+          </label>
+          <label className="flex items-center gap-2 text-[13px] text-gray-700">
+            <input type="checkbox" checked={printOptions.allowPrintAttachmentWithQrCode} onChange={(e) => setPrintOption("allowPrintAttachmentWithQrCode", e.target.checked)} />
+            In file đính kèm với qrcode{" "}
+            <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500">⏳ chưa sinh QR thật</span>
+          </label>
+          <label className="flex items-center gap-2 text-[13px] text-gray-700">
+            <input type="checkbox" checked={printOptions.allowPrintCustomFieldFileWithQrCode} onChange={(e) => setPrintOption("allowPrintCustomFieldFileWithQrCode", e.target.checked)} />
+            In trường tùy chỉnh dạng file với qrcode{" "}
+            <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500">⏳ chưa sinh QR thật</span>
+          </label>
+        </div>
+
+        <div className="mt-3 grid grid-cols-1 gap-3 border-t border-gray-100 pt-3 sm:grid-cols-2">
+          <div>
+            <label className="mb-1 block text-[12px] font-medium text-gray-600">
+              Vị trí mã QR (file trường tuỳ chỉnh)
+            </label>
+            <select
+              className={selectClass}
+              value={printOptions.customFieldQrPosition ?? "top_left"}
+              onChange={(e) => setPrintOption("customFieldQrPosition", e.target.value)}
+            >
+              <option value="top_left">Trên - Trái</option>
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-[12px] font-medium text-gray-600">
+              Vị trí mã QR (file đính kèm)
+            </label>
+            <select
+              className={selectClass}
+              value={printOptions.attachmentQrPosition ?? "top_left"}
+              onChange={(e) => setPrintOption("attachmentQrPosition", e.target.value)}
+            >
+              <option value="top_left">Trên - Trái</option>
+            </select>
+          </div>
+        </div>
       </div>
 
       <div className="flex gap-6">

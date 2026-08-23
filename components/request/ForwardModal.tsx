@@ -9,7 +9,8 @@ import {
   confirmButtonClass,
   textareaClass,
 } from "@/components/shared/form-styles";
-import type { TaggedUser } from "@/lib/types";
+import ApprovalTimeFieldControl, { isApprovalTimeValueMissing } from "@/components/request/ApprovalTimeFieldControl";
+import type { ApprovalTimeField, TaggedUser } from "@/lib/types";
 
 /** "approve_and_forward" = "Chấp nhận và chuyển tiếp" (đã duyệt xong, đẩy
  * thêm 1 người cấp trên duyệt tiếp — người chuyển VẪN được ghi đã duyệt).
@@ -31,27 +32,40 @@ const MODE_NOTE: Record<ForwardMode, string> = {
 };
 
 export default function ForwardModal({
+  /** "Mẫu form phê duyệt" khớp đúng bước của người đang xử lý — key theo
+   * ĐÚNG ForwardMode (không phải ApprovalTimeField.decisionAction, xem cách
+   * quy đổi ở RequestDetailView.tsx: "approve_and_forward" ~ "approveAndForward",
+   * "forward_then_approve" ~ "forward"). undefined/thiếu key = không có field. */
+  extraFieldByMode,
   onClose,
   onConfirm,
 }: {
+  extraFieldByMode?: Partial<Record<ForwardMode, ApprovalTimeField["field"]>>;
   onClose: () => void;
-  onConfirm: (mode: ForwardMode, target: TaggedUser, note: string) => Promise<void>;
+  onConfirm: (mode: ForwardMode, target: TaggedUser, note: string, approvalTimeValue?: unknown) => Promise<void>;
 }) {
   const [mode, setMode] = useState<ForwardMode>("approve_and_forward");
   const [target, setTarget] = useState<TaggedUser[]>([]);
   const [note, setNote] = useState("");
+  const [fieldValue, setFieldValue] = useState<unknown>(undefined);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const extraField = extraFieldByMode?.[mode];
 
   const handleConfirm = async () => {
     if (target.length === 0) {
       setError("Chọn người nhận chuyển tiếp.");
       return;
     }
+    if (extraField && isApprovalTimeValueMissing(extraField, fieldValue)) {
+      setError(`Cần điền "${extraField.name}".`);
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
-      await onConfirm(mode, target[0], note);
+      await onConfirm(mode, target[0], note, extraField ? fieldValue : undefined);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Có lỗi xảy ra.");
       setSubmitting(false);
@@ -99,7 +113,10 @@ export default function ForwardModal({
                   name="forward-mode"
                   className="mt-0.5"
                   checked={mode === m}
-                  onChange={() => setMode(m)}
+                  onChange={() => {
+                    setMode(m);
+                    setFieldValue(undefined);
+                  }}
                 />
                 <span className="flex-1">{MODE_LABEL[m]}</span>
                 <span title={MODE_NOTE[m]} className="mt-0.5 shrink-0 text-gray-400">
@@ -119,6 +136,7 @@ export default function ForwardModal({
             placeholder="Gõ @ để tìm người nhận"
           />
         </div>
+        {extraField && <ApprovalTimeFieldControl field={extraField} value={fieldValue} onChange={setFieldValue} />}
         <div>
           <label className="mb-1 block text-[13px] font-medium text-gray-700">Lý do/ghi chú</label>
           <textarea
