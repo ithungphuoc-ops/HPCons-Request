@@ -6,6 +6,7 @@ import { canManageGroupsAtAppScope, isWithinUsedForScope } from "@/lib/permissio
 import { mergeFollowers } from "@/lib/server/conditions";
 import { resolveComputedValue } from "@/lib/server/computed-fields";
 import { dedupeApproversWithMeta } from "@/lib/approval-logic";
+import { notifyFollowersSubmitted, notifyPendingApprovers } from "@/lib/server/notification-emails";
 import {
   buildInitialApprovers,
   canView,
@@ -259,6 +260,10 @@ export async function POST(request: Request) {
     let followers: TaggedUser[];
     let deadlineAt: string | null;
     let useOwnCounter = false;
+    // Hoisted ra ngoài if-block để dùng lại lúc gửi email thông báo (bên
+    // dưới, sau khi tạo xong `created`) — đề xuất trực tiếp (không groupId)
+    // giữ `null`, không có `notificationRules` nào để đọc.
+    let group: ProposalGroup | null = null;
 
     if (body.groupId) {
       const groupSnap = await adminDb.collection("groups").doc(body.groupId).get();
@@ -268,7 +273,7 @@ export async function POST(request: Request) {
           { status: 404 },
         );
       }
-      const group = toProposalGroup(groupSnap.id, groupSnap.data()!);
+      group = toProposalGroup(groupSnap.id, groupSnap.data()!);
 
       if (!isWithinUsedForScope(group.usedFor, { userId: session.uid, groupIds: [] })) {
         return NextResponse.json(
@@ -419,6 +424,23 @@ export async function POST(request: Request) {
     await requestRef.set(newRequest);
 
     const created: RequestInstance = { id: requestRef.id, ...newRequest };
+
+    // Email thông báo thật — Sếp chốt 24/08/2026. Chỉ gửi khi gửi CHÍNH THỨC
+    // (không phải nháp) và nhóm bật `notificationRules.emailNotify`; 2 hàm tự
+    // kiểm tra cờ, không cần if ở đây. Await (không phải bắn-rồi-quên thật)
+    // vì môi trường serverless (Vercel) không đảm bảo code sau response còn
+    // chạy tiếp — giống cách guiSangQlkCtr/guiSangThuMua đã làm.
+    if (!isDraft) {
+      try {
+        await Promise.all([
+          notifyPendingApprovers(created, group),
+          notifyFollowersSubmitted(created.followers, created, group),
+        ]);
+      } catch (mailError) {
+        console.error("Gửi email thông báo lúc gửi đề xuất thất bại (không ảnh hưởng thao tác chính):", mailError);
+      }
+    }
+
     return NextResponse.json({ request: created }, { status: 201 });
   } catch (error) {
     return apiErrorResponse(error);

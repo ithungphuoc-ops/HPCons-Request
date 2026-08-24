@@ -11,9 +11,10 @@ import {
 } from "@/lib/approval-logic";
 import { adminDb } from "@/lib/firebase/admin";
 import { apiErrorResponse } from "@/lib/http";
+import { notifyFollowersFullyApproved, notifyPendingApprovers, notifySubmitterResult } from "@/lib/server/notification-emails";
 import { recomputeDeadlineForNextStep } from "@/lib/server/requests";
 import { requireSession } from "@/lib/session";
-import type { ApprovalTimeField, ProposalGroup, RequestInstance, TaggedUser } from "@/lib/types";
+import type { ApprovalTimeField, GroupNotificationRules, ProposalGroup, RequestInstance, TaggedUser } from "@/lib/types";
 import { guiSangQlkCtr, trichXuatPayload } from "@/lib/qlkctr-sync";
 import { guiSangThuMua, trichXuatPayloadThuMua } from "@/lib/thumua-sync";
 
@@ -67,6 +68,13 @@ export async function POST(
     let approverSlaEnabled: boolean | undefined;
     let slaByWorkCalendar: boolean | undefined;
     let groupSlaHours: number | null = null;
+    // Mặc định `true` — trước 24/08/2026 KHÔNG có cờ nào cả, "Chuyển tiếp và
+    // Duyệt" luôn cho phép mọi nhóm; giữ đúng hành vi cũ cho nhóm chưa từng
+    // đụng vào cờ này (khớp DEFAULT_GROUP_PERMISSION_RULES ở lib/types.ts).
+    let approversCanDelegateApproval = true;
+    // Dùng để gửi email thông báo thật (Sếp chốt 24/08/2026) — chỉ cần đúng
+    // field này, xem GroupNotificationSource ở lib/server/notification-emails.ts.
+    let notificationRules: GroupNotificationRules | undefined;
     // Tải nhóm 1 LẦN nếu có groupId — cần cho cả requireDecisionNote (đã có
     // từ trước) VÀ "Mẫu form phê duyệt" (mới) — trước đây chỉ tải khi
     // approved/forward, giờ tải luôn cả "rejected" vì field cũng áp dụng
@@ -79,6 +87,10 @@ export async function POST(
       approverSlaEnabled = groupData?.approverSlaEnabled;
       slaByWorkCalendar = groupData?.slaByWorkCalendar;
       groupSlaHours = groupData?.slaHours ?? null;
+      notificationRules = groupData?.notificationRules;
+      if (groupData?.permissionRules?.approversCanDelegateApproval === false) {
+        approversCanDelegateApproval = false;
+      }
     }
     if (missingRequiredNote(body.decision, body.note, requireDecisionNote)) {
       const message =
@@ -86,6 +98,15 @@ export async function POST(
           ? "Cần nhập lý do khi từ chối hoặc trả lại đề xuất."
           : `Nhóm này yêu cầu nhập ý kiến khi ${body.decision === "approved" ? "chấp thuận" : "chuyển tiếp"}.`;
       return NextResponse.json({ error: message }, { status: 400 });
+    }
+    // Chặn server-side, không chỉ ẩn UI — nhóm tắt cờ này (Sếp chốt
+    // 24/08/2026, xem ForwardModal.tsx) không cho "Chuyển tiếp và Duyệt"
+    // (người nhận xử lý trước rồi mới quay lại người chuyển).
+    if (body.decision === "forward_then_approve" && !approversCanDelegateApproval) {
+      return NextResponse.json(
+        { error: "Nhóm này không cho phép chuyển tiếp cho người khác duyệt trước." },
+        { status: 403 },
+      );
     }
 
     // "Mẫu form phê duyệt" — server TỰ xác định lại field khớp (bước × hành
@@ -215,6 +236,15 @@ export async function POST(
       if (deadlineAt !== undefined) patch.deadlineAt = deadlineAt;
       await ref.update(patch);
       const updated: RequestInstance = { ...current, ...patch };
+
+      // Email thông báo thật (Sếp chốt 24/08/2026) — người vừa được chuyển
+      // tới (hoặc người kế tiếp theo thứ tự) đang chờ xử lý.
+      try {
+        await notifyPendingApprovers(updated, { notificationRules });
+      } catch (mailError) {
+        console.error("Gửi email thông báo lúc chuyển tiếp thất bại (không ảnh hưởng thao tác chính):", mailError);
+      }
+
       return NextResponse.json({ request: updated });
     }
 
@@ -262,6 +292,20 @@ export async function POST(
     await ref.update(decisionPatch);
 
     const updated: RequestInstance = { ...current, ...decisionPatch };
+
+    // Email thông báo thật (Sếp chốt 24/08/2026): còn "pending" → báo người
+    // kế tiếp đang tới lượt; đã xong (approved/rejected) → báo người tạo
+    // (luôn báo) + người theo dõi (chỉ khi approved hoàn toàn).
+    try {
+      if (status === "pending") {
+        await notifyPendingApprovers(updated, { notificationRules });
+      } else {
+        await notifySubmitterResult(updated, { notificationRules });
+        if (status === "approved") await notifyFollowersFullyApproved(updated, { notificationRules });
+      }
+    } catch (mailError) {
+      console.error("Gửi email thông báo sau quyết định thất bại (không ảnh hưởng thao tác chính):", mailError);
+    }
 
     // Đồng bộ sang QLK CTR (app quản lý kho công trình) khi duyệt xong hoàn toàn — xem
     // openspec/changes/add-qlkctr-sync-webhook. Bọc try/catch riêng, tuyệt đối không được để lỗi
