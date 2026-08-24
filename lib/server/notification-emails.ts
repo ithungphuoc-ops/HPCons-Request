@@ -1,6 +1,6 @@
 import "server-only";
 import { canApproverAct } from "@/lib/approval-logic";
-import { buildRequestEmailHtml, resolveUserEmail, sendMail } from "@/lib/server/mailer";
+import { buildRequestEmailHtml, escapeHtml, resolveUserEmail, sendMail } from "@/lib/server/mailer";
 import { DEFAULT_GROUP_NOTIFICATION_RULES } from "@/lib/types";
 import type { GroupNotificationRules, RequestInstance, TaggedUser } from "@/lib/types";
 
@@ -36,6 +36,17 @@ function currentlyActionableUids(request: RequestInstance): string[] {
     .map((a) => a.id);
 }
 
+/** "tên đề xuất (mã)" đã escape HTML — dùng chung cho cả 4 hàm gửi mail bên
+ * dưới, tránh escape rời rạc/lỡ quên 1 chỗ. `groupNameSnapshot` của đề xuất
+ * TRỰC TIẾP (không groupId) do người dùng tự đặt (`title`) — KHÔNG được tin
+ * thẳng khi chèn vào HTML email (vá lỗ hổng CodeRabbit phát hiện, xem
+ * escapeHtml() ở lib/server/mailer.ts). */
+function escapedRequestLabel(request: RequestInstance): string {
+  const name = escapeHtml(request.groupNameSnapshot);
+  const code = escapeHtml(request.code ?? request.id);
+  return `<b>"${name}"</b> (mã ${code})`;
+}
+
 async function sendToUid(uid: string, subject: string, html: string) {
   try {
     const email = await resolveUserEmail(uid);
@@ -59,7 +70,7 @@ export async function notifyPendingApprovers(request: RequestInstance, group: Gr
   const subject = `[App Đề xuất] "${request.groupNameSnapshot}" đang chờ bạn duyệt`;
   const html = buildRequestEmailHtml({
     greeting: "Xin chào,",
-    body: `Đề xuất <b>"${request.groupNameSnapshot}"</b> (mã ${request.code ?? request.id}) đang chờ bạn xét duyệt.`,
+    body: `Đề xuất ${escapedRequestLabel(request)} đang chờ bạn xét duyệt.`,
     requestId: request.id,
     ctaLabel: "Xem đề xuất",
   });
@@ -78,7 +89,7 @@ export async function notifySubmitterResult(request: RequestInstance, group: Gro
   }`;
   const html = buildRequestEmailHtml({
     greeting: "Xin chào,",
-    body: `Đề xuất <b>"${request.groupNameSnapshot}"</b> (mã ${request.code ?? request.id}) bạn đã gửi ${
+    body: `Đề xuất ${escapedRequestLabel(request)} bạn đã gửi ${
       request.status === "approved" ? "đã được <b>chấp thuận</b>" : "đã <b>bị từ chối</b>"
     }.`,
     requestId: request.id,
@@ -100,7 +111,7 @@ export async function notifyFollowersSubmitted(followers: TaggedUser[], request:
   const subject = `[App Đề xuất] Đề xuất bạn đang theo dõi "${request.groupNameSnapshot}" vừa được gửi`;
   const html = buildRequestEmailHtml({
     greeting: "Xin chào,",
-    body: `Đề xuất <b>"${request.groupNameSnapshot}"</b> (mã ${request.code ?? request.id}) mà bạn đang theo dõi vừa được gửi.`,
+    body: `Đề xuất ${escapedRequestLabel(request)} mà bạn đang theo dõi vừa được gửi.`,
     requestId: request.id,
     ctaLabel: "Xem đề xuất",
   });
@@ -115,7 +126,7 @@ export async function notifyFollowersFullyApproved(request: RequestInstance, gro
   const subject = `[App Đề xuất] Đề xuất bạn đang theo dõi "${request.groupNameSnapshot}" đã được chấp thuận`;
   const html = buildRequestEmailHtml({
     greeting: "Xin chào,",
-    body: `Đề xuất <b>"${request.groupNameSnapshot}"</b> (mã ${request.code ?? request.id}) mà bạn đang theo dõi đã được <b>chấp thuận hoàn toàn</b>.`,
+    body: `Đề xuất ${escapedRequestLabel(request)} mà bạn đang theo dõi đã được <b>chấp thuận hoàn toàn</b>.`,
     requestId: request.id,
     ctaLabel: "Xem đề xuất",
   });

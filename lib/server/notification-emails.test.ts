@@ -9,6 +9,9 @@ vi.mock("@/lib/server/mailer", () => ({
   sendMail: sendMailMock,
   resolveUserEmail: resolveUserEmailMock,
   buildRequestEmailHtml: () => "<p>html</p>",
+  // escapeHtml thật — không cần giả, hàm này thuần/không phụ thuộc gì (đã
+  // có test riêng ở mailer.test.ts), chỉ cần không undefined khi bị import.
+  escapeHtml: (value: string) => value,
 }));
 
 const {

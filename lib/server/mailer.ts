@@ -27,8 +27,34 @@ function getTransporter() {
   cachedTransporter = nodemailer.createTransport({
     service: "gmail",
     auth: { user, pass },
+    // Góp ý CodeRabbit (review PR #4, 24/08/2026): không đặt timeout thì 1
+    // lần SMTP treo có thể giữ request duyệt/gửi đề xuất TREO theo cả phút —
+    // đặt timeout ngắn để lỗi nhanh, không "treo lâu" như CodeRabbit lo
+    // ngại. Chưa làm hàng đợi/retry idempotent riêng (CodeRabbit gợi ý mức
+    // "Heavy lift") — quy mô app hiện tại 1 route await trực tiếp là đủ,
+    // giống đúng cách guiSangQlkCtr/guiSangThuMua đã làm trong cùng route
+    // quyết định, không phải hồi quy mới.
+    connectionTimeout: 8000,
+    greetingTimeout: 8000,
+    socketTimeout: 10000,
   });
   return cachedTransporter;
+}
+
+/** Escape 5 ký tự HTML đặc biệt — dùng cho MỌI giá trị KHÔNG do chính code
+ * này viết ra (tên đề xuất, mã đề xuất...) trước khi chèn vào email HTML.
+ * Vá lỗ hổng CodeRabbit phát hiện (review PR #4, 24/08/2026, mức Major):
+ * đề xuất trực tiếp cho phép người dùng tự đặt `groupNameSnapshot` (chính
+ * là `title` họ gõ) — không escape thì 1 người có thể chèn `<a href=...>`
+ * biến email thông báo thật thành link lừa đảo (phishing) gửi tới người
+ * khác trong công ty. */
+export function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 /** true nếu đã có đủ biến môi trường để gửi email thật — dùng để log rõ lý

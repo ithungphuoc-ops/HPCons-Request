@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { HelpCircle } from "lucide-react";
 import Modal from "@/components/shared/Modal";
 import TagUserInput from "@/components/shared/TagUserInput";
@@ -63,6 +63,19 @@ export default function ForwardModal({
   const [fieldValue, setFieldValue] = useState<unknown>(undefined);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Góp ý CodeRabbit (review PR #4, 24/08/2026): nếu `allowForwardThenApprove`
+  // đổi từ true → false NGAY LÚC modal đang mở (nhóm vừa bị tắt cờ), radio
+  // "Chuyển tiếp và Duyệt" biến mất khỏi danh sách nhưng `mode` state cũ vẫn
+  // giữ giá trị đó — bấm "Xác nhận" sẽ gửi 1 mode không còn hiện trên UI.
+  // Đưa mode về lựa chọn khả dụng đầu tiên trong trường hợp đó.
+  useEffect(() => {
+    if (!availableModes.includes(mode)) {
+      setMode(availableModes[0] ?? "approve_and_forward");
+      setFieldValue(undefined);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allowForwardThenApprove]);
 
   const extraField = extraFieldByMode?.[mode];
 

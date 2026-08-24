@@ -43,7 +43,7 @@ function GroupNotificationsPageInner() {
           <BoolSelect value={rules.perStepBlockNotify} onChange={(v) => setRule("perStepBlockNotify", v)} />
         </NotifRow>
 
-        <NotifRow question="Thông báo email" note="Gửi email thật tới người duyệt đang tới lượt và người tạo đề xuất — cần máy chủ đã cấu hình tài khoản gửi mail.">
+        <NotifRow question="Thông báo email" note="Gửi email thật tới người duyệt đang tới lượt, người tạo đề xuất, và người theo dõi (lúc gửi + lúc chấp thuận hoàn toàn) — cần máy chủ đã cấu hình tài khoản gửi mail.">
           <BoolSelect value={rules.emailNotify} onChange={(v) => setRule("emailNotify", v)} />
         </NotifRow>
       </div>

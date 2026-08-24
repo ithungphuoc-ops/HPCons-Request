@@ -17,9 +17,16 @@
 - [x] 2.5 **Đổi mặc định** `DEFAULT_GROUP_PERMISSION_RULES.approversCanDelegateApproval`: `false` → `true` (tránh hồi quy — hành động này trước đây luôn được phép mọi nhóm)
 - [x] 2.6 Cập nhật mô tả ở `app/request/groups/[groupId]/(settings)/permissions/page.tsx` khớp đúng kịch bản Sếp mô tả
 
-## 3. Kiểm thử
+## 3. Vá góp ý CodeRabbit (review PR #4, 24/08/2026 — 4 phát hiện)
 
-- [x] 3.1 `npm run build` sạch
-- [x] 3.2 `npx vitest run` — 223/223 pass
-- [ ] 3.3 Sếp thêm `GMAIL_USER`/`GMAIL_APP_PASSWORD` vào Vercel (project `request-app`) rồi redeploy — CẦN SẾP TỰ LÀM, em không có quyền/không nên tự thêm secret
-- [ ] 3.4 Kiểm thủ công: gửi 1 đề xuất nhóm bật `emailNotify`, xác nhận người duyệt nhận được email thật; thử "Chuyển tiếp và Duyệt" ở nhóm tắt `approversCanDelegateApproval`, xác nhận tuỳ chọn biến mất + gọi API thẳng bị chặn 403 — CẦN SẾP TỰ TEST sau khi có env var
+- [x] 3a.1 🔴 Major (Security) — `groupNameSnapshot`/`code` chèn thẳng vào HTML email không escape (đề xuất trực tiếp cho người dùng tự đặt tên → có thể chèn link giả) — thêm `escapeHtml()` (`lib/server/mailer.ts`, có test riêng `mailer.test.ts`), dùng ở cả 4 hàm gửi mail
+- [x] 3a.2 🟠 Major (Stability) — SMTP có thể treo lâu làm chậm response route duyệt/gửi đề xuất — thêm `connectionTimeout`/`greetingTimeout`/`socketTimeout` cho transporter. **KHÔNG làm** phần "hàng đợi + retry idempotent" CodeRabbit gợi ý thêm (tự đánh giá "Heavy lift") — quy mô app hiện tại chưa cần, nhất quán với cách `guiSangQlkCtr`/`guiSangThuMua` đã làm trong cùng route
+- [x] 3a.3 🟡 Minor — mô tả "Thông báo email" ở trang cài đặt thiếu nhắc người theo dõi cũng được báo — đã bổ sung
+- [x] 3a.4 🟡 Minor — `ForwardModal` không reset `mode` khi `allowForwardThenApprove` đổi true→false lúc modal đang mở — thêm `useEffect` reset
+
+## 4. Kiểm thử
+
+- [x] 4.1 `npm run build` sạch
+- [x] 4.2 `npx vitest run` — 228/228 pass (8 test cũ + 5 test `mailer.test.ts` mới)
+- [ ] 4.3 Sếp thêm `GMAIL_USER`/`GMAIL_APP_PASSWORD` vào Vercel (project `request-app`) rồi redeploy — CẦN SẾP TỰ LÀM, em không có quyền/không nên tự thêm secret. Sếp đã chốt 24/08/2026: dùng chung tài khoản Gmail đang gửi cho ITAsset/HP Corp
+- [ ] 4.4 Kiểm thủ công: gửi 1 đề xuất nhóm bật `emailNotify`, xác nhận người duyệt nhận được email thật; thử "Chuyển tiếp và Duyệt" ở nhóm tắt `approversCanDelegateApproval`, xác nhận tuỳ chọn biến mất + gọi API thẳng bị chặn 403 — CẦN SẾP TỰ TEST sau khi có env var
