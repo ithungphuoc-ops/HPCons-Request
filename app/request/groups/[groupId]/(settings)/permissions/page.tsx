@@ -66,10 +66,7 @@ function GroupPermissionsPageInner() {
           <BoolSelect value={rules.defaultApproversCanExportData} onChange={(v) => setRule("defaultApproversCanExportData", v)} />
         </PermRow>
 
-        <PermRow
-          question="Cho phép người duyệt chuyển quyền duyệt cho người khác"
-          note="Chỉ lưu cấu hình — chưa có cơ chế ủy quyền dài hạn thật trong app."
-        >
+        <PermRow question="Cho phép người duyệt chuyển tiếp cho người khác duyệt trước (vd: chưa hiểu rõ đề xuất, chuyển cho người hiểu rõ hơn xử lý trước — trách nhiệm đầu tiên thuộc người đó, xong quay lại mình duyệt tiếp rồi mới tới người sau)">
           <BoolSelect value={rules.approversCanDelegateApproval} onChange={(v) => setRule("approversCanDelegateApproval", v)} />
         </PermRow>
       </div>

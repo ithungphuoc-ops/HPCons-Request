@@ -5,7 +5,7 @@ import { apiErrorResponse } from "@/lib/http";
 import { scanTemplateVariables } from "@/lib/server/print-engine";
 import { createPrintTemplate, listPrintTemplates } from "@/lib/server/print-templates";
 import { requireSession, requireWriteAccess } from "@/lib/session";
-import type { GroupPrintOptions, ProposalGroup } from "@/lib/types";
+import type { GroupPermissionRules, GroupPrintOptions, ProposalGroup } from "@/lib/types";
 
 export const runtime = "nodejs";
 
@@ -18,7 +18,11 @@ function sanitizeFileName(name: string): string {
 /** Danh sách mẫu in của 1 nhóm — dùng cho trang cài đặt VÀ hộp thoại "In theo
  * mẫu". Trả kèm `printOptions` (nếu có) để trang chi tiết đề xuất tự ẩn/hiện
  * dropdown "In theo mẫu" theo cờ `allowPrintToWord` — gộp vào response này
- * (không tạo route riêng) vì cùng phục vụ đúng 1 khu vực UI. */
+ * (không tạo route riêng) vì cùng phục vụ đúng 1 khu vực UI. Trả kèm luôn
+ * `permissionRules` (thêm 24/08/2026) vì `RequestDetailView.tsx` đã gọi sẵn
+ * route này lúc mount — dùng lại đúng chỗ để biết `approversCanDelegateApproval`
+ * (ẩn/hiện tuỳ chọn "Chuyển tiếp và Duyệt" trong `ForwardModal`), không thêm
+ * round-trip mới. */
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     await requireSession();
@@ -27,8 +31,14 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       listPrintTemplates(id),
       adminDb.collection("groups").doc(id).get(),
     ]);
-    const printOptions = (groupSnap.data() as { printOptions?: GroupPrintOptions } | undefined)?.printOptions;
-    return NextResponse.json({ templates, printOptions });
+    const groupData = groupSnap.data() as
+      | { printOptions?: GroupPrintOptions; permissionRules?: GroupPermissionRules }
+      | undefined;
+    return NextResponse.json({
+      templates,
+      printOptions: groupData?.printOptions,
+      permissionRules: groupData?.permissionRules,
+    });
   } catch (error) {
     return apiErrorResponse(error);
   }

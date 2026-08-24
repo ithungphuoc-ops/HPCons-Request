@@ -370,8 +370,14 @@ export interface GroupPermissionRules {
   defaultFollowersCanExportData: boolean;
   /** Như trên, cho người CHỈ có vai trò approver. */
   defaultApproversCanExportData: boolean;
-  /** CHỈ lưu cấu hình — chưa có cơ chế "ủy quyền dài hạn" thật trong app,
-   * xem Open Questions #3. */
+  /** Cho phép người duyệt dùng "Chuyển tiếp và Duyệt" (đưa người khác xử lý
+   * TRƯỚC — vd A chưa hiểu rõ đề xuất, chuyển cho B hiểu rõ hơn duyệt trước,
+   * trách nhiệm đầu tiên là B, B xong quay lại A, rồi mới tới người kế tiếp)
+   * — Sếp chốt ý nghĩa + xác nhận cần làm thật 24/08/2026, xem ForwardModal.tsx.
+   * Mặc định TRUE — trước khi có cờ này, hành động "Chuyển tiếp và Duyệt"
+   * LUÔN được phép với mọi nhóm, không có cách nào tắt; giữ mặc định TRUE để
+   * không mất tính năng đang chạy cho nhóm cũ, admin có thể tắt riêng từng
+   * nhóm nếu muốn hạn chế. */
   approversCanDelegateApproval: boolean;
 }
 
@@ -384,7 +390,7 @@ export const DEFAULT_GROUP_PERMISSION_RULES: GroupPermissionRules = {
   lockCommentsAfterFirstDecision: false,
   defaultFollowersCanExportData: false,
   defaultApproversCanExportData: false,
-  approversCanDelegateApproval: false,
+  approversCanDelegateApproval: true,
 };
 
 /** 3 cờ thông báo cấp nhóm — xem design.md Decision #6. */

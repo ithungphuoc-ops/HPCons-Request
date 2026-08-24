@@ -37,14 +37,27 @@ export default function ForwardModal({
    * quy đổi ở RequestDetailView.tsx: "approve_and_forward" ~ "approveAndForward",
    * "forward_then_approve" ~ "forward"). undefined/thiếu key = không có field. */
   extraFieldByMode,
+  /** Nhóm có cho phép "Chuyển tiếp và Duyệt" (người nhận xử lý TRƯỚC, quay lại
+   * người chuyển sau) không — cờ `permissionRules.approversCanDelegateApproval`
+   * của nhóm, mặc định `true` (giữ đúng hành vi cũ — trước đây LUÔN cho phép,
+   * không có cờ nào). Sếp chốt 24/08/2026: kịch bản thật là A chưa hiểu đề
+   * xuất, chuyển cho B hiểu rõ hơn duyệt TRƯỚC (trách nhiệm đầu tiên là B),
+   * B duyệt xong quay lại A duyệt, rồi mới tới người kế tiếp — khớp đúng
+   * "forward_then_approve" đã có sẵn, chỉ thiếu cờ bật/tắt theo nhóm. Tắt cờ
+   * này → chỉ còn "Chấp nhận và chuyển tiếp" trong danh sách chọn. */
+  allowForwardThenApprove = true,
   onClose,
   onConfirm,
 }: {
   extraFieldByMode?: Partial<Record<ForwardMode, ApprovalTimeField["field"]>>;
+  allowForwardThenApprove?: boolean;
   onClose: () => void;
   onConfirm: (mode: ForwardMode, target: TaggedUser, note: string, approvalTimeValue?: unknown) => Promise<void>;
 }) {
-  const [mode, setMode] = useState<ForwardMode>("approve_and_forward");
+  const availableModes = (Object.keys(MODE_LABEL) as ForwardMode[]).filter(
+    (m) => m !== "forward_then_approve" || allowForwardThenApprove,
+  );
+  const [mode, setMode] = useState<ForwardMode>(availableModes[0] ?? "approve_and_forward");
   const [target, setTarget] = useState<TaggedUser[]>([]);
   const [note, setNote] = useState("");
   const [fieldValue, setFieldValue] = useState<unknown>(undefined);
@@ -99,7 +112,7 @@ export default function ForwardModal({
             Hình thức chuyển tiếp
           </label>
           <div className="flex flex-col gap-2">
-            {(Object.keys(MODE_LABEL) as ForwardMode[]).map((m) => (
+            {availableModes.map((m) => (
               <label
                 key={m}
                 className={`flex cursor-pointer items-start gap-2 rounded border px-3 py-2 text-[13px] ${

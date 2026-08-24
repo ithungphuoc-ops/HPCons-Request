@@ -45,9 +45,10 @@ import CommentSection from "@/components/request/CommentSection";
 import { canApproverAct } from "@/lib/approval-logic";
 import { useCurrentSession } from "@/lib/useCurrentSession";
 import { fieldDataTypeLabels } from "@/lib/types";
-import { DEFAULT_GROUP_PRINT_OPTIONS } from "@/lib/types";
+import { DEFAULT_GROUP_PERMISSION_RULES, DEFAULT_GROUP_PRINT_OPTIONS } from "@/lib/types";
 import type {
   ApprovalTimeField,
+  GroupPermissionRules,
   GroupPrintOptions,
   PrintTemplate,
   RequestAttachment,
@@ -146,6 +147,7 @@ export default function RequestDetailView({
   const [managing, setManaging] = useState(false);
   const [printTemplates, setPrintTemplates] = useState<PrintTemplate[]>([]);
   const [printOptions, setPrintOptions] = useState<GroupPrintOptions>(DEFAULT_GROUP_PRINT_OPTIONS);
+  const [permissionRules, setPermissionRules] = useState<GroupPermissionRules>(DEFAULT_GROUP_PERMISSION_RULES);
   const [printMenuOpen, setPrintMenuOpen] = useState(false);
   const printMenuRef = useRef<HTMLDivElement>(null);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
@@ -196,10 +198,17 @@ export default function RequestDetailView({
     if (!request.groupId) return;
     fetch(`/api/groups/${request.groupId}/print-templates`)
       .then((res) => (res.ok ? res.json() : { templates: [] }))
-      .then((data: { templates: PrintTemplate[]; printOptions?: GroupPrintOptions }) => {
-        setPrintTemplates(data.templates ?? []);
-        setPrintOptions({ ...DEFAULT_GROUP_PRINT_OPTIONS, ...data.printOptions });
-      })
+      .then(
+        (data: {
+          templates: PrintTemplate[];
+          printOptions?: GroupPrintOptions;
+          permissionRules?: GroupPermissionRules;
+        }) => {
+          setPrintTemplates(data.templates ?? []);
+          setPrintOptions({ ...DEFAULT_GROUP_PRINT_OPTIONS, ...data.printOptions });
+          setPermissionRules({ ...DEFAULT_GROUP_PERMISSION_RULES, ...data.permissionRules });
+        },
+      )
       .catch(() => setPrintTemplates([]));
   }, [request.groupId]);
 
@@ -1067,6 +1076,7 @@ export default function RequestDetailView({
       {forwardOpen && (
         <ForwardModal
           extraFieldByMode={forwardFieldsByMode}
+          allowForwardThenApprove={permissionRules.approversCanDelegateApproval}
           onClose={() => setForwardOpen(false)}
           onConfirm={forward}
         />
