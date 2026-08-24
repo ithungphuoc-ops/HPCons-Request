@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 vi.mock("nodemailer", () => ({
@@ -32,6 +32,18 @@ describe("escapeHtml — chặn HTML/link lạ chèn vào email thông báo", ()
 });
 
 describe("Thiếu biến môi trường → không gửi, không throw", () => {
+  // Góp ý CodeRabbit (review PR #4, lần 2, 24/08/2026): máy chạy test có
+  // thể SẴN CÓ GMAIL_USER/GMAIL_APP_PASSWORD (vd .env.local đã pull từ
+  // Vercel sau khi Sếp thêm 2 biến này) — phải xoá tạm 2 biến trước 2 test
+  // dưới đây rồi trả lại nguyên trạng, không phụ thuộc máy nào đang chạy.
+  beforeEach(() => {
+    vi.stubEnv("GMAIL_USER", "");
+    vi.stubEnv("GMAIL_APP_PASSWORD", "");
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("isMailerConfigured() false khi chưa có GMAIL_USER/GMAIL_APP_PASSWORD", () => {
     expect(isMailerConfigured()).toBe(false);
   });
