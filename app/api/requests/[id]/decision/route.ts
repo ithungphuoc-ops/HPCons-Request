@@ -3,14 +3,17 @@ import {
   applyApproverDecision,
   approveAndForward,
   canApproverAct,
+  DECISION_TO_APPROVAL_TIME_ACTION,
   forwardThenApprove,
   getRequestStatus,
+  isApprovalTimeValueMissing,
   missingRequiredNote,
 } from "@/lib/approval-logic";
 import { adminDb } from "@/lib/firebase/admin";
 import { apiErrorResponse } from "@/lib/http";
+import { recomputeDeadlineForNextStep } from "@/lib/server/requests";
 import { requireSession } from "@/lib/session";
-import type { RequestInstance, TaggedUser } from "@/lib/types";
+import type { ApprovalTimeField, ProposalGroup, RequestInstance, TaggedUser } from "@/lib/types";
 import { guiSangQlkCtr, trichXuatPayload } from "@/lib/qlkctr-sync";
 import { guiSangThuMua, trichXuatPayloadThuMua } from "@/lib/thumua-sync";
 
@@ -20,6 +23,11 @@ interface DecisionBody {
   target?: TaggedUser;
   /** Bắt buộc khi decision = "rejected" hoặc "returned" (§4.4 quy định phải có lý do). */
   note?: string;
+  /** "Mẫu form phê duyệt" — CHỈ tham khảo, server tự xác định lại field thật
+   * khớp (bước × hành động) của người đang quyết định, không tin nguyên giá
+   * trị 2 field này từ client (xem đoạn validate approvalTimeField bên dưới). */
+  approvalTimeFieldId?: string;
+  approvalTimeValue?: unknown;
 }
 
 const ACTION_LABEL: Record<DecisionBody["decision"], string> = {
@@ -53,11 +61,24 @@ export async function POST(
     const isForwardDecision =
       body.decision === "approve_and_forward" || body.decision === "forward_then_approve";
     let requireDecisionNote: { approve?: boolean; forward?: boolean } | undefined;
-    if (current.groupId && (body.decision === "approved" || isForwardDecision)) {
+    let approvalTimeFields: ApprovalTimeField[] = [];
+    // 3 field dùng để TÍNH LẠI deadlineAt khi chuyển sang bước duyệt tiếp
+    // theo — xem recomputeDeadlineForNextStep() (lib/server/requests.ts).
+    let approverSlaEnabled: boolean | undefined;
+    let slaByWorkCalendar: boolean | undefined;
+    let groupSlaHours: number | null = null;
+    // Tải nhóm 1 LẦN nếu có groupId — cần cho cả requireDecisionNote (đã có
+    // từ trước) VÀ "Mẫu form phê duyệt" (mới) — trước đây chỉ tải khi
+    // approved/forward, giờ tải luôn cả "rejected" vì field cũng áp dụng
+    // được cho hành động Từ chối.
+    if (current.groupId) {
       const groupSnap = await adminDb.collection("groups").doc(current.groupId).get();
-      requireDecisionNote = (
-        groupSnap.data() as { requireDecisionNote?: { approve?: boolean; forward?: boolean } } | undefined
-      )?.requireDecisionNote;
+      const groupData = groupSnap.data() as Partial<ProposalGroup> | undefined;
+      requireDecisionNote = groupData?.requireDecisionNote;
+      approvalTimeFields = groupData?.approvalTimeFields ?? [];
+      approverSlaEnabled = groupData?.approverSlaEnabled;
+      slaByWorkCalendar = groupData?.slaByWorkCalendar;
+      groupSlaHours = groupData?.slaHours ?? null;
     }
     if (missingRequiredNote(body.decision, body.note, requireDecisionNote)) {
       const message =
@@ -66,6 +87,42 @@ export async function POST(
           : `Nhóm này yêu cầu nhập ý kiến khi ${body.decision === "approved" ? "chấp thuận" : "chuyển tiếp"}.`;
       return NextResponse.json({ error: message }, { status: 400 });
     }
+
+    // "Mẫu form phê duyệt" — server TỰ xác định lại field khớp (bước × hành
+    // động của NGƯỜI ĐANG QUYẾT ĐỊNH), không tin `body.approvalTimeFieldId`
+    // — chỉ dùng để biết field nào, còn có áp dụng được không do server tính.
+    // `current.approverStepMeta` cùng thứ tự với `current.approvers`.
+    let matchedApprovalTimeField: ApprovalTimeField | undefined;
+    const decisionAction = DECISION_TO_APPROVAL_TIME_ACTION[body.decision];
+    // Chỉ tin `approverStepMeta` theo index khi độ dài KHỚP ĐÚNG `approvers` —
+    // đề xuất từng bị "Chuyển tiếp" TRƯỚC bản vá lỗi lệch mảng (xem
+    // recomputeDeadlineForNextStep() ở lib/server/requests.ts) có thể có mảng
+    // ngắn hơn/lệch thứ tự, tra theo index sẽ ra field/bước SAI. Lệch độ dài →
+    // coi như không có meta, an toàn hơn là đoán nhầm bước.
+    const alignedStepMeta =
+      current.approverStepMeta?.length === current.approvers.length ? current.approverStepMeta : undefined;
+    if (decisionAction) {
+      const myIndex = current.approvers.findIndex((a) => a.id === session.uid);
+      const myStepCode = myIndex >= 0 ? alignedStepMeta?.[myIndex]?.code : undefined;
+      if (myStepCode) {
+        matchedApprovalTimeField = approvalTimeFields.find(
+          (f) => f.approverStepCode === myStepCode && f.decisionAction === decisionAction,
+        );
+      }
+    }
+    if (matchedApprovalTimeField && isApprovalTimeValueMissing(matchedApprovalTimeField.field, body.approvalTimeValue)) {
+      return NextResponse.json(
+        { error: `Cần điền "${matchedApprovalTimeField.field.name}" trước khi tiếp tục.` },
+        { status: 400 },
+      );
+    }
+    // Lưu vào `approvalTimeValues` (TÁCH BIỆT `values` — dữ liệu form gửi ban
+    // đầu), key = id field đã được SERVER xác nhận khớp — không dùng thẳng
+    // `body.approvalTimeFieldId` của client. Không có field khớp → giữ
+    // nguyên `approvalTimeValues` cũ, không đổi.
+    const approvalTimeValues = matchedApprovalTimeField
+      ? { ...(current.approvalTimeValues ?? {}), [matchedApprovalTimeField.id]: body.approvalTimeValue }
+      : current.approvalTimeValues;
 
     if (body.decision === "returned") {
       if (!canApproverAct(current.approvalFlow, current.approvers, session.uid)) {
@@ -81,13 +138,15 @@ export async function POST(
         ...current.history,
         { at: nowIso, actor: session.name, action: ACTION_LABEL.returned, note: body.note },
       ];
-      await ref.update({ approvers, status: "returned", history, updatedAt: nowIso });
+      const viewedAt = { ...current.viewedAt, [session.uid]: nowIso };
+      await ref.update({ approvers, status: "returned", history, updatedAt: nowIso, viewedAt });
       const updated: RequestInstance = {
         ...current,
         approvers,
         status: "returned",
         history,
         updatedAt: nowIso,
+        viewedAt,
       };
       return NextResponse.json({ request: updated });
     }
@@ -108,12 +167,21 @@ export async function POST(
           ? approveAndForward(current.approvalFlow, current.approvers, session.uid, body.target.id)
           : forwardThenApprove(current.approvalFlow, current.approvers, session.uid, body.target.id);
       const selfIndex = current.approversSnapshot.findIndex((a) => a.id === session.uid);
+      const insertIndex = body.decision === "approve_and_forward" ? selfIndex + 1 : selfIndex;
       const approversSnapshot = [...current.approversSnapshot];
-      approversSnapshot.splice(
-        body.decision === "approve_and_forward" ? selfIndex + 1 : selfIndex,
-        0,
-        body.target,
-      );
+      approversSnapshot.splice(insertIndex, 0, body.target);
+      // Phát hiện + vá lỗi có sẵn: `approverStepMeta` PHẢI cùng độ dài/thứ tự
+      // với `approversSnapshot`/`approvers` (đọc bằng index ở nhiều nơi, vd
+      // tra "Mẫu form phê duyệt" phía trên) — trước đây route này chèn người
+      // mới vào approversSnapshot nhưng KHÔNG chèn gì vào approverStepMeta,
+      // khiến 2 mảng lệch độ dài/thứ tự ngay sau lần chuyển tiếp ĐẦU TIÊN,
+      // làm sai lệch mọi thứ tra theo index từ đó về sau (kể cả bước duyệt
+      // của chính người bị chuyển tới lẫn tính SLA riêng bước bên dưới).
+      // Người được chuyển tới là bổ sung tạm thời (không thuộc approverSteps
+      // cấu hình sẵn của nhóm) nên chèn 1 mục rỗng {} — coi như "không có
+      // tên/mã/SLA riêng", rơi về hành vi mặc định giống bước không cấu hình gì.
+      const approverStepMeta = current.approverStepMeta ? [...current.approverStepMeta] : undefined;
+      approverStepMeta?.splice(insertIndex, 0, {});
       const history = [
         ...current.history,
         {
@@ -124,14 +192,29 @@ export async function POST(
           note: body.note,
         },
       ];
-      await ref.update({ approvers, approversSnapshot, history, updatedAt: nowIso });
-      const updated: RequestInstance = {
-        ...current,
+      const viewedAt = { ...current.viewedAt, [session.uid]: nowIso };
+      const deadlineAt = recomputeDeadlineForNextStep({
+        approvalFlow: current.approvalFlow,
+        status: current.status,
+        approvers,
+        approverStepMeta,
+        approverSlaEnabled,
+        groupSlaHours,
+        slaByWorkCalendar,
+        now: new Date(nowIso),
+      });
+      const patch: Partial<RequestInstance> = {
         approvers,
         approversSnapshot,
+        approverStepMeta,
         history,
         updatedAt: nowIso,
+        approvalTimeValues,
+        viewedAt,
       };
+      if (deadlineAt !== undefined) patch.deadlineAt = deadlineAt;
+      await ref.update(patch);
+      const updated: RequestInstance = { ...current, ...patch };
       return NextResponse.json({ request: updated });
     }
 
@@ -156,15 +239,29 @@ export async function POST(
       { at: nowIso, actor: session.name, action: ACTION_LABEL[body.decision], note: body.note },
     ];
 
-    await ref.update({ approvers, status, history, updatedAt: nowIso });
-
-    const updated: RequestInstance = {
-      ...current,
+    const viewedAt = { ...current.viewedAt, [session.uid]: nowIso };
+    const deadlineAt = recomputeDeadlineForNextStep({
+      approvalFlow: current.approvalFlow,
+      status,
+      approvers,
+      approverStepMeta: current.approverStepMeta,
+      approverSlaEnabled,
+      groupSlaHours,
+      slaByWorkCalendar,
+      now: new Date(nowIso),
+    });
+    const decisionPatch: Partial<RequestInstance> = {
       approvers,
       status,
       history,
       updatedAt: nowIso,
+      approvalTimeValues,
+      viewedAt,
     };
+    if (deadlineAt !== undefined) decisionPatch.deadlineAt = deadlineAt;
+    await ref.update(decisionPatch);
+
+    const updated: RequestInstance = { ...current, ...decisionPatch };
 
     // Đồng bộ sang QLK CTR (app quản lý kho công trình) khi duyệt xong hoàn toàn — xem
     // openspec/changes/add-qlkctr-sync-webhook. Bọc try/catch riêng, tuyệt đối không được để lỗi

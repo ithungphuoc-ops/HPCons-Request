@@ -16,8 +16,9 @@ function buildNotifications(
   inbox: RequestInstance[],
   mine: RequestInstance[],
   mentioned: RequestInstance[],
-  following: RequestInstance[],
+  followingUnseen: RequestInstance[],
   managerBypassed: RequestInstance[],
+  approverFollowup: RequestInstance[],
   settings: NotificationSettings | null,
 ): NotificationItem[] {
   const items: NotificationItem[] = [];
@@ -40,16 +41,21 @@ function buildNotifications(
     }
   }
 
-  // Người theo dõi (followers của nhóm đề xuất) — báo khi có đề xuất mới
-  // thuộc nhóm họ theo dõi, không phân biệt đã "đọc" hay chưa (giống các
-  // nguồn khác trong hàm này, xem ghi chú "mentioned" bên dưới).
+  // Người theo dõi — trước đây báo ĐÚNG 1 lần lúc gửi rồi im lặng mãi, dù có
+  // bình luận/quyết định mới. `followingUnseen` (server đã lọc theo
+  // `viewedAt`) giải quyết cả 2: đề xuất mới CHƯA từng xem, và đề xuất cũ có
+  // biến động mới kể từ lần xem gần nhất — xem design.md của change
+  // fix-notification-bell-stale-gaps.
   if (enabled("following")) {
-    for (const r of following) {
+    for (const r of followingUnseen) {
+      const isBrandNew = r.submittedAt === r.updatedAt;
       items.push({
         id: `following-${r.id}`,
         requestId: r.id,
-        text: `Đề xuất bạn đang theo dõi "${r.groupNameSnapshot}" vừa được gửi`,
-        at: r.submittedAt,
+        text: isBrandNew
+          ? `Đề xuất bạn đang theo dõi "${r.groupNameSnapshot}" vừa được gửi`
+          : `Đề xuất bạn đang theo dõi "${r.groupNameSnapshot}" có cập nhật mới`,
+        at: r.updatedAt,
       });
     }
   }
@@ -69,9 +75,9 @@ function buildNotifications(
     }
   }
 
-  // Không có khái niệm "đã đọc" riêng cho mục này — giống 2 nguồn trên
-  // (tính lại từ dữ liệu mỗi lần tải, xem design.md của change
-  // add-comment-mentions-realtime).
+  // Server đã lọc theo `viewedAt` — mở lại đúng đề xuất 1 lần là tự hết hiện
+  // (trước đây không có khái niệm "đã đọc", luôn hiện tới khi bị đẩy khỏi
+  // top-8), xem design.md của change fix-notification-bell-stale-gaps.
   if (enabled("mentioned")) {
     for (const r of mentioned) {
       items.push({
@@ -94,6 +100,23 @@ function buildNotifications(
     }
   }
 
+  // Đã xử lý xong phần mình nhưng đề xuất có biến động mới (bình luận, hoặc
+  // bước sau từ chối) — trước đây hoàn toàn im lặng sau khi tự xử lý xong,
+  // xem design.md của change fix-notification-bell-stale-gaps.
+  if (enabled("approver_followup")) {
+    for (const r of approverFollowup) {
+      items.push({
+        id: `approver-followup-${r.id}`,
+        requestId: r.id,
+        text:
+          r.status === "rejected"
+            ? `Đề xuất "${r.groupNameSnapshot}" bạn đã duyệt bị từ chối ở bước sau`
+            : `Đề xuất "${r.groupNameSnapshot}" bạn đã xử lý có cập nhật mới`,
+        at: r.updatedAt,
+      });
+    }
+  }
+
   return items.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime()).slice(0, 8);
 }
 
@@ -108,12 +131,22 @@ export default function NotificationBell() {
       fetch("/api/requests?scope=inbox").then((res) => (res.ok ? res.json() : { requests: [] })),
       fetch("/api/requests?scope=mine").then((res) => (res.ok ? res.json() : { requests: [] })),
       fetch("/api/requests?scope=mentioned").then((res) => (res.ok ? res.json() : { requests: [] })),
-      fetch("/api/requests?scope=following").then((res) => (res.ok ? res.json() : { requests: [] })),
+      fetch("/api/requests?scope=following-unseen").then((res) => (res.ok ? res.json() : { requests: [] })),
       fetch("/api/requests?scope=manager-bypassed").then((res) => (res.ok ? res.json() : { requests: [] })),
+      fetch("/api/requests?scope=approver-followup").then((res) => (res.ok ? res.json() : { requests: [] })),
       fetch("/api/notification-settings").then((res) => (res.ok ? res.json() : { settings: null })),
     ])
       .then(
-        ([inboxData, mineData, mentionedData, followingData, managerBypassedData, settingsData]: [
+        ([
+          inboxData,
+          mineData,
+          mentionedData,
+          followingData,
+          managerBypassedData,
+          approverFollowupData,
+          settingsData,
+        ]: [
+          { requests: RequestInstance[] },
           { requests: RequestInstance[] },
           { requests: RequestInstance[] },
           { requests: RequestInstance[] },
@@ -131,6 +164,7 @@ export default function NotificationBell() {
               mentionedData.requests ?? [],
               followingData.requests ?? [],
               managerBypassedData.requests ?? [],
+              approverFollowupData.requests ?? [],
               settings,
             ),
           );

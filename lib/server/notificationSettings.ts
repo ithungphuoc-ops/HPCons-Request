@@ -8,6 +8,7 @@ const ALL_CATEGORIES: NotificationCategory[] = [
   "mentioned",
   "following",
   "manager_bypassed",
+  "approver_followup",
 ];
 
 /**

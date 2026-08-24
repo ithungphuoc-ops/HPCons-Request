@@ -34,6 +34,15 @@ export function sanitizeDescriptionHtml(html: string): string {
   });
 }
 
+/** "Giải thích trường dữ liệu" — chuỗi thường (không phải rich text như
+ * `sanitizeDescriptionHtml`), chỉ trim + cắt độ dài hợp lý — xem
+ * `ProposalField.helpText`, design.md của change
+ * add-base-vn-approver-and-approval-form-parity, Decision #4. */
+const HELP_TEXT_MAX_LENGTH = 300;
+export function sanitizeHelpText(text: string): string {
+  return text.trim().slice(0, HELP_TEXT_MAX_LENGTH);
+}
+
 export interface ValidationResult {
   valid: boolean;
   error?: string;

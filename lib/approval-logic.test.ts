@@ -4,14 +4,17 @@ import {
   applyApproverDecision,
   approveAndForward,
   canApproverAct,
+  DECISION_TO_APPROVAL_TIME_ACTION,
   dedupeApprovers,
   forwardThenApprove,
   getRequestStatus,
   fixedStepUsers,
+  hasUnseenUpdate,
+  isApprovalTimeValueMissing,
   missingRequiredNote,
   type ApproverState,
 } from "./approval-logic";
-import type { TaggedUser } from "./types";
+import type { ApprovalTimeField, TaggedUser } from "./types";
 
 function approvers(...ids: string[]): ApproverState[] {
   return ids.map((id) => ({ id, decision: "pending" as const }));
@@ -264,5 +267,62 @@ describe("bước nhiều người — TẤT CẢ phải duyệt (quy trình đ�
       { id: "b", decision: "approved" },
     ];
     expect(getRequestStatus("concurrent", approvers)).toBe("approved");
+  });
+});
+
+function approvalTimeField(
+  overrides: Partial<ApprovalTimeField["field"]> = {},
+): ApprovalTimeField["field"] {
+  return { id: "f1", name: "Số tiền đã kiểm tra", dataType: "currency", required: true, order: 0, ...overrides };
+}
+
+describe("Mẫu form phê duyệt — quy đổi hành động & kiểm tra bắt buộc", () => {
+  it("quy đổi đúng 4 quyết định có field tương ứng, 'returned' không có", () => {
+    expect(DECISION_TO_APPROVAL_TIME_ACTION.approved).toBe("approve");
+    expect(DECISION_TO_APPROVAL_TIME_ACTION.rejected).toBe("reject");
+    expect(DECISION_TO_APPROVAL_TIME_ACTION.approve_and_forward).toBe("approveAndForward");
+    expect(DECISION_TO_APPROVAL_TIME_ACTION.forward_then_approve).toBe("forward");
+    expect(DECISION_TO_APPROVAL_TIME_ACTION.returned).toBeUndefined();
+  });
+
+  it("field không bắt buộc — không bao giờ coi là thiếu, dù giá trị rỗng", () => {
+    const field = approvalTimeField({ required: false });
+    expect(isApprovalTimeValueMissing(field, undefined)).toBe(false);
+    expect(isApprovalTimeValueMissing(field, "")).toBe(false);
+    expect(isApprovalTimeValueMissing(field, [])).toBe(false);
+  });
+
+  it("field bắt buộc — thiếu khi undefined/null/rỗng/mảng rỗng", () => {
+    const field = approvalTimeField({ required: true });
+    expect(isApprovalTimeValueMissing(field, undefined)).toBe(true);
+    expect(isApprovalTimeValueMissing(field, null)).toBe(true);
+    expect(isApprovalTimeValueMissing(field, "")).toBe(true);
+    expect(isApprovalTimeValueMissing(field, [])).toBe(true);
+  });
+
+  it("field bắt buộc — đủ khi có giá trị thật (số 0 vẫn hợp lệ, không phải rỗng)", () => {
+    const field = approvalTimeField({ required: true, dataType: "integer" });
+    expect(isApprovalTimeValueMissing(field, 0)).toBe(false);
+    expect(isApprovalTimeValueMissing(field, "68723760")).toBe(false);
+    expect(isApprovalTimeValueMissing(field, ["A"])).toBe(false);
+  });
+});
+
+describe("hasUnseenUpdate — chuông thông báo còn 'mới' hay không", () => {
+  it("chưa từng xem (viewedAt thiếu uid) → luôn coi là còn mới", () => {
+    expect(hasUnseenUpdate("2026-08-23T10:00:00.000Z", undefined, "u1")).toBe(true);
+    expect(hasUnseenUpdate("2026-08-23T10:00:00.000Z", { u2: "2026-08-23T09:00:00.000Z" }, "u1")).toBe(true);
+  });
+
+  it("đã xem SAU thời điểm cập nhật → không còn mới", () => {
+    expect(
+      hasUnseenUpdate("2026-08-23T10:00:00.000Z", { u1: "2026-08-23T11:00:00.000Z" }, "u1"),
+    ).toBe(false);
+  });
+
+  it("đã xem TRƯỚC thời điểm cập nhật mới nhất → còn mới", () => {
+    expect(
+      hasUnseenUpdate("2026-08-23T10:00:00.000Z", { u1: "2026-08-23T09:00:00.000Z" }, "u1"),
+    ).toBe(true);
   });
 });

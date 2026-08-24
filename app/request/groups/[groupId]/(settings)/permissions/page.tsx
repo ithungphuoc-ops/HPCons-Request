@@ -1,28 +1,10 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { BellRing, Eye, ListOrdered, ShieldCheck } from "lucide-react";
 import RequireAdminRole from "@/components/request/RequireAdminRole";
 import { useRequestContext } from "@/context/RequestContext";
-
-const rules = [
-  {
-    icon: ShieldCheck,
-    text: "Chỉ Owner hoặc App Admin được tạo và cấu hình nhóm ở mức toàn ứng dụng.",
-  },
-  {
-    icon: Eye,
-    text: 'Người dùng chỉ nhìn thấy hoặc tạo đề xuất trong nhóm nằm trong phạm vi "Sử dụng cho".',
-  },
-  {
-    icon: ListOrdered,
-    text: "Người duyệt chỉ thao tác khi đề xuất tới lượt của họ nếu dùng xử lý lần lượt.",
-  },
-  {
-    icon: BellRing,
-    text: "Người theo dõi được xem và nhận cập nhật nhưng không tự động có quyền duyệt.",
-  },
-];
+import { selectClass } from "@/components/shared/form-styles";
+import { DEFAULT_GROUP_PERMISSION_RULES, type GroupPermissionRules } from "@/lib/types";
 
 export default function GroupPermissionsPage() {
   return (
@@ -34,30 +16,62 @@ export default function GroupPermissionsPage() {
 
 function GroupPermissionsPageInner() {
   const params = useParams<{ groupId: string }>();
-  const { getGroupById } = useRequestContext();
+  const { getGroupById, updateGroup } = useRequestContext();
   const group = getGroupById(params.groupId);
 
   if (!group) return null;
 
+  const rules: GroupPermissionRules = { ...DEFAULT_GROUP_PERMISSION_RULES, ...group.permissionRules };
+
+  const setRule = <K extends keyof GroupPermissionRules>(key: K, value: GroupPermissionRules[K]) => {
+    updateGroup(group.id, { permissionRules: { ...rules, [key]: value } });
+  };
+
   return (
     <div className="max-w-[640px]">
       <h2 className="mb-1 text-[15px] font-semibold text-gray-800">Tùy chỉnh về phân quyền</h2>
-      <p className="mb-4 text-[12px] text-gray-500">
-        Quy tắc phân quyền tối thiểu áp dụng cho nhóm đề xuất này (§5.3).
-      </p>
+      <p className="mb-4 text-[12px] text-gray-500">7 cờ thật áp dụng cho nhóm đề xuất này.</p>
 
-      <div className="flex flex-col gap-2.5">
-        {rules.map((rule) => (
-          <div
-            key={rule.text}
-            className="flex items-start gap-3 rounded-[3px] border border-[var(--color-border)] bg-white p-3"
+      <div className="flex flex-col divide-y divide-gray-100 rounded-[3px] border border-[var(--color-border)] bg-white">
+        <PermRow
+          question="Quyền được chỉnh sửa danh sách người theo dõi (system owners luôn có quyền chỉnh sửa)"
+        >
+          <select
+            className={selectClass}
+            value={rules.followersEditableBy}
+            onChange={(e) => setRule("followersEditableBy", e.target.value as GroupPermissionRules["followersEditableBy"])}
           >
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-50 text-[var(--color-action-blue)]">
-              <rule.icon size={14} />
-            </span>
-            <p className="pt-1 text-[13px] text-gray-700">{rule.text}</p>
-          </div>
-        ))}
+            <option value="all_viewers">Tất cả người dùng có thể xem đề xuất</option>
+            <option value="system_owners_only">Chỉ Admin/Owner</option>
+          </select>
+        </PermRow>
+
+        <PermRow question="Khi tạo đề xuất, người tạo có thể thêm người theo dõi mới nhưng không thể bỏ người theo dõi mặc định">
+          <BoolSelect value={rules.creatorCanAddButNotRemoveDefaultFollowers} onChange={(v) => setRule("creatorCanAddButNotRemoveDefaultFollowers", v)} />
+        </PermRow>
+
+        <PermRow question="Tự động thêm người nhận công việc con trong đề xuất là người theo dõi đề xuất đó">
+          <BoolSelect value={rules.autoAddSubtaskAssigneesAsFollowers} onChange={(v) => setRule("autoAddSubtaskAssigneesAsFollowers", v)} />
+        </PermRow>
+
+        <PermRow question="Chặn chỉnh sửa thảo luận và bình luận khi đề xuất đã được xử lý bởi ít nhất một người">
+          <BoolSelect value={rules.lockCommentsAfterFirstDecision} onChange={(v) => setRule("lockCommentsAfterFirstDecision", v)} />
+        </PermRow>
+
+        <PermRow question="Cho phép người theo dõi mặc định của nhóm có thể xuất dữ liệu đề xuất">
+          <BoolSelect value={rules.defaultFollowersCanExportData} onChange={(v) => setRule("defaultFollowersCanExportData", v)} />
+        </PermRow>
+
+        <PermRow question="Cho phép người duyệt mặc định của nhóm có thể xuất dữ liệu đề xuất">
+          <BoolSelect value={rules.defaultApproversCanExportData} onChange={(v) => setRule("defaultApproversCanExportData", v)} />
+        </PermRow>
+
+        <PermRow
+          question="Cho phép người duyệt chuyển quyền duyệt cho người khác"
+          note="Chỉ lưu cấu hình — chưa có cơ chế ủy quyền dài hạn thật trong app."
+        >
+          <BoolSelect value={rules.approversCanDelegateApproval} onChange={(v) => setRule("approversCanDelegateApproval", v)} />
+        </PermRow>
       </div>
 
       <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -70,10 +84,7 @@ function GroupPermissionsPageInner() {
           ) : (
             <div className="flex flex-wrap gap-1.5">
               {group.usedFor.map((u) => (
-                <span
-                  key={u.id}
-                  className="rounded-full bg-gray-100 px-2 py-1 text-[12px] text-gray-700"
-                >
+                <span key={u.id} className="rounded-full bg-gray-100 px-2 py-1 text-[12px] text-gray-700">
                   {u.name}
                 </span>
               ))}
@@ -91,10 +102,7 @@ function GroupPermissionsPageInner() {
           ) : (
             <div className="flex flex-wrap gap-1.5">
               {group.followers.map((f) => (
-                <span
-                  key={f.id}
-                  className="rounded-full bg-gray-100 px-2 py-1 text-[12px] text-gray-700"
-                >
+                <span key={f.id} className="rounded-full bg-gray-100 px-2 py-1 text-[12px] text-gray-700">
                   {f.name}
                 </span>
               ))}
@@ -104,5 +112,34 @@ function GroupPermissionsPageInner() {
         </div>
       </div>
     </div>
+  );
+}
+
+function PermRow({
+  question,
+  note,
+  children,
+}: {
+  question: string;
+  note?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-2 p-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+      <div className="max-w-[380px]">
+        <p className="text-[13px] text-gray-700">{question}</p>
+        {note && <p className="mt-1 text-[11px] text-gray-400">⏳ {note}</p>}
+      </div>
+      <div className="shrink-0 sm:w-[220px]">{children}</div>
+    </div>
+  );
+}
+
+function BoolSelect({ value, onChange }: { value: boolean; onChange: (value: boolean) => void }) {
+  return (
+    <select className={selectClass} value={value ? "yes" : "no"} onChange={(e) => onChange(e.target.value === "yes")}>
+      <option value="yes">Có</option>
+      <option value="no">Không</option>
+    </select>
   );
 }

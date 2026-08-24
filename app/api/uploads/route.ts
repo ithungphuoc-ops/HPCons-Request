@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { putObject } from "@/lib/r2";
 import { apiErrorResponse } from "@/lib/http";
+import { MAX_UPLOAD_FILE_SIZE } from "@/lib/constants";
 import { requireSession } from "@/lib/session";
 import type { RequestAttachment } from "@/lib/types";
 
 export const runtime = "nodejs";
 
 const MAX_FILES = 6;
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_FILE_SIZE = MAX_UPLOAD_FILE_SIZE;
 
 function sanitizeFileName(name: string): string {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_");

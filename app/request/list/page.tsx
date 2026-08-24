@@ -10,6 +10,8 @@ import { useRequestContext } from "@/context/RequestContext";
 import { primaryButtonClass } from "@/components/shared/form-styles";
 import HighlightMatch from "@/components/shared/HighlightMatch";
 import { resolveRequestTitle, TITLE_FIELD_CODES } from "@/lib/request-title";
+import { useCurrentSession } from "@/lib/useCurrentSession";
+import { DEFAULT_GROUP_PERMISSION_RULES } from "@/lib/types";
 import type { ListLoadStatus, ProposalField, RequestInstance, RequestListScope } from "@/lib/types";
 
 const scopeLabels: Record<RequestListScope, string> = {
@@ -184,6 +186,7 @@ function RequestListPageInner() {
   const selectedId = searchParams.get("id");
   const { getGroupById } = useRequestContext();
   const group = scope === "group" && groupId ? getGroupById(groupId) : undefined;
+  const { isAdmin } = useCurrentSession();
 
   const [requests, setRequests] = useState<RequestInstance[]>([]);
   const [status, setStatus] = useState<ListLoadStatus>("loading");
@@ -287,6 +290,28 @@ function RequestListPageInner() {
       return true;
     });
   }, [requests, searchText, filterStatus, filterGroup]);
+
+  // `permissionRules.defaultFollowersCanExportData`/`defaultApproversCanExportData`
+  // — CHỈ áp dụng khi đang xem đúng 1 nhóm cụ thể (scope=group, có group config
+  // để đọc cờ); các scope khác (all/mine/sent-to-me/following) trộn nhiều
+  // nhóm khác nhau, giữ hành vi cũ (luôn hiện) vì không có 1 bộ cờ duy nhất để
+  // áp dụng. Owner/Admin (app tổng) luôn thấy; là chủ ÍT NHẤT 1 đề xuất đang
+  // xem cũng luôn thấy (không bị tính là "chỉ follower/approver").
+  const canExport = useMemo(() => {
+    if (isAdmin) return true;
+    if (scope !== "group" || !group) return true;
+    if (currentUid && filteredRequests.some((r) => r.submittedBy.uid === currentUid)) return true;
+    const rules = { ...DEFAULT_GROUP_PERMISSION_RULES, ...group.permissionRules };
+    const isApproverHere = Boolean(
+      currentUid && filteredRequests.some((r) => r.approversSnapshot.some((a) => a.id === currentUid)),
+    );
+    const isFollowerHere = Boolean(
+      currentUid && filteredRequests.some((r) => r.followers.some((f) => f.id === currentUid)),
+    );
+    if (isApproverHere && !rules.defaultApproversCanExportData) return false;
+    if (isFollowerHere && !rules.defaultFollowersCanExportData) return false;
+    return true;
+  }, [isAdmin, scope, group, currentUid, filteredRequests]);
 
   /** Xuất danh sách ĐANG LỌC ra file Excel .xlsx — thư viện tải lười lúc bấm,
    * không cộng vào bundle lúc mở trang. */
@@ -397,14 +422,16 @@ function RequestListPageInner() {
                 </option>
               ))}
             </select>
-            <button
-              type="button"
-              onClick={exportExcel}
-              disabled={filteredRequests.length === 0}
-              className="ml-auto flex h-8 cursor-pointer items-center gap-1.5 rounded border border-[var(--color-border)] px-3 text-[13px] font-medium text-gray-700 transition-colors duration-150 hover:border-[var(--color-action-blue)] hover:text-[var(--color-action-blue)] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-[var(--color-border)] disabled:hover:text-gray-700"
-            >
-              <Download size={14} /> Xuất Excel
-            </button>
+            {canExport && (
+              <button
+                type="button"
+                onClick={exportExcel}
+                disabled={filteredRequests.length === 0}
+                className="ml-auto flex h-8 cursor-pointer items-center gap-1.5 rounded border border-[var(--color-border)] px-3 text-[13px] font-medium text-gray-700 transition-colors duration-150 hover:border-[var(--color-action-blue)] hover:text-[var(--color-action-blue)] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-[var(--color-border)] disabled:hover:text-gray-700"
+              >
+                <Download size={14} /> Xuất Excel
+              </button>
+            )}
           </div>
         )}
 

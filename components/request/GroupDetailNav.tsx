@@ -5,11 +5,12 @@ import { usePathname } from "next/navigation";
 
 const settingsNavItems = [
   { key: "general", label: "Thiết lập chung" },
-  { key: "form", label: "Mẫu biểu đề xuất" },
+  { key: "form", label: "Mẫu form đề xuất" },
   { key: "print", label: "In đề xuất" },
   { key: "webhook", label: "Chuyển tiếp và Webhook" },
   { key: "permissions", label: "Tùy chỉnh về phân quyền" },
   { key: "counter", label: "Bộ đếm" },
+  { key: "notifications", label: "Thông báo" },
 ];
 
 export default function GroupDetailNav({ groupId }: { groupId: string }) {

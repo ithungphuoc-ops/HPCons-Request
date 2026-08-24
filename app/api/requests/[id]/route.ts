@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebase/admin";
 import { apiErrorResponse } from "@/lib/http";
-import { dedupeApprovers } from "@/lib/approval-logic";
+import { dedupeApproversWithMeta } from "@/lib/approval-logic";
 import { mergeFollowers } from "@/lib/server/conditions";
 import { resolveComputedValue } from "@/lib/server/computed-fields";
 import { canManageGroupsAtAppScope } from "@/lib/permissions";
@@ -14,7 +14,8 @@ import {
   generateGroupRequestCode,
   generateRequestCode,
   loadRequest,
-  resolveApproverSteps,
+  resolveApproverStepsWithMeta,
+  resolveInitialSlaHours,
   toProposalGroup,
 } from "@/lib/server/requests";
 import { requireSession } from "@/lib/session";
@@ -158,18 +159,25 @@ export async function PATCH(
           { status: 400 },
         );
       }
-      // dedupeApprovers: người trùng nhiều bước duyệt chỉ tính 1 lần theo
-      // vai trò xuất hiện sau cùng — xem lib/approval-logic.ts.
-      approversSnapshot = dedupeApprovers(
-        await resolveApproverSteps(
-          group.approverSteps,
-          session.uid,
-          values,
-          group.fields,
-          body.managerOverrides ?? {},
-        ),
+      // dedupeApproversWithMeta: người trùng nhiều bước duyệt chỉ tính 1 lần
+      // theo vai trò xuất hiện sau cùng — xem lib/approval-logic.ts. Giữ kèm
+      // `approverStepMeta` (tên bước/SLA riêng) cùng thứ tự để hiển thị ở
+      // trang chi tiết đề xuất.
+      const resolvedApprovers = await resolveApproverStepsWithMeta(
+        group.approverSteps,
+        session.uid,
+        values,
+        group.fields,
+        body.managerOverrides ?? {},
       );
-      const deadlineAt = computeDeadline(group.slaHours, new Date(), group.slaByWorkCalendar === true);
+      const dedupedApprovers = dedupeApproversWithMeta(resolvedApprovers.approvers, resolvedApprovers.meta);
+      approversSnapshot = dedupedApprovers.users;
+      const approverStepMeta = dedupedApprovers.meta;
+      const deadlineAt = computeDeadline(
+        resolveInitialSlaHours(group),
+        new Date(),
+        group.slaByWorkCalendar === true,
+      );
       const nowIso = new Date().toISOString();
       const code =
         found.code ??
@@ -184,13 +192,21 @@ export async function PATCH(
         fieldsSnapshot: group.fields,
         approvalFlow: group.approvalFlow,
         approversSnapshot,
+        approverStepMeta,
         approvers: buildInitialApprovers(approversSnapshot),
         // Giữ đúng người theo dõi người gửi đã chỉnh (mặc định + thêm tay),
         // không ghi đè về danh sách mặc định của nhóm khi gửi chính thức từ
         // nháp — nhất quán với nhánh "chỉ lưu nháp" ở trên (dòng `followers`).
         // Hợp nhất thêm người theo dõi theo điều kiện thoả mãn tại thời điểm
         // gửi chính thức này (values đã đủ vì đã qua kiểm tra thiếu trường ở trên).
-        followers: mergeFollowers(group.followers, followers, group.followersConditional ?? [], values, group.fields),
+        followers: mergeFollowers(
+          group.followers,
+          followers,
+          group.followersConditional ?? [],
+          values,
+          group.fields,
+          group.permissionRules?.autoAddSubtaskAssigneesAsFollowers,
+        ),
         status: "pending" as const,
         deadlineAt,
         updatedAt: nowIso,

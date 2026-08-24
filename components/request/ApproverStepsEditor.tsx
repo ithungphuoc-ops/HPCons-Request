@@ -9,39 +9,62 @@ import type { ApproverStepDef, ConditionGroup, ConditionRule, ProposalField, Tag
  * Trạng thái đang soạn của 1 bước duyệt — khác `ApproverStepDef` ở chỗ bước
  * "fixed" có thể tạm chưa chọn ai (users: []) trong lúc đang sửa form, và
  * dùng thẳng mảng `users` (1 bước nhiều người, tất cả phải duyệt — Sếp chốt
- * 16/08/2026). Dùng `toApproverSteps()` để xác thực + chuyển sang
- * `ApproverStepDef[]` thật trước khi gửi lên API. `code` giữ nguyên nếu bước
- * đã có (không cho sửa tay trong bản này — chỉ hiển thị), mất đi (undefined)
- * nếu là bước mới thêm — server sẽ tự backfill khi lưu.
+ * 16/08/2026). "flexible_approver" CŨNG cho phép `users: []` (khác "fixed" —
+ * đây là trạng thái HỢP LỆ để lưu, không chỉ tạm thời lúc soạn, xem
+ * design.md của change add-base-vn-approver-and-approval-form-parity). Dùng
+ * `toApproverSteps()` để xác thực + chuyển sang `ApproverStepDef[]` thật
+ * trước khi gửi lên API. `code` giữ nguyên nếu bước đã có (không cho sửa tay
+ * trong bản này — chỉ hiển thị), mất đi (undefined) nếu là bước mới thêm —
+ * server sẽ tự backfill khi lưu.
  */
 export type DraftApproverStep =
-  | { kind: "fixed"; users: TaggedUser[]; code?: string; condition?: ConditionGroup }
-  | { kind: "submitter_manager"; code?: string; condition?: ConditionGroup };
+  | { kind: "fixed"; name?: string; users: TaggedUser[]; code?: string; condition?: ConditionGroup; slaHours?: number }
+  | { kind: "submitter_manager"; name?: string; code?: string; condition?: ConditionGroup; slaHours?: number }
+  | { kind: "flexible_approver"; name: string; users: TaggedUser[]; code?: string; condition?: ConditionGroup; slaHours?: number };
 
 export function fromApproverSteps(steps: ApproverStepDef[]): DraftApproverStep[] {
-  return steps.map((s) =>
-    s.kind === "fixed"
-      ? { kind: "fixed", users: s.users?.length ? s.users : [s.user], code: s.code, condition: s.condition }
-      : { kind: "submitter_manager", code: s.code, condition: s.condition },
-  );
+  return steps.map((s) => {
+    if (s.kind === "fixed") {
+      return {
+        kind: "fixed",
+        name: s.name,
+        users: s.users?.length ? s.users : [s.user],
+        code: s.code,
+        condition: s.condition,
+        slaHours: s.slaHours,
+      };
+    }
+    if (s.kind === "flexible_approver") {
+      return { kind: "flexible_approver", name: s.name, users: s.users, code: s.code, condition: s.condition, slaHours: s.slaHours };
+    }
+    return { kind: "submitter_manager", name: s.name, code: s.code, condition: s.condition, slaHours: s.slaHours };
+  });
 }
 
-/** null nếu còn bước "Người cố định" chưa chọn ai — chặn submit ở nơi gọi. */
+/** null nếu còn bước "Người cố định" chưa chọn ai, hoặc bước "Linh động"
+ * chưa đặt tên — chặn submit ở nơi gọi. Bước "Linh động" ĐƯỢC PHÉP rỗng
+ * người (`users: []`) — đây không phải lỗi, xem design.md. */
 export function toApproverSteps(steps: DraftApproverStep[]): ApproverStepDef[] | null {
   const result: ApproverStepDef[] = [];
   for (const step of steps) {
     if (step.kind === "submitter_manager") {
       result.push(step);
+    } else if (step.kind === "flexible_approver") {
+      const name = step.name.trim();
+      if (!name) return null;
+      result.push({ ...step, name });
     } else {
       if (step.users.length === 0) return null;
       // Lưu CẢ user (người đầu tiên — tương thích dữ liệu/code cũ) lẫn users
       // (đủ danh sách) — xem ApproverStepDef ở lib/types.ts.
       result.push({
         kind: "fixed",
+        name: step.name,
         user: step.users[0],
         users: step.users,
         code: step.code,
         condition: step.condition,
+        slaHours: step.slaHours,
       });
     }
   }
@@ -91,11 +114,20 @@ const operatorLabels: Record<ConditionRule["operator"], string> = {
   between: "trong khoảng",
 };
 
+const KIND_LABELS: Record<DraftApproverStep["kind"], string> = {
+  fixed: "Cố định",
+  submitter_manager: "Quản lý trực tiếp",
+  flexible_approver: "Linh động",
+};
+
 /**
- * Danh sách bước duyệt của 1 nhóm — mỗi bước là "Cố định" (một người cụ thể,
- * giống nhau cho mọi đề xuất) hoặc "Quản lý phòng ban người gửi" (tự động
- * tra theo phòng ban của người gửi, khác nhau tuỳ ai gửi). Thứ tự bước quyết
- * định thứ tự duyệt khi Quy trình xử lý = "Lần lượt".
+ * Danh sách bước duyệt của 1 nhóm — mỗi bước là "Cố định" (một/nhiều người cụ
+ * thể, giống nhau cho mọi đề xuất), "Quản lý trực tiếp" (tự động tra theo
+ * phòng ban của người gửi, khác nhau tuỳ ai gửi), hoặc "Linh động" (vai
+ * trò/nhóm duyệt do Admin tự gán tay, CHO PHÉP để trống chưa gán ai — Sếp
+ * chốt 22/08/2026, xem design.md của change
+ * add-base-vn-approver-and-approval-form-parity). Thứ tự bước quyết định thứ
+ * tự duyệt khi Quy trình xử lý = "Lần lượt".
  */
 export default function ApproverStepsEditor({
   value,
@@ -110,8 +142,14 @@ export default function ApproverStepsEditor({
 }) {
   const conditionFields = fields.filter((f) => f.code && CONDITION_ELIGIBLE_TYPES.has(f.dataType));
 
-  const addStep = () => {
-    onChange([...value, { kind: "fixed", users: [] }]);
+  const addStep = (kind: DraftApproverStep["kind"]) => {
+    if (kind === "submitter_manager") {
+      onChange([...value, { kind: "submitter_manager" }]);
+    } else if (kind === "flexible_approver") {
+      onChange([...value, { kind: "flexible_approver", name: "", users: [] }]);
+    } else {
+      onChange([...value, { kind: "fixed", users: [] }]);
+    }
   };
 
   const removeStep = (index: number) => {
@@ -120,22 +158,50 @@ export default function ApproverStepsEditor({
 
   const setKind = (index: number, kind: DraftApproverStep["kind"]) => {
     onChange(
+      value.map((step, i) => {
+        if (i !== index) return step;
+        // Đổi kind giữ lại code/condition/slaHours/name (nếu có ý nghĩa với
+        // kind mới) — chỉ reset phần dữ liệu đặc thù của kind cũ (vd `users`
+        // của "fixed" không có ý nghĩa gì khi đổi sang "submitter_manager").
+        if (kind === "submitter_manager") {
+          return { kind, name: step.name, code: step.code, condition: step.condition, slaHours: step.slaHours };
+        }
+        if (kind === "flexible_approver") {
+          return {
+            kind,
+            name: step.name ?? "",
+            users: step.kind === "flexible_approver" || step.kind === "fixed" ? step.users : [],
+            code: step.code,
+            condition: step.condition,
+            slaHours: step.slaHours,
+          };
+        }
+        return {
+          kind: "fixed" as const,
+          name: step.name,
+          users: step.kind === "fixed" || step.kind === "flexible_approver" ? step.users : [],
+          code: step.code,
+          condition: step.condition,
+          slaHours: step.slaHours,
+        };
+      }),
+    );
+  };
+
+  const setUsers = (index: number, users: TaggedUser[]) => {
+    onChange(
       value.map((step, i) =>
-        i === index
-          ? kind === "submitter_manager"
-            ? { kind: "submitter_manager" as const, code: step.code, condition: step.condition }
-            : { kind: "fixed" as const, users: [], code: step.code, condition: step.condition }
-          : step,
+        i === index && (step.kind === "fixed" || step.kind === "flexible_approver") ? { ...step, users } : step,
       ),
     );
   };
 
-  const setFixedUsers = (index: number, users: TaggedUser[]) => {
-    onChange(
-      value.map((step, i) =>
-        i === index ? { ...step, kind: "fixed" as const, users } : step,
-      ),
-    );
+  const setName = (index: number, name: string) => {
+    onChange(value.map((step, i) => (i === index ? { ...step, name } : step)));
+  };
+
+  const setSlaHours = (index: number, slaHours: number | undefined) => {
+    onChange(value.map((step, i) => (i === index ? { ...step, slaHours } : step)));
   };
 
   const setCondition = (index: number, condition: ConditionGroup | undefined) => {
@@ -153,38 +219,71 @@ export default function ApproverStepsEditor({
             Bước {index + 1}
           </span>
           <div className="flex min-w-0 flex-1 flex-col gap-2">
-            <div className="flex items-center gap-2">
-              <div className="min-w-0 flex-1">
-                {step.kind === "fixed" ? (
-                  // Cho @tag NHIỀU người trong cùng 1 bước — TẤT CẢ đều phải
-                  // duyệt mới qua bước (Sếp chốt 16/08/2026). TagUserInput vốn
-                  // multi-select, truyền thẳng mảng không cắt bớt.
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                className={`${selectClass} w-[150px] shrink-0`}
+                value={step.kind}
+                onChange={(e) => setKind(index, e.target.value as DraftApproverStep["kind"])}
+              >
+                {(Object.keys(KIND_LABELS) as DraftApproverStep["kind"][]).map((k) => (
+                  <option key={k} value={k}>
+                    {KIND_LABELS[k]}
+                  </option>
+                ))}
+              </select>
+              <input
+                className={`${inputClass} min-w-0 flex-1`}
+                value={step.name ?? ""}
+                onChange={(e) => setName(index, e.target.value)}
+                placeholder={
+                  step.kind === "flexible_approver" ? "Tên bước * (vd: QL BP, TP/GĐ)" : "Tên bước (tuỳ chọn)"
+                }
+              />
+              <div className="flex shrink-0 items-center gap-1">
+                <input
+                  type="number"
+                  min={0}
+                  className={`${inputClass} w-[76px]`}
+                  value={step.slaHours ?? ""}
+                  onChange={(e) =>
+                    setSlaHours(index, e.target.value === "" ? undefined : Math.max(0, Number(e.target.value)))
+                  }
+                  title="Hạn xử lý riêng cho bước này (giờ)"
+                  placeholder="Hạn xử lý"
+                />
+                <span className="text-[11px] text-gray-400">giờ</span>
+              </div>
+            </div>
+
+            <div>
+              {step.kind === "fixed" && (
+                // Cho @tag NHIỀU người trong cùng 1 bước — TẤT CẢ đều phải
+                // duyệt mới qua bước (Sếp chốt 16/08/2026). TagUserInput vốn
+                // multi-select, truyền thẳng mảng không cắt bớt.
+                <TagUserInput
+                  value={step.users}
+                  onChange={(users) => setUsers(index, users)}
+                  placeholder="Gõ @ để thêm người duyệt (được nhiều người — tất cả phải duyệt)"
+                />
+              )}
+              {step.kind === "submitter_manager" && (
+                <p className="flex h-[36px] items-center gap-1.5 rounded border border-[var(--color-border)] bg-gray-50 px-3 text-[12px] text-gray-500">
+                  <Users size={13} className="shrink-0" />
+                  Tự động: trưởng đơn vị của người gửi (tra tại thời điểm gửi đề xuất)
+                </p>
+              )}
+              {step.kind === "flexible_approver" && (
+                <div className="flex flex-col gap-1">
                   <TagUserInput
                     value={step.users}
-                    onChange={(users) => setFixedUsers(index, users)}
-                    placeholder="Gõ @ để thêm người duyệt (được nhiều người — tất cả phải duyệt)"
+                    onChange={(users) => setUsers(index, users)}
+                    placeholder="Gõ @ để gán người duyệt (có thể để trống, gán sau)"
                   />
-                ) : (
-                  <p className="flex h-[36px] items-center gap-1.5 rounded border border-[var(--color-border)] bg-gray-50 px-3 text-[12px] text-gray-500">
-                    <Users size={13} className="shrink-0" />
-                    Tự động: trưởng đơn vị của người gửi (tra tại thời điểm gửi đề xuất)
-                  </p>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() =>
-                  setKind(index, step.kind === "submitter_manager" ? "fixed" : "submitter_manager")
-                }
-                title="Tự động lấy quản lý trực tiếp của người gửi thay vì chọn 1 người cố định"
-                className={`h-[36px] shrink-0 whitespace-nowrap rounded border px-2.5 text-[12px] font-medium ${
-                  step.kind === "submitter_manager"
-                    ? "border-[var(--color-action-blue)] bg-[var(--color-action-blue)]/10 text-[var(--color-action-blue)]"
-                    : "border-[var(--color-border)] text-gray-600 hover:bg-gray-50"
-                }`}
-              >
-                Quản lý trực tiếp
-              </button>
+                  {step.users.length === 0 && (
+                    <p className="text-[11px] font-medium text-amber-600">Chưa cài đặt danh sách duyệt</p>
+                  )}
+                </div>
+              )}
             </div>
 
             {(step.code || step.condition) && (
@@ -212,13 +311,29 @@ export default function ApproverStepsEditor({
         </div>
       ))}
 
-      <button
-        type="button"
-        onClick={addStep}
-        className="flex w-fit items-center gap-1.5 text-[13px] font-medium text-[var(--color-action-blue)] hover:underline"
-      >
-        <Plus size={14} /> Thêm bước duyệt
-      </button>
+      <div className="flex flex-wrap gap-3">
+        <button
+          type="button"
+          onClick={() => addStep("fixed")}
+          className="flex w-fit items-center gap-1.5 text-[13px] font-medium text-[var(--color-action-blue)] hover:underline"
+        >
+          <Plus size={14} /> Thêm người duyệt cố định
+        </button>
+        <button
+          type="button"
+          onClick={() => addStep("submitter_manager")}
+          className="flex w-fit items-center gap-1.5 text-[13px] font-medium text-[var(--color-action-blue)] hover:underline"
+        >
+          <Plus size={14} /> Thêm quản lý trực tiếp
+        </button>
+        <button
+          type="button"
+          onClick={() => addStep("flexible_approver")}
+          className="flex w-fit items-center gap-1.5 text-[13px] font-medium text-[var(--color-action-blue)] hover:underline"
+        >
+          <Plus size={14} /> Thêm người duyệt linh động
+        </button>
+      </div>
     </div>
   );
 }

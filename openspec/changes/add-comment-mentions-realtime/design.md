@@ -11,8 +11,8 @@ Khung "Thảo luận" hiện tại (`RequestDetailView.tsx` + `app/api/requests/
 **Goals:**
 - Bình luận trên 1 đề xuất cập nhật tức thời cho mọi người đang mở trang chi tiết đề xuất đó, qua Firestore Client SDK `onSnapshot` thật (không phải poll).
 - @mention người (tái dùng `TagUserInput`/`/api/directory` sẵn có) và nhóm thành viên/phòng ban (nguồn mới, đọc từ Firestore hpcore).
-- Tác giả sửa/xóa bình luận của mình; Admin/Owner (app tổng) xóa được bình luận bất kỳ.
-- Trả lời 1 cấp (không lồng sâu hơn).
+- Tác giả sửa/xóa bình luận của mình, nhưng CHỈ trong 10 phút kể từ lúc đăng; sau đó chỉ Owner (không phải Admin) xóa được.
+- Đính kèm 1 file cho mỗi bình luận, tái dùng `/api/uploads` (R2) + `FilePreviewModal` đã có.
 - Mention hiển thị trong `NotificationBell` hiện có, không cần collection `notifications` mới.
 
 **Non-Goals:**
@@ -20,6 +20,8 @@ Khung "Thảo luận" hiện tại (`RequestDetailView.tsx` + `app/api/requests/
 - Không thêm rich-text/thư viện mention mới — `TagUserInput` đã đủ, chỉ mở rộng nguồn dữ liệu.
 - Không đổi cấu trúc lưu trữ bình luận (vẫn là mảng nhúng trong `requests/{id}.comments`, không tách subcollection riêng) — tránh migration không cần thiết, và document-level `onSnapshot` đã đủ để nghe toàn bộ mảng thay đổi.
 - Không cho nhóm/phòng ban làm `usedFor`/`approverSteps`/`followers` — 3 chỗ đó giữ nguyên chỉ nhận cá nhân, không mở rộng phạm vi ngoài yêu cầu.
+- **Không làm "trả lời" (reply/thread lồng cấp)** — quyết định ban đầu của change này (mục 6 cũ) đã bị đảo ngược theo yêu cầu mới của Sếp (24/08/2026): danh sách bình luận giữ phẳng hoàn toàn. Field `parentId` vẫn còn trong type cho dữ liệu cũ, nhưng UI không còn đường tạo mới.
+- Không sửa hộ nội dung bình luận của người khác — Owner sau khi bình luận bị khóa (quá 10 phút) CHỈ có quyền xóa, không có quyền sửa.
 
 ## Decisions
 
@@ -33,9 +35,15 @@ Khung "Thảo luận" hiện tại (`RequestDetailView.tsx` + `app/api/requests/
 
 5. **Nguồn "nhóm/phòng ban" cho mention**: thêm hàm đọc `getHpcoreDb().collection("memberGroups")` và `.collection("departments")`, tương tự cách `/api/directory` đang đọc `users`. Tạo endpoint MỚI `app/api/directory/mentionable` (không sửa `/api/directory` hiện có) để không ảnh hưởng 3 nơi đang dùng nó (`usedFor`, `approverSteps`, `followers` — vẫn chỉ nhận cá nhân).
 
-6. **Trả lời 1 cấp**: `parentId` luôn trỏ về bình luận GỐC (không có `parentId` riêng) — bấm "Trả lời" trên 1 trả lời thì tự quy về gốc của trả lời đó, giống quyết định đã áp dụng cho hpcons-portal.
+6. **~~Trả lời 1 cấp~~ — ĐÃ HUỶ, thay bằng "phẳng hoàn toàn".** Quyết định gốc (`parentId` luôn quy về bình luận gốc) đã bị đảo ngược 24/08/2026: bỏ hẳn nút "Trả lời" khỏi UI, `POST /comments` không nhận `parentId` mới nữa. Giữ field `parentId?: string | null` trong `RequestComment` (không xóa khỏi type) để không phá dữ liệu cũ nếu đã có bình luận trả lời thật trên production — nhưng logic hiển thị/tạo mới coi mọi bình luận là ngang hàng (không lồng), sắp xếp thẳng theo `at`.
 
-7. **Quyền sửa/xóa**: sửa — chỉ tác giả (`authorUid === session.uid`). Xóa — tác giả HOẶC `canManageGroupsAtAppScope(session.role)` (đã có sẵn, dùng cho cấu hình nhóm đề xuất — tái dùng đúng khái niệm "Admin/Owner app tổng" y hệt).
+7. **Quyền sửa/xóa — có hạn 10 phút, Owner-only sau khi khóa.** Thay hoàn toàn quyết định cũ ("tác giả sửa/xóa bất kỳ lúc nào; Admin/Owner xóa bất kỳ bình luận nào bất kỳ lúc nào"):
+   - **Trong 10 phút kể từ `comment.at`**: CHỈ tác giả (`authorUid === session.uid`) được sửa HOẶC xóa bình luận của chính mình. Không ai khác (kể cả Owner) có quyền gì trên bình luận này trong khung giờ này.
+   - **Sau 10 phút (đã khóa)**: tác giả KHÔNG còn quyền gì nữa (hết Sửa, hết Xóa). CHỈ `session.role === "owner"` (KHÔNG dùng `canManageGroupsAtAppScope` vì hàm đó gộp cả "admin" — cần helper/điều kiện MỚI chỉ nhận đúng "owner") mới xóa được — và chỉ xóa, không có API/nút sửa cho Owner trên bình luận của người khác.
+   - Mốc 10 phút PHẢI kiểm tra lại ở server (`PATCH`/`DELETE` tự tính `Date.now() - new Date(target.at).getTime() > 10 * 60 * 1000`), không tin cờ ẩn/hiện nút phía client — client chỉ dùng để ẩn/hiện nút cho gọn UI.
+   - Lý do đổi: Sếp muốn giới hạn "sửa nhanh lỗi chính tả" trong 1 khung giờ ngắn, tránh bình luận (vốn là hồ sơ trao đổi/quyết định) bị chỉnh sửa tùy ý lâu dài sau đó; quyền dọn dẹp lâu dài chỉ giao cho Owner (thu hẹp hơn "Admin/Owner" cũ) để tránh admin thường (không phải chủ sở hữu app/tổ chức) xóa nhầm bằng chứng trao đổi.
+
+8. **Đính kèm file trong bình luận — tái dùng `/api/uploads` (R2) + `FilePreviewModal`, không dựng cơ chế mới.** Client chọn 1 file → gọi `POST /api/uploads` (đã có, giới hạn 10MB/file, lưu Cloudflare R2 qua `lib/r2.ts`) → nhận lại `{name, path, size}` (đúng shape `RequestAttachment`) → gửi kèm trong `POST /api/requests/[id]/comments` dưới field `attachment`. Hiển thị: dòng nhỏ icon + tên + dung lượng dưới nội dung bình luận, bấm mở `FilePreviewModal` (component đã dùng cho field "Tệp tin" và tài liệu đính kèm cấp đề xuất) — không tạo modal riêng. Giới hạn: **1 file/bình luận** (không phải nhiều file như `/api/uploads` cho phép tối đa 6 — bình luận chỉ cần 1, đơn giản hóa UI ô soạn). File đính kèm không có API xóa/thay riêng — xóa/sửa cả bình luận là 1 hành động duy nhất, chịu đúng luật 10 phút ở mục 7.
 
 8. **Thông báo mention tái dùng mô hình "tính lại lúc tải" của `NotificationBell`** — thêm field `mentionedUids?: string[]` trên `RequestInstance` (hợp nhất mọi uid từng được mention qua các bình luận + trả lời của đề xuất đó, cập nhật mỗi lần có bình luận mới), và 1 scope mới `?scope=mentioned` cho `GET /api/requests` (trả về các đề xuất có `mentionedUids` chứa uid hiện tại). `NotificationBell` gọi thêm scope này, hợp nhất với 2 nguồn cũ (inbox/mine). Không có khái niệm "đã đọc" riêng cho mục này — giống hệt cách 2 nguồn cũ đang hoạt động (không lưu trạng thái đọc).
 
@@ -56,3 +64,5 @@ Khung "Thảo luận" hiện tại (`RequestDetailView.tsx` + `app/api/requests/
 
 - `mentionedUids` có cần loại trừ chính người vừa viết bình luận (nếu họ tự mention lại chính mình) không? Đề xuất: loại trừ `session.uid` khỏi tập hợp nhận thông báo/mentionedUids khi họ tự mention mình — tránh tự báo cho chính mình, giống quyết định tương tự Sếp đã áp dụng cho `pkd_crm-next`.
 - Token custom token nên refresh theo chu kỳ nào nếu người dùng mở trang chi tiết đề xuất rất lâu (nhiều giờ)? Firebase Client SDK tự refresh ID token, nhưng custom token gốc (JWT do server ký) có thời hạn ngắn (~1 giờ) — cần xác nhận `signInWithCustomToken` chỉ cần gọi 1 lần, các lần refresh sau do SDK tự lo, không cần gọi lại `/api/auth/firebase-token`.
+- **Sửa bình luận có làm mới lại mốc 10 phút không?** Quyết định (chưa hỏi lại Sếp, dùng mặc định hợp lý): KHÔNG — mốc 10 phút luôn tính từ `comment.at` (lúc TẠO), không tính từ `editedAt`. Nếu tác giả sửa ở phút thứ 9, họ vẫn chỉ còn ~1 phút trước khi bị khóa hoàn toàn (không được "làm mới" thời hạn bằng cách sửa liên tục). Nếu Sếp muốn ngược lại (mỗi lần sửa được +10 phút mới), cần xác nhận lại — hiện triển khai theo hướng KHÔNG làm mới.
+- Đồng hồ dùng để so 10 phút là đồng hồ SERVER (`Date.now()` trong API route, so với `comment.at` cũng do server ghi lúc tạo) — không dùng đồng hồ máy khách, tránh người dùng chỉnh giờ máy để né hạn. Client chỉ hiển thị đếm ngược tham khảo (có thể lệch vài giây do làm tròn), server luôn là nguồn quyết định cuối.

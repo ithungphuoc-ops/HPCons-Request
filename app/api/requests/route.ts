@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { canApproverAct } from "@/lib/approval-logic";
+import { canApproverAct, hasUnseenUpdate } from "@/lib/approval-logic";
 import { adminDb } from "@/lib/firebase/admin";
 import { apiErrorResponse } from "@/lib/http";
 import { canManageGroupsAtAppScope, isWithinUsedForScope } from "@/lib/permissions";
 import { mergeFollowers } from "@/lib/server/conditions";
 import { resolveComputedValue } from "@/lib/server/computed-fields";
-import { dedupeApprovers } from "@/lib/approval-logic";
+import { dedupeApproversWithMeta } from "@/lib/approval-logic";
 import {
   buildInitialApprovers,
   canView,
@@ -14,14 +14,16 @@ import {
   findMissingRequiredFields,
   generateGroupRequestCode,
   generateRequestCode,
-  resolveApproverSteps,
+  resolveApproverStepsWithMeta,
   resolveDirectManagerId,
+  resolveInitialSlaHours,
   toProposalGroup,
 } from "@/lib/server/requests";
 import { requireSession } from "@/lib/session";
 import { retryThuMuaSyncNeuLoi } from "@/lib/thumua-sync";
 import type {
   ApprovalFlowType,
+  ApproverStepMeta,
   ProposalField,
   ProposalGroup,
   RequestInstance,
@@ -70,15 +72,38 @@ export async function GET(request: Request) {
     if (scope === "mentioned") {
       // Đề xuất có bình luận @mention session.uid (trực tiếp hoặc qua nhóm/
       // phòng ban, đã giãn sẵn vào mentionedUids lúc tạo bình luận — xem
-      // lib/server/mentions.ts). Dùng cho NotificationBell, không có khái
-      // niệm "đã đọc" riêng (giống 2 nguồn inbox/mine hiện có).
+      // lib/server/mentions.ts). Dùng cho NotificationBell. TRƯỚC ĐÂY không
+      // có khái niệm "đã đọc" (luôn hiện tới khi có dữ liệu thông báo khác
+      // đẩy ra khỏi top-8) — giờ lọc bằng `viewedAt`: mở lại trang đề xuất
+      // 1 lần là tự hết hiện, xem design.md của change
+      // fix-notification-bell-stale-gaps.
       const snap = await adminDb
         .collection("requests")
         .where("mentionedUids", "array-contains", session.uid)
         .get();
       const requests = snap.docs
         .map((doc) => ({ id: doc.id, ...doc.data() }) as RequestInstance)
-        .filter((r) => !r.deletedAt)
+        .filter((r) => !r.deletedAt && hasUnseenUpdate(r.updatedAt, r.viewedAt, session.uid))
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+      return NextResponse.json({ requests });
+    }
+
+    if (scope === "approver-followup") {
+      // Người ĐÃ xử lý xong phần mình (không còn "pending" ở approvers) nhưng
+      // đề xuất có biến động MỚI kể từ lần họ xem gần nhất (bình luận mới,
+      // hoặc bước sau từ chối) — trước đây hoàn toàn im lặng sau khi tự xử lý
+      // xong, xem design.md của change fix-notification-bell-stale-gaps. Lấy
+      // hết rồi lọc bằng code — cùng cách "sent-to-me"/"following"/"all" bên
+      // dưới đang làm, chấp nhận được với quy mô công ty hiện tại.
+      const snap = await adminDb.collection("requests").get();
+      const requests = snap.docs
+        .map((doc) => ({ id: doc.id, ...doc.data() }) as RequestInstance)
+        .filter((r) => {
+          if (r.deletedAt || r.status === "draft") return false;
+          const mine = r.approvers.find((a) => a.id === session.uid);
+          if (!mine || mine.decision === "pending") return false;
+          return hasUnseenUpdate(r.updatedAt, r.viewedAt, session.uid);
+        })
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
       return NextResponse.json({ requests });
     }
@@ -127,7 +152,17 @@ export async function GET(request: Request) {
     // ("Gửi đến tôi"/"Đang theo dõi"/"Tất cả") — không lọc theo Firestore
     // được vì approversSnapshot/followers là mảng object lồng, nên lấy hết
     // rồi lọc bằng code (chấp nhận được với quy mô công ty hiện tại).
-    if (scope === "sent-to-me" || scope === "following" || scope === "all") {
+    // "following-unseen" — RIÊNG cho NotificationBell (đề xuất đang theo dõi
+    // có biến động mới kể từ lần xem gần nhất) — KHÔNG dùng chung với
+    // "following" (trang danh sách "Đang theo dõi" phải hiện ĐỦ, không được
+    // ẩn bớt theo trạng thái đã xem), xem design.md của change
+    // fix-notification-bell-stale-gaps.
+    if (
+      scope === "sent-to-me" ||
+      scope === "following" ||
+      scope === "all" ||
+      scope === "following-unseen"
+    ) {
       const snap = await adminDb.collection("requests").get();
       const all = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }) as RequestInstance);
 
@@ -142,7 +177,9 @@ export async function GET(request: Request) {
           ? isSentToMe
           : scope === "following"
             ? isFollowing
-            : (r: RequestInstance) => isMine(r) || isSentToMe(r) || isFollowing(r);
+            : scope === "following-unseen"
+              ? (r: RequestInstance) => isFollowing(r) && hasUnseenUpdate(r.updatedAt, r.viewedAt, session.uid)
+              : (r: RequestInstance) => isMine(r) || isSentToMe(r) || isFollowing(r);
 
       const requests = all
         .filter((r) => !r.deletedAt && filterFn(r))
@@ -218,6 +255,7 @@ export async function POST(request: Request) {
     let fieldsSnapshot: ProposalField[];
     let approvalFlow: ApprovalFlowType;
     let approversSnapshot: TaggedUser[];
+    let approverStepMeta: ApproverStepMeta[] | undefined;
     let followers: TaggedUser[];
     let deadlineAt: string | null;
     let useOwnCounter = false;
@@ -291,17 +329,21 @@ export async function POST(request: Request) {
       // dedupeApprovers: nếu cùng 1 người được nhiều bước duyệt chọn (vd
       // trùng "Quản lý trực tiếp" và "Trưởng phòng"), chỉ tính 1 lần theo
       // vai trò xuất hiện sau cùng — xem lib/approval-logic.ts.
-      approversSnapshot = isDraft
-        ? []
-        : dedupeApprovers(
-            await resolveApproverSteps(
-              group.approverSteps,
-              session.uid,
-              body.values ?? {},
-              group.fields,
-              body.managerOverrides ?? {},
-            ),
-          );
+      if (isDraft) {
+        approversSnapshot = [];
+        approverStepMeta = undefined;
+      } else {
+        const resolved = await resolveApproverStepsWithMeta(
+          group.approverSteps,
+          session.uid,
+          body.values ?? {},
+          group.fields,
+          body.managerOverrides ?? {},
+        );
+        const deduped = dedupeApproversWithMeta(resolved.approvers, resolved.meta);
+        approversSnapshot = deduped.users;
+        approverStepMeta = deduped.meta;
+      }
       // Người gửi có thể thêm người theo dõi ngoài danh sách mặc định của
       // nhóm (giống UI Base) — client luôn khởi tạo từ group.followers rồi
       // cho thêm, nên body.followers là danh sách đã gồm mặc định. Hợp nhất
@@ -313,10 +355,11 @@ export async function POST(request: Request) {
         group.followersConditional ?? [],
         body.values ?? {},
         group.fields,
+        group.permissionRules?.autoAddSubtaskAssigneesAsFollowers,
       );
       deadlineAt = isDraft
         ? null
-        : computeDeadline(group.slaHours, now, group.slaByWorkCalendar === true);
+        : computeDeadline(resolveInitialSlaHours(group), now, group.slaByWorkCalendar === true);
       useOwnCounter = group.useOwnCounter === true;
     } else {
       // Đề xuất trực tiếp: không có mẫu, người tạo tự chọn người duyệt.
@@ -336,6 +379,7 @@ export async function POST(request: Request) {
       fieldsSnapshot = [];
       approvalFlow = "concurrent";
       approversSnapshot = body.approvers ?? [];
+      approverStepMeta = undefined; // đề xuất trực tiếp không có khái niệm "bước duyệt"
       followers = body.followers ?? [];
       deadlineAt = null;
     }
@@ -361,6 +405,7 @@ export async function POST(request: Request) {
       updatedAt: nowIso,
       approvalFlow,
       approversSnapshot,
+      approverStepMeta,
       approvers: isDraft ? [] : buildInitialApprovers(approversSnapshot),
       followers,
       status: isDraft ? "draft" : "pending",

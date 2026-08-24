@@ -1,4 +1,4 @@
-import type { ApprovalFlowType, ApproverStepDef, TaggedUser } from "./types";
+import type { ApprovalFlowType, ApprovalTimeField, ApproverStepDef, TaggedUser } from "./types";
 
 export type ApproverDecision = "pending" | "approved" | "rejected";
 
@@ -12,6 +12,23 @@ export interface ApproverState {
  * - Đồng thời / một người duyệt: ai cũng có thể thao tác bất kỳ lúc nào (miễn còn "pending").
  * - Lần lượt: chỉ người đầu tiên còn "pending" theo thứ tự được phép thao tác (§5.3 quy tắc 3).
  */
+/**
+ * Còn "mới" (chưa xem) hay không — dùng cho chuông thông báo với 3 loại
+ * không có khái niệm "đã đọc" riêng (được nhắc tên / đang theo dõi / đã xử
+ * lý xong phần mình nhưng có biến động sau đó). Chưa từng xem
+ * (`viewedAt[uid]` không có) → luôn coi là còn mới. Xem design.md của
+ * change fix-notification-bell-stale-gaps.
+ */
+export function hasUnseenUpdate(
+  updatedAt: string,
+  viewedAt: Record<string, string> | undefined,
+  uid: string,
+): boolean {
+  const seenAt = viewedAt?.[uid];
+  if (!seenAt) return true;
+  return seenAt < updatedAt;
+}
+
 export function canApproverAct(
   flow: ApprovalFlowType,
   approvers: ApproverState[],
@@ -64,6 +81,20 @@ export function dedupeApprovers(users: TaggedUser[]): TaggedUser[] {
   return users.filter((u, i) => lastIndexById.get(u.id) === i);
 }
 
+/** Như `dedupeApprovers()` nhưng lọc thêm 1 mảng `meta` (cùng thứ tự/độ dài
+ * với `users`) theo ĐÚNG cùng bộ chỉ số được giữ lại — dùng khi cần giữ tên
+ * bước/SLA riêng bước đi kèm mỗi người duyệt sau khi loại trùng (xem
+ * `resolveApproverStepsWithMeta()` trong lib/server/requests.ts). */
+export function dedupeApproversWithMeta<M>(users: TaggedUser[], meta: M[]): { users: TaggedUser[]; meta: M[] } {
+  const lastIndexById = new Map<string, number>();
+  users.forEach((u, i) => lastIndexById.set(u.id, i));
+  const keep = users.map((u, i) => lastIndexById.get(u.id) === i);
+  return {
+    users: users.filter((_, i) => keep[i]),
+    meta: meta.filter((_, i) => keep[i]),
+  };
+}
+
 /**
  * Đủ danh sách người của 1 bước duyệt "fixed" — bước mới (từ 16/08/2026) lưu
  * mảng `users` (nhiều người/1 bước, tất cả phải duyệt), bước cũ chỉ có `user`
@@ -72,6 +103,54 @@ export function dedupeApprovers(users: TaggedUser[]): TaggedUser[] {
  */
 export function fixedStepUsers(step: Extract<ApproverStepDef, { kind: "fixed" }>): TaggedUser[] {
   return step.users?.length ? step.users : [step.user];
+}
+
+/**
+ * Chặn thiếu case khi xử lý theo `step.kind` — TypeScript báo lỗi biên dịch
+ * ngay nếu `ApproverStepDef` thêm 1 kind mới mà chỗ gọi hàm này chưa cập nhật
+ * (exhaustiveness check). Dùng ở nhánh `else`/`default` cuối cùng thay vì bỏ
+ * qua âm thầm — xem design.md của change add-base-vn-approver-and-approval-form-parity,
+ * Risk #1 (bài học từ lúc thêm `flexible_approver`: code cũ có `if (kind ===
+ * "fixed") {...} else {...coi như submitter_manager...}` đã ÂM THẦM xử lý sai
+ * kind lạ, phải rà lại toàn bộ chỗ dùng `step.kind` trong repo).
+ */
+export function assertNeverApproverKind(step: never): never {
+  throw new Error(`Kind bước duyệt không xác định: ${JSON.stringify(step)}`);
+}
+
+/**
+ * Tên hiển thị của 1 bước duyệt — dùng `name` nếu Admin đã đặt (mọi kind đều
+ * có thể có, xem `ApproverStepDef`), ngược lại rơi về "Bước {số}" như hành vi
+ * cũ (bước tạo trước khi có field `name`, 22/08/2026). `index` là vị trí 0-based
+ * trong mảng `approverSteps` gốc.
+ */
+export function approverStepDisplayName(step: ApproverStepDef, index: number): string {
+  return step.name?.trim() || `Bước ${index + 1}`;
+}
+
+/** Quy đổi quyết định thật (5 giá trị `decision` của API) sang
+ * `ApprovalTimeField.decisionAction` — "returned" không có field tương ứng
+ * (ngoài phạm vi "Mẫu form phê duyệt", xem design.md của change
+ * add-base-vn-approver-and-approval-form-parity, Decision #3). Dùng CHUNG ở
+ * cả client (RequestDetailView.tsx tự suy field nào sẽ hiện) và server
+ * (app/api/requests/[id]/decision/route.ts tự xác định lại, không tin client). */
+export const DECISION_TO_APPROVAL_TIME_ACTION: Partial<
+  Record<"approved" | "rejected" | "approve_and_forward" | "forward_then_approve" | "returned", ApprovalTimeField["decisionAction"]>
+> = {
+  approved: "approve",
+  rejected: "reject",
+  approve_and_forward: "approveAndForward",
+  forward_then_approve: "forward",
+};
+
+/** true nếu field bắt buộc (`field.required`) mà giá trị đang rỗng — dùng
+ * chặn submit ở CẢ modal phía client lẫn validate lại phía server, xem
+ * `ApprovalTimeFieldControl.tsx` và `app/api/requests/[id]/decision/route.ts`. */
+export function isApprovalTimeValueMissing(field: ApprovalTimeField["field"], value: unknown): boolean {
+  if (!field.required) return false;
+  if (value === undefined || value === null || value === "") return true;
+  if (Array.isArray(value) && value.length === 0) return true;
+  return false;
 }
 
 export class ApprovalActionError extends Error {}

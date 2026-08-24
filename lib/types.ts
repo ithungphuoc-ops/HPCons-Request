@@ -72,6 +72,32 @@ export interface ProposalField {
    * ứng...) cần lề thời gian khác nhau.
    */
   dateLeadTimeRule?: DateLeadTimeRule;
+  /** Giải thích/hướng dẫn LUÔN hiện dưới ô nhập (khác `placeholder` — biến mất
+   * khi người dùng bắt đầu gõ). Chỉ lưu chuỗi thường, không phải rich text —
+   * xem design.md của change add-base-vn-approver-and-approval-form-parity,
+   * Decision #4. Giới hạn ~300 ký tự khi lưu (`sanitizeHelpText()`). */
+  helpText?: string;
+}
+
+/**
+ * 1 trường dữ liệu CHỈ hiện cho ĐÚNG người duyệt của 1 bước CỐ ĐỊNH
+ * (`kind: "fixed"`) lúc họ đang xử lý ĐÚNG 1 hành động quyết định — khác hẳn
+ * `ProposalGroup.fields` (người GỬI điền lúc tạo đề xuất). Ví dụ: field "Số
+ * tiền đã kiểm tra" chỉ hiện cho KTTCH lúc họ bấm "Chấp thuận", không hiện
+ * cho người gửi, không hiện cho bước duyệt khác, không hiện lúc KTTCH "Từ
+ * chối". Xem design.md của change add-base-vn-approver-and-approval-form-parity,
+ * Decision #3 — CHỈ hỗ trợ bước `fixed` trong lần đầu này (không hỗ trợ
+ * `flexible_approver`/`submitter_manager`).
+ */
+export interface ApprovalTimeField {
+  id: string;
+  /** Tham chiếu `ApproverStepDef.code` của 1 bước `kind: "fixed"` TRONG CÙNG nhóm. */
+  approverStepCode: string;
+  /** Trùng khái niệm với `ProposalGroup.requireDecisionNote` (4 hành động quyết định). */
+  decisionAction: "approve" | "reject" | "forward" | "approveAndForward";
+  /** Field thường, loại trừ 3 cơ chế không có ý nghĩa ở đây (điều kiện hiện/tự
+   * tính/ngày cần cấp đều thiết kế cho form GỬI, không phải form phê duyệt). */
+  field: Omit<ProposalField, "visibleWhen" | "computedFrom" | "dateLeadTimeRule">;
 }
 
 /**
@@ -210,6 +236,10 @@ export interface ConditionGroup {
 export type ApproverStepDef =
   | {
       kind: "fixed";
+      /** Nhãn hiển thị riêng cho bước (vd "KTTCH") — KHÁC `code` (mã máy ổn
+       * định). Bước cũ không có field này → UI hiển thị "Bước {index+1}" như
+       * trước (xem design.md của change add-base-vn-approver-and-approval-form-parity). */
+      name?: string;
       /** Người ĐẦU TIÊN của bước — giữ nguyên cho tương thích dữ liệu/code cũ
        * (bước tạo trước 16/08/2026 chỉ có field này). Đọc đủ danh sách người
        * của bước bằng `fixedStepUsers()` (lib/approval-logic.ts), đừng đọc
@@ -220,8 +250,41 @@ export type ApproverStepDef =
       users?: TaggedUser[];
       code?: string;
       condition?: ConditionGroup;
+      /** SLA riêng bước này (giờ) — chỉ có tác dụng khi `ProposalGroup.approverSlaEnabled`
+       * bật; xem `computeStepSlaHours()` trong lib/server/requests.ts. */
+      slaHours?: number;
     }
-  | { kind: "submitter_manager"; code?: string; condition?: ConditionGroup };
+  | {
+      kind: "submitter_manager";
+      name?: string;
+      code?: string;
+      condition?: ConditionGroup;
+      slaHours?: number;
+    }
+  | {
+      kind: "flexible_approver";
+      /** BẮT BUỘC (khác `fixed`/`submitter_manager` optional) — bước này tồn
+       * tại VÌ có tên, không có `user` nào để định danh thay thế. */
+      name: string;
+      /** Danh sách người duyệt do Admin tự gán tay — CHO PHÉP RỖNG ("Chưa cài
+       * đặt danh sách duyệt"). Bước rỗng bị BỎ QUA lúc gửi đề xuất (không chặn
+       * gửi, không lỗi) — xem `resolveApproverStepsDetailed()`. */
+      users: TaggedUser[];
+      code?: string;
+      condition?: ConditionGroup;
+      slaHours?: number;
+    };
+
+/** Tên bước + SLA riêng bước, cùng thứ tự/độ dài với `RequestInstance.approversSnapshot`
+ * — dùng để hiển thị tên bước (thay "Bước N") và SLA riêng ở trang chi tiết
+ * đề xuất, xem `resolveApproverStepsWithMeta()` trong lib/server/requests.ts. */
+export interface ApproverStepMeta {
+  name?: string;
+  slaHours?: number;
+  /** Mã bước — dùng để khớp `ApprovalTimeField.approverStepCode` lúc người
+   * duyệt mở hộp thoại quyết định (xem RequestDetailView.tsx). */
+  code?: string;
+}
 
 export interface ProposalGroup {
   id: string;
@@ -269,7 +332,107 @@ export interface ProposalGroup {
   /** Bật mã đề xuất tự sinh riêng theo nhóm (transaction riêng), thay vì luôn
    * dùng bộ đếm toàn hệ thống — mặc định false/chưa đặt = dùng bộ đếm chung. */
   useOwnCounter?: boolean;
+  /** Người tạo nhóm — set 1 LẦN lúc tạo (`POST /api/groups`), KHÔNG cho sửa
+   * lại qua PATCH sau đó. Nhóm tạo trước change này không có field này →
+   * UI hiển thị "—" (xem cùng pattern `PrintTemplate.createdBy` đã có). */
+  createdBy?: { uid: string; name: string };
+  /** "Mẫu form phê duyệt" — mảng RIÊNG, KHÔNG trộn vào `fields` (vốn đúng
+   * nghĩa "người GỬI điền"). Đọc LIVE (không snapshot) mỗi khi người duyệt mở
+   * hộp thoại quyết định — xem `ApprovalTimeField`. */
+  approvalTimeFields?: ApprovalTimeField[];
+  /** 7 cờ phân quyền thật — thay phần hiển thị tĩnh cũ ở tab "Tuỳ chỉnh về
+   * phân quyền". Thiếu (nhóm cũ) → dùng `DEFAULT_GROUP_PERMISSION_RULES`
+   * (tương đương hành vi hiện tại), áp dụng ở từng nơi đọc field này. */
+  permissionRules?: GroupPermissionRules;
+  /** 3 cờ thông báo CẤP NHÓM — khác "Cài đặt thông báo" cá nhân của từng
+   * người dùng (NotificationSettings). `emailNotify` chỉ lưu cấu hình, CHƯA
+   * gửi email thật (chưa có hạ tầng). */
+  notificationRules?: GroupNotificationRules;
+  /** 7 cờ + 2 vị trí QR cho tab "In đề xuất" — CHỈ lưu cấu hình/ẩn-hiện nút,
+   * KHÔNG tự sinh PDF/chèn QR thật (PDF chờ capability `pdf-export` riêng). */
+  printOptions?: GroupPrintOptions;
 }
+
+/**
+ * 7 cờ phân quyền thật ở cấp nhóm — xem design.md của change
+ * add-base-vn-approver-and-approval-form-parity, Decision #5.
+ */
+export interface GroupPermissionRules {
+  /** Ảnh Base chỉ thấy 1 giá trị đang chọn, chưa chắc đủ 2 — xem Open Questions #1. */
+  followersEditableBy: "system_owners_only" | "all_viewers";
+  creatorCanAddButNotRemoveDefaultFollowers: boolean;
+  autoAddSubtaskAssigneesAsFollowers: boolean;
+  /** Áp dụng logic thật: chặn sửa/xoá bình luận khi đề xuất đã có ≥1 quyết
+   * định duyệt — xem app/api/requests/[id]/comments/[commentId]/route.ts. */
+  lockCommentsAfterFirstDecision: boolean;
+  /** Áp dụng logic thật: ẩn/hiện nút "Xuất Excel" ở app/request/list/page.tsx
+   * cho người CHỈ có vai trò follower (không phải chủ/Owner/Admin). */
+  defaultFollowersCanExportData: boolean;
+  /** Như trên, cho người CHỈ có vai trò approver. */
+  defaultApproversCanExportData: boolean;
+  /** CHỈ lưu cấu hình — chưa có cơ chế "ủy quyền dài hạn" thật trong app,
+   * xem Open Questions #3. */
+  approversCanDelegateApproval: boolean;
+}
+
+/** Dùng khi đọc 1 nhóm chưa có `permissionRules` (tạo trước change này) —
+ * đúng hành vi HIỆN TẠI của app, không đổi gì cho nhóm cũ. */
+export const DEFAULT_GROUP_PERMISSION_RULES: GroupPermissionRules = {
+  followersEditableBy: "all_viewers",
+  creatorCanAddButNotRemoveDefaultFollowers: false,
+  autoAddSubtaskAssigneesAsFollowers: false,
+  lockCommentsAfterFirstDecision: false,
+  defaultFollowersCanExportData: false,
+  defaultApproversCanExportData: false,
+  approversCanDelegateApproval: false,
+};
+
+/** 3 cờ thông báo cấp nhóm — xem design.md Decision #6. */
+export interface GroupNotificationRules {
+  sequentialTurnBasedNotify: boolean;
+  perStepBlockNotify: boolean;
+  /** CHỈ lưu cấu hình — chưa gửi email thật (chưa có hạ tầng). */
+  emailNotify: boolean;
+}
+
+/** 2 cờ đầu mặc định `true` vì tả ĐÚNG hành vi thông báo hiện tại của app
+ * (NotificationBell/canApproverAct) — không phải bật thêm gì mới. */
+export const DEFAULT_GROUP_NOTIFICATION_RULES: GroupNotificationRules = {
+  sequentialTurnBasedNotify: true,
+  perStepBlockNotify: true,
+  emailNotify: false,
+};
+
+/** 7 cờ + 2 vị trí QR cho tab "In đề xuất" — xem design.md Decision #7. Mặc
+ * định TẤT CẢ cờ `true` khi thiếu (nhóm cũ) để giữ hành vi "In theo mẫu" hiện
+ * tại vẫn hoạt động bình thường. */
+export interface GroupPrintOptions {
+  allowPrintProposal: boolean;
+  allowPrintProposalWithDiscussion: boolean;
+  allowPrintToWord: boolean;
+  /** Cờ có thể bật nhưng nút PDF thật chỉ hoạt động khi capability riêng
+   * `pdf-export` (change add-pdf-export, đang chờ Sếp chốt hạ tầng) hoàn tất. */
+  allowPrintToPdf: boolean;
+  allowPrintWithQrCode: boolean;
+  allowPrintAttachmentWithQrCode: boolean;
+  allowPrintCustomFieldFileWithQrCode: boolean;
+  /** Ảnh Base chỉ thấy "Trên - Trái" — để mở (string) tới khi có đủ danh sách,
+   * xem Open Questions #2. QR thật CHƯA triển khai, đây chỉ là cấu hình. */
+  customFieldQrPosition?: string;
+  attachmentQrPosition?: string;
+}
+
+/** Mọi cờ `true` — giữ đúng hành vi hiện tại ("In theo mẫu" .docx vẫn hoạt
+ * động bình thường cho nhóm chưa cấu hình gì). */
+export const DEFAULT_GROUP_PRINT_OPTIONS: GroupPrintOptions = {
+  allowPrintProposal: true,
+  allowPrintProposalWithDiscussion: true,
+  allowPrintToWord: true,
+  allowPrintToPdf: true,
+  allowPrintWithQrCode: true,
+  allowPrintAttachmentWithQrCode: true,
+  allowPrintCustomFieldFileWithQrCode: true,
+};
 
 /**
  * 1 mẫu in (.docx) của 1 nhóm đề xuất — lưu ở subcollection
@@ -363,11 +526,19 @@ export interface RequestComment {
   at: string;
   /** uid người + id nhóm thành viên/phòng ban được @mention trong bình luận này. */
   mentionIds?: string[];
-  /** Luôn trỏ về 1 bình luận GỐC (không có parentId riêng) — trả lời giới hạn 1 cấp,
-   * xem design.md của change add-comment-mentions-realtime. */
+  /** Bình luận trả lời cũ (dữ liệu lịch sử) từng trỏ về 1 bình luận gốc — tính
+   * năng "Trả lời" đã bị BỎ (24/08/2026, xem design.md), không còn đường tạo
+   * `parentId` mới qua UI. Giữ field lại chỉ để không phá dữ liệu cũ nếu đã
+   * có bình luận trả lời thật trên production; hiển thị luôn coi mọi bình
+   * luận là ngang hàng, sắp theo `at`. */
   parentId?: string | null;
-  /** Có giá trị nếu tác giả đã sửa lại nội dung sau khi gửi. */
+  /** Có giá trị nếu tác giả đã sửa lại nội dung sau khi gửi — KHÔNG dùng để
+   * tính lại hạn 10 phút sửa/xóa (luôn tính từ `at` gốc, xem design.md). */
   editedAt?: string;
+  /** Tối đa 1 file/bình luận, tải qua /api/uploads (R2) — tái dùng type đã có,
+   * không tạo type mới. Chịu chung hạn 10 phút của cả bình luận (không có API
+   * xóa/thay file riêng). */
+  attachment?: RequestAttachment | null;
 }
 
 /**
@@ -393,6 +564,27 @@ export interface RequestInstance {
   approvalFlow: ApprovalFlowType;
   /** Thông tin hiển thị (tên/avatar) của người duyệt, cùng thứ tự với `approvers`. */
   approversSnapshot: TaggedUser[];
+  /** Tên bước + SLA riêng bước, cùng thứ tự/độ dài với `approversSnapshot` —
+   * optional vì đề xuất tạo trước change add-base-vn-approver-and-approval-form-parity
+   * không có field này (UI tự rơi về "Bước N" khi thiếu, xem RequestDetailView.tsx). */
+  approverStepMeta?: ApproverStepMeta[];
+  /** Giá trị "Mẫu form phê duyệt" đã điền — key = `ApprovalTimeField.id`, TÁCH
+   * BIỆT khỏi `values` (dữ liệu form gửi ban đầu của người GỬI). */
+  approvalTimeValues?: Record<string, unknown>;
+  /** Uid những người đã đánh dấu đề xuất này quan trọng — THEO TỪNG NGƯỜI XEM
+   * (không phải cờ chung), xem design.md của change
+   * add-request-detail-base-parity, capability request-bookmark. */
+  bookmarkedByUids?: string[];
+  /** Tài liệu đính kèm Ở CẤP ĐỀ XUẤT (khác file đính kèm trong `values` của
+   * field kiểu "Tệp tin", 2 danh sách độc lập không gộp chung). */
+  attachments?: RequestAttachment[];
+  /** uid → thời điểm (ISO) người đó lần cuối MỞ trang chi tiết đề xuất này,
+   * hoặc tự thao tác lên nó (duyệt/từ chối/chuyển tiếp/bình luận — hành động
+   * nào cũng coi như "đã xem"). Dùng để tính chuông thông báo còn thấy "mới"
+   * hay không cho 3 loại vốn không có khái niệm đã đọc (được nhắc tên/đang
+   * theo dõi/đã xử lý xong phần mình) — xem design.md của change
+   * fix-notification-bell-stale-gaps. */
+  viewedAt?: Record<string, string>;
   /** Trạng thái quyết định — dùng nguyên với lib/approval-logic.ts, không đổi shape. */
   approvers: ApproverState[];
   followers: TaggedUser[];
@@ -454,7 +646,8 @@ export type NotificationCategory =
   | "own_decided"
   | "mentioned"
   | "following"
-  | "manager_bypassed";
+  | "manager_bypassed"
+  | "approver_followup";
 
 export type NotificationSettings = Record<NotificationCategory, boolean>;
 

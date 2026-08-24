@@ -134,14 +134,26 @@ export function mergeFollowers(
   conditional: { condition: ConditionGroup; users: TaggedUser[] }[],
   values: Record<string, unknown>,
   fields: ProposalField[],
+  /** `permissionRules.autoAddSubtaskAssigneesAsFollowers` — app này không có
+   * khái niệm "công việc con" riêng, diễn giải gần nhất là field kiểu
+   * "user_select" (người được CHỌN/GIAO trong đề xuất) — xem design.md của
+   * change add-base-vn-approver-and-approval-form-parity, tasks.md 5.5. */
+  autoAddUserSelectAssignees = false,
 ): TaggedUser[] {
   const fromConditions = conditional
     .filter((item) => evaluateConditionGroup(item.condition, values, fields))
     .flatMap((item) => item.users);
 
+  const fromUserSelectFields = autoAddUserSelectAssignees
+    ? fields
+        .filter((f) => f.dataType === "user_select")
+        .map((f) => values[f.id] as TaggedUser | null | undefined)
+        .filter((u): u is TaggedUser => Boolean(u))
+    : [];
+
   const seen = new Set<string>();
   const result: TaggedUser[] = [];
-  for (const user of [...fixed, ...submitted, ...fromConditions]) {
+  for (const user of [...fixed, ...submitted, ...fromConditions, ...fromUserSelectFields]) {
     if (seen.has(user.id)) continue;
     seen.add(user.id);
     result.push(user);

@@ -25,10 +25,15 @@ const CATEGORY_LABELS: Record<NotificationCategory, { title: string; description
     title: "Quản lý trực tiếp bị chọn người khác duyệt",
     description: "Bạn là quản lý trực tiếp của người gửi, nhưng họ chọn người khác duyệt thay.",
   },
+  approver_followup: {
+    title: "Cập nhật sau khi tôi đã xử lý",
+    description: "Đề xuất bạn đã duyệt/từ chối có bình luận mới, hoặc bị từ chối ở bước sau bạn.",
+  },
 };
 
 const ORDER: NotificationCategory[] = [
   "approver_pending",
+  "approver_followup",
   "own_decided",
   "mentioned",
   "following",

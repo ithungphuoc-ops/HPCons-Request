@@ -464,4 +464,21 @@ describe("mergeFollowers", () => {
     );
     expect(result.map((u) => u.id)).toEqual(["a", "b"]);
   });
+
+  const nguoiNhan = { id: "f5", name: "Người nhận", code: "nguoi_nhan", dataType: "user_select" as const, required: false, order: 4 };
+
+  it("autoAddUserSelectAssignees=true — tự thêm người được chọn ở field user_select", () => {
+    const result = mergeFollowers([userA], [userA], [], { f5: userC }, [...fields, nguoiNhan], true);
+    expect(result.map((u) => u.id)).toEqual(["a", "c"]);
+  });
+
+  it("autoAddUserSelectAssignees=false/thiếu — KHÔNG tự thêm (giữ hành vi cũ)", () => {
+    const result = mergeFollowers([userA], [userA], [], { f5: userC }, [...fields, nguoiNhan]);
+    expect(result.map((u) => u.id)).toEqual(["a"]);
+  });
+
+  it("autoAddUserSelectAssignees=true nhưng field user_select chưa có giá trị — không lỗi, không thêm gì", () => {
+    const result = mergeFollowers([userA], [userA], [], {}, [...fields, nguoiNhan], true);
+    expect(result.map((u) => u.id)).toEqual(["a"]);
+  });
 });
