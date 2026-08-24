@@ -93,7 +93,20 @@ export async function POST(
 
     const body = (await request.json()) as AddAttachmentBody;
     const { attachment } = body;
-    if (!attachment?.path || !attachment.name) {
+    // 2 góp ý Minor của CodeRabbit (lần review thứ 2, 24/08/2026): (1) chỉ
+    // kiểm tra "truthy" không chặn được path/name kiểu KHÔNG PHẢI string
+    // (vd number/boolean) — phải ép rõ typeof "string" trước khi gọi
+    // isOwnUploadPath() (nếu không, .startsWith() trên non-string sẽ throw,
+    // trả lỗi 500 thay vì 400 gọn gàng); (2) `/api/uploads` KHÔNG chặn file
+    // 0 byte, nên chỗ này không được chặn chặt hơn (`size <= 0`) — sẽ tạo ra
+    // tình huống tải lên thành công nhưng không đính kèm được — đổi thành
+    // `size < 0` để 2 route thống nhất cùng 1 quy tắc.
+    if (
+      typeof attachment?.path !== "string" ||
+      !attachment.path ||
+      typeof attachment.name !== "string" ||
+      !attachment.name
+    ) {
       return NextResponse.json({ error: "Thiếu tệp cần thêm." }, { status: 400 });
     }
     if (!isOwnUploadPath(attachment.path, session.uid)) {
@@ -102,7 +115,7 @@ export async function POST(
         { status: 400 },
       );
     }
-    if (typeof attachment.size !== "number" || attachment.size <= 0 || attachment.size > MAX_UPLOAD_FILE_SIZE) {
+    if (typeof attachment.size !== "number" || attachment.size < 0 || attachment.size > MAX_UPLOAD_FILE_SIZE) {
       return NextResponse.json({ error: "Kích thước tệp không hợp lệ." }, { status: 400 });
     }
 
