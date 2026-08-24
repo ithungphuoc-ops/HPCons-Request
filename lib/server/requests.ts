@@ -158,6 +158,15 @@ export function resolveInitialSlaHours(group: ProposalGroup): number | null {
  * Trả về `undefined` nghĩa là "giữ nguyên deadlineAt hiện có" (không thuộc
  * phạm vi tính lại) — phân biệt với `null` (có tính, nhưng nhóm không đặt
  * SLA nào) để nơi gọi biết có nên ghi đè field hay không.
+ *
+ * AN TOÀN VỚI DỮ LIỆU CŨ BỊ LỆCH (CodeRabbit phát hiện lúc review PR
+ * 23/08/2026): nếu 1 đề xuất từng bị "Chuyển tiếp" TRƯỚC KHI có bản vá lỗi
+ * lệch mảng (xem `app/api/requests/[id]/decision/route.ts`), `approverStepMeta`
+ * đã lưu có thể NGẮN HƠN/LỆCH THỨ TỰ so với `approvers` — nếu cứ tin thẳng
+ * theo index sẽ tính hạn xử lý theo SLA của SAI bước. Vì vậy CHỈ tin
+ * `approverStepMeta` khi độ dài KHỚP ĐÚNG với `approvers` — lệch độ dài thì
+ * coi như "không có", rơi về `groupSlaHours` an toàn (giống hành vi khi
+ * nhóm chưa từng cấu hình SLA riêng bước nào).
  */
 export function recomputeDeadlineForNextStep(params: {
   approvalFlow: ApprovalFlowType;
@@ -174,7 +183,8 @@ export function recomputeDeadlineForNextStep(params: {
   if (!approverSlaEnabled || approvalFlow !== "sequential" || status !== "pending") return undefined;
   const nextIndex = approvers.findIndex((a) => a.decision === "pending");
   if (nextIndex === -1) return undefined;
-  const nextStepSla = approverStepMeta?.[nextIndex]?.slaHours;
+  const alignedMeta = approverStepMeta?.length === approvers.length ? approverStepMeta : undefined;
+  const nextStepSla = alignedMeta?.[nextIndex]?.slaHours;
   const slaHours = typeof nextStepSla === "number" ? nextStepSla : groupSlaHours;
   return computeDeadline(slaHours, now, slaByWorkCalendar ?? false);
 }

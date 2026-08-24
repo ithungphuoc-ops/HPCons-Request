@@ -94,9 +94,16 @@ export async function POST(
     // `current.approverStepMeta` cùng thứ tự với `current.approvers`.
     let matchedApprovalTimeField: ApprovalTimeField | undefined;
     const decisionAction = DECISION_TO_APPROVAL_TIME_ACTION[body.decision];
+    // Chỉ tin `approverStepMeta` theo index khi độ dài KHỚP ĐÚNG `approvers` —
+    // đề xuất từng bị "Chuyển tiếp" TRƯỚC bản vá lỗi lệch mảng (xem
+    // recomputeDeadlineForNextStep() ở lib/server/requests.ts) có thể có mảng
+    // ngắn hơn/lệch thứ tự, tra theo index sẽ ra field/bước SAI. Lệch độ dài →
+    // coi như không có meta, an toàn hơn là đoán nhầm bước.
+    const alignedStepMeta =
+      current.approverStepMeta?.length === current.approvers.length ? current.approverStepMeta : undefined;
     if (decisionAction) {
       const myIndex = current.approvers.findIndex((a) => a.id === session.uid);
-      const myStepCode = myIndex >= 0 ? current.approverStepMeta?.[myIndex]?.code : undefined;
+      const myStepCode = myIndex >= 0 ? alignedStepMeta?.[myIndex]?.code : undefined;
       if (myStepCode) {
         matchedApprovalTimeField = approvalTimeFields.find(
           (f) => f.approverStepCode === myStepCode && f.decisionAction === decisionAction,

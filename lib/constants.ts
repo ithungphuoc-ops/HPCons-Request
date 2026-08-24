@@ -17,3 +17,10 @@ export const HPCORE_MEMBER_GROUPS_API = "https://account.hpcore.vn/api/member-gr
 // Tên công ty đầy đủ — dùng cho thẻ ${company} trong mẫu in và các nơi hiển
 // thị letterhead. Trước đây hardcode rời rạc ở nhiều trang, giờ gom về 1 nơi.
 export const COMPANY_NAME = "CÔNG TY CỔ PHẦN XÂY DỰNG CÔNG NGHIỆP HƯNG PHƯỚC";
+
+// Giới hạn kích thước 1 tệp tải lên qua /api/uploads — dùng chung với route
+// thêm tài liệu đính kèm cấp đề xuất (validate lại size khi lưu, không tin
+// nguyên giá trị client gửi) để 2 nơi không lệch số. KHÔNG đặt hằng số này
+// ngay trong `app/api/uploads/route.ts` — Next.js chặn route.ts export thêm
+// bất cứ gì ngoài GET/POST/config đã biết (build type-check báo lỗi "Diff").
+export const MAX_UPLOAD_FILE_SIZE = 10 * 1024 * 1024; // 10MB

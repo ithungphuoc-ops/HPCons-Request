@@ -2,8 +2,10 @@ import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebase/admin";
 import { createSignedReadUrl } from "@/lib/r2";
 import { apiErrorResponse } from "@/lib/http";
+import { MAX_UPLOAD_FILE_SIZE } from "@/lib/constants";
 import { canManageGroupsAtAppScope } from "@/lib/permissions";
 import { canView, loadRequest } from "@/lib/server/requests";
+import { isOwnUploadPath } from "@/lib/server/uploads";
 import { requireSession } from "@/lib/session";
 import type { RequestAttachment, RequestInstance } from "@/lib/types";
 
@@ -90,11 +92,21 @@ export async function POST(
     }
 
     const body = (await request.json()) as AddAttachmentBody;
-    if (!body.attachment?.path) {
+    const { attachment } = body;
+    if (!attachment?.path || !attachment.name) {
       return NextResponse.json({ error: "Thiếu tệp cần thêm." }, { status: 400 });
     }
+    if (!isOwnUploadPath(attachment.path, session.uid)) {
+      return NextResponse.json(
+        { error: "Tệp không hợp lệ — chỉ chấp nhận tệp bạn vừa tải lên." },
+        { status: 400 },
+      );
+    }
+    if (typeof attachment.size !== "number" || attachment.size <= 0 || attachment.size > MAX_UPLOAD_FILE_SIZE) {
+      return NextResponse.json({ error: "Kích thước tệp không hợp lệ." }, { status: 400 });
+    }
 
-    const attachments = [...(found.attachments ?? []), body.attachment];
+    const attachments = [...(found.attachments ?? []), attachment];
     await adminDb.collection("requests").doc(id).update({ attachments });
     return NextResponse.json({ attachments });
   } catch (error) {
