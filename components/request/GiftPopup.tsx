@@ -129,6 +129,13 @@ export default function GiftPopup({ onClose }: { onClose: () => void }) {
             title="Quà của tôi — nhiệm vụ đổi điểm"
             className="flex-1 w-full border-0"
             loading="lazy"
+            // Giới hạn tối thiểu quyền của iframe (CodeRabbit khuyến nghị 25/08/2026, PR #5):
+            // allow-same-origin để đọc được cookie phiên .hpcore.vn (bắt buộc, không thì mất
+            // đăng nhập SSO), allow-scripts để chạy app React, allow-popups (+
+            // allow-popups-to-escape-sandbox) vì bấm nhiệm vụ mở tab mới, allow-forms cho màn
+            // đăng nhập lúc chưa có phiên. CỐ Ý bỏ allow-top-navigation — không cho iframe điều
+            // hướng cả trang cha.
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
           />
 
           {/* Thanh điều hướng đáy — 3 mục CÓ CHỨC NĂNG THẬT, dùng chung cho cả
