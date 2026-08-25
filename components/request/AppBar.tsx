@@ -3,8 +3,9 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { BarChart3, BellRing, Grid3x3, HelpCircle, Home, Menu, Moon, Search, Settings, Sun } from "lucide-react";
+import { BarChart3, BellRing, Gift, Grid3x3, HelpCircle, Home, Menu, Moon, Search, Settings, Sun } from "lucide-react";
 import AppLauncher from "@/components/request/AppLauncher";
+import GiftPopup from "@/components/request/GiftPopup";
 import NotificationBell from "@/components/request/NotificationBell";
 import { useRequestContext } from "@/context/RequestContext";
 import { useCurrentSession } from "@/lib/useCurrentSession";
@@ -19,6 +20,7 @@ export default function AppBar() {
   const { isAdmin } = useCurrentSession();
   const { mobileNavOpen, setMobileNavOpen } = useRequestContext();
   const [launcherOpen, setLauncherOpen] = useState(false);
+  const [giftPopupOpen, setGiftPopupOpen] = useState(false);
   const [theme, setTheme] = useState<Theme>("light");
 
   useEffect(() => {
@@ -78,6 +80,18 @@ export default function AppBar() {
         >
           <BellRing size={20} strokeWidth={1.75} />
         </Link>
+
+        {/* Popup khung điện thoại nhúng iframe app khác (quacuatoi.hpcore.vn —
+            hệ thống nhiệm vụ đổi điểm UrBox). Xem components/request/GiftPopup.tsx. */}
+        <button
+          type="button"
+          onClick={() => setGiftPopupOpen(true)}
+          title="Quà của tôi (nhiệm vụ đổi điểm)"
+          aria-label="Quà của tôi (nhiệm vụ đổi điểm)"
+          className="flex h-12 w-12 items-center justify-center rounded-xl text-[var(--color-appbar-text)] hover:bg-white/10 hover:text-[var(--color-appbar-text-active)]"
+        >
+          <Gift size={22} strokeWidth={1.75} />
+        </button>
 
         {iconItems.slice(1).map((item) => (
           <Link
@@ -143,6 +157,7 @@ export default function AppBar() {
       </Link>
 
       {launcherOpen && <AppLauncher onClose={() => setLauncherOpen(false)} />}
+      {giftPopupOpen && <GiftPopup onClose={() => setGiftPopupOpen(false)} />}
     </nav>
   );
 }
