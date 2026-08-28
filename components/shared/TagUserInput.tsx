@@ -25,6 +25,12 @@ interface TagUserInputProps {
    * tiếp không xử lý), nhưng nút "Chọn..." chỉ gợi ý 1 danh sách hẹp hơn (vd
    * quản lý nhóm). Không truyền thì browse-all dùng lại directoryUrl như cũ. */
   browseAllDirectoryUrl?: string;
+  /** Nếu truyền, BỎ QUA `directoryUrl`/`browseAllDirectoryUrl` hoàn toàn —
+   * tìm/browse-all chỉ trong đúng mảng này (không gọi API). Dùng cho bước
+   * duyệt "Linh động" có giới hạn danh sách được chọn (Admin đã liệt kê sẵn ở
+   * `ApproverStepDef.flexible_approver.users`) — người gửi đề xuất KHÔNG được
+   * tag ai ngoài danh sách này, xem submit/page.tsx. */
+  candidates?: TaggedUser[];
 }
 
 export default function TagUserInput({
@@ -34,6 +40,7 @@ export default function TagUserInput({
   directoryUrl = "/api/directory",
   browseAllLabel,
   browseAllDirectoryUrl,
+  candidates,
 }: TagUserInputProps) {
   const [query, setQuery] = useState("");
   const [directory, setDirectory] = useState<TaggedUser[]>([]);
@@ -43,6 +50,7 @@ export default function TagUserInput({
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (candidates) return; // danh sách tĩnh — không gọi API danh bạ.
     let cancelled = false;
     fetch(directoryUrl)
       .then((res) => (res.ok ? res.json() : { directory: [] }))
@@ -55,10 +63,10 @@ export default function TagUserInput({
     return () => {
       cancelled = true;
     };
-  }, [directoryUrl]);
+  }, [directoryUrl, candidates]);
 
   useEffect(() => {
-    if (!browseAllDirectoryUrl) return;
+    if (candidates || !browseAllDirectoryUrl) return;
     let cancelled = false;
     fetch(browseAllDirectoryUrl)
       .then((res) => (res.ok ? res.json() : { directory: [] }))
@@ -71,7 +79,11 @@ export default function TagUserInput({
     return () => {
       cancelled = true;
     };
-  }, [browseAllDirectoryUrl]);
+  }, [browseAllDirectoryUrl, candidates]);
+
+  // Nguồn tìm/browse-all thật sự dùng — danh sách tĩnh (`candidates`) nếu
+  // được truyền, ngược lại danh bạ tải qua API như trước.
+  const effectiveDirectory = candidates ?? directory;
 
   useEffect(() => {
     const term = normalizeSearch(query.replace("@", "").trim());
@@ -82,7 +94,7 @@ export default function TagUserInput({
 
     const timer = setTimeout(() => {
       const selectedIds = new Set(value.map((u) => u.id));
-      const matches = directory.filter(
+      const matches = effectiveDirectory.filter(
         (u) =>
           !selectedIds.has(u.id) &&
           (normalizeSearch(u.name).includes(term) ||
@@ -92,7 +104,7 @@ export default function TagUserInput({
     }, 250);
 
     return () => clearTimeout(timer);
-  }, [query, value, directory]);
+  }, [query, value, effectiveDirectory]);
 
   useEffect(() => {
     const onClickOutside = (event: MouseEvent) => {
@@ -112,7 +124,7 @@ export default function TagUserInput({
 
   const browseAll = () => {
     const selectedIds = new Set(value.map((u) => u.id));
-    const source = browseAllDirectoryUrl ? browseDirectory : directory;
+    const source = candidates ? effectiveDirectory : browseAllDirectoryUrl ? browseDirectory : directory;
     setResults(source.filter((u) => !selectedIds.has(u.id)));
     setOpen(true);
   };

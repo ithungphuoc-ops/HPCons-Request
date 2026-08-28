@@ -20,7 +20,15 @@ import type { ApproverStepDef, ConditionGroup, ConditionRule, ProposalField, Tag
 export type DraftApproverStep =
   | { kind: "fixed"; name?: string; users: TaggedUser[]; code?: string; condition?: ConditionGroup; slaHours?: number }
   | { kind: "submitter_manager"; name?: string; code?: string; condition?: ConditionGroup; slaHours?: number }
-  | { kind: "flexible_approver"; name: string; users: TaggedUser[]; code?: string; condition?: ConditionGroup; slaHours?: number };
+  | {
+      kind: "flexible_approver";
+      name: string;
+      users: TaggedUser[];
+      submitterAssigns?: boolean;
+      code?: string;
+      condition?: ConditionGroup;
+      slaHours?: number;
+    };
 
 export function fromApproverSteps(steps: ApproverStepDef[]): DraftApproverStep[] {
   return steps.map((s) => {
@@ -35,7 +43,15 @@ export function fromApproverSteps(steps: ApproverStepDef[]): DraftApproverStep[]
       };
     }
     if (s.kind === "flexible_approver") {
-      return { kind: "flexible_approver", name: s.name, users: s.users, code: s.code, condition: s.condition, slaHours: s.slaHours };
+      return {
+        kind: "flexible_approver",
+        name: s.name,
+        users: s.users,
+        submitterAssigns: s.submitterAssigns,
+        code: s.code,
+        condition: s.condition,
+        slaHours: s.slaHours,
+      };
     }
     return { kind: "submitter_manager", name: s.name, code: s.code, condition: s.condition, slaHours: s.slaHours };
   });
@@ -52,7 +68,7 @@ export function toApproverSteps(steps: DraftApproverStep[]): ApproverStepDef[] |
     } else if (step.kind === "flexible_approver") {
       const name = step.name.trim();
       if (!name) return null;
-      result.push({ ...step, name });
+      result.push({ ...step, name, submitterAssigns: step.submitterAssigns || undefined });
     } else {
       if (step.users.length === 0) return null;
       // Lưu CẢ user (người đầu tiên — tương thích dữ liệu/code cũ) lẫn users
@@ -123,11 +139,16 @@ const KIND_LABELS: Record<DraftApproverStep["kind"], string> = {
 /**
  * Danh sách bước duyệt của 1 nhóm — mỗi bước là "Cố định" (một/nhiều người cụ
  * thể, giống nhau cho mọi đề xuất), "Quản lý trực tiếp" (tự động tra theo
- * phòng ban của người gửi, khác nhau tuỳ ai gửi), hoặc "Linh động" (vai
- * trò/nhóm duyệt do Admin tự gán tay, CHO PHÉP để trống chưa gán ai — Sếp
- * chốt 22/08/2026, xem design.md của change
- * add-base-vn-approver-and-approval-form-parity). Thứ tự bước quyết định thứ
- * tự duyệt khi Quy trình xử lý = "Lần lượt".
+ * phòng ban của người gửi, khác nhau tuỳ ai gửi), hoặc "Linh động" — có 2 chế
+ * độ (checkbox "Người gửi đề xuất tự chọn"):
+ *   - TẮT (mặc định, hành vi cũ, Sếp chốt 22/08/2026): vai trò/nhóm duyệt do
+ *     Admin tự gán tay ở đây, CHO PHÉP để trống chưa gán ai.
+ *   - BẬT (khớp đúng cơ chế "Linh động" thật của Base.vn, Sếp đối chiếu
+ *     28/08/2026): người GỬI đề xuất tự @tag ai duyệt lúc gửi (vd kỹ sư công
+ *     trình A tự chọn CHT công trình A) — danh sách ở trên đổi ý nghĩa thành
+ *     "giới hạn ai được chọn" (rỗng = không giới hạn).
+ * Xem design.md của change add-base-vn-approver-and-approval-form-parity.
+ * Thứ tự bước quyết định thứ tự duyệt khi Quy trình xử lý = "Lần lượt".
  */
 export default function ApproverStepsEditor({
   value,
@@ -171,6 +192,7 @@ export default function ApproverStepsEditor({
             kind,
             name: step.name ?? "",
             users: step.kind === "flexible_approver" || step.kind === "fixed" ? step.users : [],
+            submitterAssigns: step.kind === "flexible_approver" ? step.submitterAssigns : undefined,
             code: step.code,
             condition: step.condition,
             slaHours: step.slaHours,
@@ -206,6 +228,14 @@ export default function ApproverStepsEditor({
 
   const setCondition = (index: number, condition: ConditionGroup | undefined) => {
     onChange(value.map((step, i) => (i === index ? { ...step, condition } : step)));
+  };
+
+  const setSubmitterAssigns = (index: number, submitterAssigns: boolean) => {
+    onChange(
+      value.map((step, i) =>
+        i === index && step.kind === "flexible_approver" ? { ...step, submitterAssigns } : step,
+      ),
+    );
   };
 
   return (
@@ -273,14 +303,34 @@ export default function ApproverStepsEditor({
                 </p>
               )}
               {step.kind === "flexible_approver" && (
-                <div className="flex flex-col gap-1">
+                <div className="flex flex-col gap-1.5">
+                  <label className="flex items-center gap-1.5 text-[12px] text-gray-600">
+                    <input
+                      type="checkbox"
+                      checked={!!step.submitterAssigns}
+                      onChange={(e) => setSubmitterAssigns(index, e.target.checked)}
+                    />
+                    Người gửi đề xuất tự chọn (không dùng danh sách dưới làm người duyệt cố định)
+                  </label>
                   <TagUserInput
                     value={step.users}
                     onChange={(users) => setUsers(index, users)}
-                    placeholder="Gõ @ để gán người duyệt (có thể để trống, gán sau)"
+                    placeholder={
+                      step.submitterAssigns
+                        ? "Gõ @ để giới hạn ai được người gửi chọn (để trống = không giới hạn)"
+                        : "Gõ @ để gán người duyệt (có thể để trống, gán sau)"
+                    }
                   />
-                  {step.users.length === 0 && (
-                    <p className="text-[11px] font-medium text-amber-600">Chưa cài đặt danh sách duyệt</p>
+                  {step.submitterAssigns ? (
+                    <p className="text-[11px] text-gray-500">
+                      {step.users.length === 0
+                        ? "Không giới hạn — người gửi đề xuất được tag bất kỳ ai làm người duyệt."
+                        : "Người gửi đề xuất chỉ được chọn 1 trong số những người ở trên."}
+                    </p>
+                  ) : (
+                    step.users.length === 0 && (
+                      <p className="text-[11px] font-medium text-amber-600">Chưa cài đặt danh sách duyệt</p>
+                    )
                   )}
                 </div>
               )}
