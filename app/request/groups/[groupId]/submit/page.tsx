@@ -605,7 +605,7 @@ export default function SubmitRequestPage() {
                     {isFlexibleSubmitterAssign && (
                       <p className="text-[12px] text-gray-400">
                         {flexibleCandidates
-                          ? "Chỉ được chọn 1 trong số người duyệt được phép của bước này"
+                          ? "Chỉ được chọn người có trong danh sách được phép của bước này"
                           : "Chọn người duyệt phù hợp cho bước này (vd đúng công trình/bộ phận của bạn)"}
                       </p>
                     )}

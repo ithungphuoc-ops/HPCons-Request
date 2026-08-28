@@ -408,7 +408,12 @@ export async function resolveApproverStepsDetailed(
         // ở đây chỉ còn ý nghĩa "danh sách được PHÉP chọn" (rỗng = không giới
         // hạn — xem `ApproverStepDef`).
         const overrideRaw = managerOverrides[i];
-        const overrideIds = Array.isArray(overrideRaw) ? overrideRaw : overrideRaw ? [overrideRaw] : [];
+        // Loại uid trùng — client không đáng tin (dù UI hiện tại đã tự tránh
+        // chọn trùng qua TagUserInput, request thẳng vào API vẫn có thể gửi
+        // trùng), tránh 1 người bị đẩy thành 2 dòng duyệt cho cùng 1 bước.
+        const overrideIds = [
+          ...new Set(Array.isArray(overrideRaw) ? overrideRaw : overrideRaw ? [overrideRaw] : []),
+        ];
         const stepLabel = approverStepDisplayName(step, i);
         if (overrideIds.length === 0) {
           results.push({

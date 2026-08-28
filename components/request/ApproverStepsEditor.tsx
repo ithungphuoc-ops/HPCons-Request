@@ -325,7 +325,7 @@ export default function ApproverStepsEditor({
                     <p className="text-[11px] text-gray-500">
                       {step.users.length === 0
                         ? "Không giới hạn — người gửi đề xuất được tag bất kỳ ai làm người duyệt."
-                        : "Người gửi đề xuất chỉ được chọn 1 trong số những người ở trên."}
+                        : "Người gửi đề xuất chỉ được chọn những người có trong danh sách ở trên."}
                     </p>
                   ) : (
                     step.users.length === 0 && (

@@ -115,6 +115,13 @@ describe("resolveApproverStepsDetailed — bước flexible_approver có submitt
     expect(detailed[0].user).toBeNull();
     expect(detailed[0].error).toMatch(/Không tìm thấy người dùng được chọn/);
   });
+
+  it("uid trùng lặp trong lựa chọn của người gửi → chỉ xét 1 lần, không đẩy 2 kết quả cho cùng 1 người", async () => {
+    const steps: ApproverStepDef[] = [flexibleStep("CHT", [], { submitterAssigns: true })];
+    const detailed = await resolveApproverStepsDetailed(steps, "submitter1", {}, [], { 0: [userB.id, userB.id] });
+    // Không phải 2 (dù overrideIds gửi lên có 2 phần tử trùng nhau).
+    expect(detailed).toHaveLength(1);
+  });
 });
 
 describe("resolveApproverSteps — chặn gửi khi không còn ai duyệt", () => {
