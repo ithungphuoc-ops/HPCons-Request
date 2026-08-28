@@ -87,6 +87,43 @@ describe("resolveApproverStepsDetailed — bước flexible_approver", () => {
   });
 });
 
+describe("resolveApproverStepsDetailed — bước flexible_approver có submitterAssigns", () => {
+  it("chưa chọn ai → LỖI bắt buộc chọn (khác hẳn bước rỗng thường bị bỏ qua)", async () => {
+    const steps: ApproverStepDef[] = [flexibleStep("CHT", [], { submitterAssigns: true })];
+    const detailed = await resolveApproverStepsDetailed(steps, "submitter1");
+    expect(detailed).toHaveLength(1);
+    expect(detailed[0].user).toBeNull();
+    expect(detailed[0].error).toMatch(/Vui lòng chọn người duyệt/);
+  });
+
+  it("có giới hạn danh sách — chọn người NGOÀI danh sách → lỗi, không lọt qua", async () => {
+    const steps: ApproverStepDef[] = [flexibleStep("CHT", [userA], { submitterAssigns: true })];
+    const detailed = await resolveApproverStepsDetailed(steps, "submitter1", {}, [], { 0: [userB.id] });
+    expect(detailed).toHaveLength(1);
+    expect(detailed[0].user).toBeNull();
+    expect(detailed[0].error).toMatch(/không nằm trong danh sách được phép/);
+  });
+
+  it("không giới hạn danh sách (users rỗng) — người gửi chọn ai cũng được xét (không bị chặn bởi allowedIds)", async () => {
+    const steps: ApproverStepDef[] = [flexibleStep("CHT", [], { submitterAssigns: true })];
+    // Mock Firestore trong file này luôn trả "không tồn tại" (xem đầu file) —
+    // nên kết quả là lỗi "không tìm thấy", KHÔNG PHẢI lỗi "ngoài danh sách
+    // được phép" — đúng là điều cần xác nhận ở test này: không giới hạn thì
+    // không bị chặn bởi allowedIds, request đi tiếp tới bước tra người dùng.
+    const detailed = await resolveApproverStepsDetailed(steps, "submitter1", {}, [], { 0: [userB.id] });
+    expect(detailed).toHaveLength(1);
+    expect(detailed[0].user).toBeNull();
+    expect(detailed[0].error).toMatch(/Không tìm thấy người dùng được chọn/);
+  });
+
+  it("uid trùng lặp trong lựa chọn của người gửi → chỉ xét 1 lần, không đẩy 2 kết quả cho cùng 1 người", async () => {
+    const steps: ApproverStepDef[] = [flexibleStep("CHT", [], { submitterAssigns: true })];
+    const detailed = await resolveApproverStepsDetailed(steps, "submitter1", {}, [], { 0: [userB.id, userB.id] });
+    // Không phải 2 (dù overrideIds gửi lên có 2 phần tử trùng nhau).
+    expect(detailed).toHaveLength(1);
+  });
+});
+
 describe("resolveApproverSteps — chặn gửi khi không còn ai duyệt", () => {
   it("mọi bước đều là linh động rỗng → throw MissingApproverError", async () => {
     const steps: ApproverStepDef[] = [flexibleStep("QL BP", []), flexibleStep("TP/GĐ", [])];

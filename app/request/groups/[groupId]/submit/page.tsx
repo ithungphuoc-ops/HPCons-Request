@@ -9,6 +9,7 @@ import { deserializeTableRows, toWireTableRows } from "@/lib/table-field";
 import { evaluateConditionGroup } from "@/lib/server/conditions";
 import { resolveComputedValue } from "@/lib/server/computed-fields";
 import { computeManagerFlowNumbers } from "@/lib/manager-flow-numbering";
+import { isSubmitterEditableStep } from "@/lib/approval-logic";
 import {
   classifyDateLeadTime,
   countBusinessDaysBetween,
@@ -363,10 +364,17 @@ export default function SubmitRequestPage() {
     }
 
     // Ô "Quản lý trực tiếp" LUÔN bắt chọn tay (không tự điền sẵn, khớp đúng
-    // hành vi Base.vn thật) — chặn gửi nếu còn bước submitter_manager nào
-    // chưa được chọn.
-    if (approverPreview.steps.some((s) => s.kind === "submitter_manager" && !managerOverrides[s.index])) {
-      setSubmitError("Vui lòng chọn quản lý trực tiếp trước khi gửi đề xuất.");
+    // hành vi Base.vn thật) — chặn gửi nếu còn bước bắt chọn tay nào (gồm cả
+    // "Linh động" có bật `submitterAssigns`, 28/08/2026) chưa được chọn. Tra
+    // `group.approverSteps[s.index]` vì preview trả về từ API không mang theo
+    // field cấu hình `submitterAssigns`, chỉ có `kind`.
+    if (
+      approverPreview.steps.some((s) => {
+        const rawStep = group.approverSteps[s.index];
+        return !!rawStep && isSubmitterEditableStep(rawStep) && !managerOverrides[s.index];
+      })
+    ) {
+      setSubmitError("Vui lòng chọn đủ người duyệt cho các bước cần chọn trước khi gửi đề xuất.");
       return;
     }
 
@@ -539,24 +547,42 @@ export default function SubmitRequestPage() {
               // LUÔN để trống, bắt người gửi tự tag tay mỗi lần, dù server vẫn
               // có auto-resolve theo department.leaderId làm lưới an toàn lúc
               // gửi nếu người dùng bỏ trống (xem lib/server/requests.ts).
-              // "fixed"/"flexible_approver" thì luôn hiện đúng người server trả
-              // về (không có gì để "chọn" — cả 2 đều do Admin gán sẵn ở cấu
-              // hình nhóm, khác nhau CHỈ ở việc flexible_approver được phép
-              // rỗng lúc chưa gán ai).
-              const isEditableKind = step.kind === "submitter_manager";
+              // "flexible_approver" có bật `submitterAssigns` (tra `group.
+              // approverSteps` — preview không mang field cấu hình này) CŨNG
+              // bắt người gửi tự chọn, khớp đúng cơ chế "Linh động" thật của
+              // Base.vn (28/08/2026, Sếp đối chiếu lại — trước đó hiểu nhầm là
+              // Admin gán cố định). "fixed", và "flexible_approver" KHÔNG bật
+              // submitterAssigns, thì luôn hiện đúng người Admin đã gán sẵn ở
+              // cấu hình nhóm (không có gì để "chọn").
+              const rawStep = group.approverSteps[step.index];
+              // `isSubmitterEditableStep()` (lib/approval-logic.ts, dùng chung
+              // với lib/server/requests.ts) khớp cả "submitter_manager" lẫn
+              // "flexible_approver" có bật `submitterAssigns` — dùng lại đúng
+              // 1 định nghĩa, tránh 2 nơi tự lặp điều kiện rồi lệch nhau dần.
+              const isEditableKind = !!rawStep && isSubmitterEditableStep(rawStep);
+              const isFlexibleSubmitterAssign = step.kind === "flexible_approver" && isEditableKind;
+              // Danh sách được PHÉP chọn khi giới hạn — rỗng = không giới hạn
+              // (người gửi tag được bất kỳ ai), xem ApproverStepDef.
+              const flexibleCandidates =
+                isFlexibleSubmitterAssign && rawStep?.kind === "flexible_approver" && rawStep.users.length > 0
+                  ? rawStep.users
+                  : undefined;
               const displayUser = isEditableKind ? managerOverrides[step.index] : step.user;
               const editing = isEditableKind && (editingStepIndex === step.index || !displayUser);
-              // "fixed"/"flexible_approver": ưu tiên TÊN BƯỚC do Admin đặt
-              // (`step.name`, vd "QL BP") — khớp cách Base.vn thật hiển thị
-              // tên vai trò thay vì tên người; không có thì rơi về chức danh/tên
-              // người được gán (tra qua users/{uid}.title lúc gửi, xem
-              // withTitle() ở lib/server/requests.ts).
+              // "fixed"/"flexible_approver" (chế độ Admin gán sẵn): ưu tiên TÊN
+              // BƯỚC do Admin đặt (`step.name`, vd "QL BP") — khớp cách Base.vn
+              // thật hiển thị tên vai trò thay vì tên người; không có thì rơi về
+              // chức danh/tên người được gán (tra qua users/{uid}.title lúc
+              // gửi, xem withTitle() ở lib/server/requests.ts).
               const managerFlowNumber = managerFlowNumberByStepIndex.get(step.index);
-              const rowLabel = isEditableKind
-                ? managerFlowNumber
-                  ? `Luồng duyệt ${managerFlowNumber}`
-                  : "Quản lý trực tiếp" // lưới an toàn — không nên xảy ra, nhưng tránh nhãn rỗng nếu có
-                : (step.name ?? displayUser?.title ?? displayUser?.name ?? "Người duyệt");
+              const rowLabel =
+                step.kind === "submitter_manager"
+                  ? managerFlowNumber
+                    ? `Luồng duyệt ${managerFlowNumber}`
+                    : "Quản lý trực tiếp" // lưới an toàn — không nên xảy ra, nhưng tránh nhãn rỗng nếu có
+                  : isFlexibleSubmitterAssign
+                    ? (step.name ?? "Người duyệt")
+                    : (step.name ?? displayUser?.title ?? displayUser?.name ?? "Người duyệt");
 
               return (
                 // key gộp cả id người: bước "fixed"/"flexible_approver" nhiều
@@ -569,11 +595,18 @@ export default function SubmitRequestPage() {
                   <div className="shrink-0 sm:w-[220px]">
                     <label className="pt-1.5 text-[13px] font-semibold text-gray-700 block">
                       {rowLabel}
-                      {step.kind === "submitter_manager" && " *"}
+                      {isEditableKind && " *"}
                     </label>
                     {step.kind === "submitter_manager" && (
                       <p className="text-[12px] text-gray-400">
                         Bạn phải thông báo cho người quản lý trực tiếp của mình về đề xuất này
+                      </p>
+                    )}
+                    {isFlexibleSubmitterAssign && (
+                      <p className="text-[12px] text-gray-400">
+                        {flexibleCandidates
+                          ? "Chỉ được chọn người có trong danh sách được phép của bước này"
+                          : "Chọn người duyệt phù hợp cho bước này (vd đúng công trình/bộ phận của bạn)"}
                       </p>
                     )}
                   </div>
@@ -603,10 +636,21 @@ export default function SubmitRequestPage() {
                             setManagerOverrides((prev) => ({ ...prev, [step.index]: users[0] }));
                             setEditingStepIndex(null);
                           }}
-                          placeholder="Sử dụng @ để tag quản lý trực tiếp"
+                          placeholder={
+                            isFlexibleSubmitterAssign
+                              ? `Gõ @ để chọn người duyệt cho "${rowLabel}"`
+                              : "Sử dụng @ để tag quản lý trực tiếp"
+                          }
                           directoryUrl="/api/directory"
-                          browseAllLabel="Chọn quản lý trực tiếp"
-                          browseAllDirectoryUrl="/api/directory/managers"
+                          browseAllLabel={
+                            isFlexibleSubmitterAssign
+                              ? flexibleCandidates
+                                ? "Xem danh sách được chọn"
+                                : undefined
+                              : "Chọn quản lý trực tiếp"
+                          }
+                          browseAllDirectoryUrl={isFlexibleSubmitterAssign ? undefined : "/api/directory/managers"}
+                          candidates={flexibleCandidates}
                         />
                         {managerOverrides[step.index] && (
                           <button
@@ -638,13 +682,14 @@ export default function SubmitRequestPage() {
                           </button>
                         </div>
                         {/* Người duyệt THÊM cùng hàng — @ được nhiều người, tất
-                            cả (quản lý + người thêm) đều phải duyệt mới qua. */}
+                            cả (người đã chọn + người thêm) đều phải duyệt mới qua. */}
                         <TagUserInput
                           value={extraApprovers[step.index] ?? []}
                           onChange={(users) =>
                             setExtraApprovers((prev) => ({ ...prev, [step.index]: users }))
                           }
                           placeholder="Gõ @ để thêm người cùng duyệt (tất cả phải duyệt)"
+                          candidates={flexibleCandidates}
                         />
                       </div>
                     )}

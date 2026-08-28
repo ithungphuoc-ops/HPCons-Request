@@ -1,5 +1,11 @@
 import "server-only";
-import { assertNeverApproverKind, fixedStepUsers, type ApproverState } from "@/lib/approval-logic";
+import {
+  approverStepDisplayName,
+  assertNeverApproverKind,
+  fixedStepUsers,
+  isSubmitterEditableStep,
+  type ApproverState,
+} from "@/lib/approval-logic";
 import { addBusinessHours } from "@/lib/business-hours";
 import {
   classifyDateLeadTime,
@@ -349,9 +355,14 @@ export interface ResolvedApproverStep {
  * Phân giải danh sách bước duyệt của nhóm thành CHI TIẾT từng bước — "fixed"
  * giữ nguyên, "submitter_manager" ưu tiên `managerOverrides[index]` (nếu hợp
  * lệ, xem resolveManagerOverride), rồi mới auto-resolve theo phòng ban người
- * gửi. KHÔNG throw khi 1 bước lỗi — set `error` ở đúng phần tử đó, để nơi gọi
- * (preview UI) hiện được lỗi đúng vị trí thay vì lỗi chung cho cả request.
- * Bước có `condition` không thoả mãn bị lọc bỏ hoàn toàn khỏi kết quả trả về.
+ * gửi. "flexible_approver" có `submitterAssigns` cũng đọc lựa chọn của người
+ * gửi qua `managerOverrides[index]` (tên tham số giữ nguyên dù giờ dùng chung
+ * cho 2 kind — đổi tên sẽ động tới toàn bộ chuỗi gọi API/submit page không
+ * cần thiết), bắt buộc phải có lựa chọn (khác "submitter_manager" luôn có lưới
+ * an toàn tự tra phòng ban). KHÔNG throw khi 1 bước lỗi — set `error` ở đúng
+ * phần tử đó, để nơi gọi (preview UI) hiện được lỗi đúng vị trí thay vì lỗi
+ * chung cho cả request. Bước có `condition` không thoả mãn bị lọc bỏ hoàn
+ * toàn khỏi kết quả trả về.
  *
  * `index` gán cho từng bước = vị trí trong mảng `steps` GỐC (chưa lọc điều
  * kiện), KHÔNG PHẢI vị trí trong `applicableSteps` sau lọc — cố tình, vì
@@ -389,6 +400,56 @@ export async function resolveApproverStepsDetailed(
     }
 
     if (step.kind === "flexible_approver") {
+      if (isSubmitterEditableStep(step)) {
+        // Người GỬI ĐỀ XUẤT tự chọn ai duyệt (đúng ý nghĩa "Linh động" thật
+        // của Base.vn, 28/08/2026) — đọc lựa chọn từ `managerOverrides` (tham
+        // số dùng chung cho mọi bước để client tự chọn, xem doc phía trên hàm
+        // này), KHÔNG đọc `step.users` như người duyệt thật nữa. `step.users`
+        // ở đây chỉ còn ý nghĩa "danh sách được PHÉP chọn" (rỗng = không giới
+        // hạn — xem `ApproverStepDef`).
+        const overrideRaw = managerOverrides[i];
+        // Loại uid trùng — client không đáng tin (dù UI hiện tại đã tự tránh
+        // chọn trùng qua TagUserInput, request thẳng vào API vẫn có thể gửi
+        // trùng), tránh 1 người bị đẩy thành 2 dòng duyệt cho cùng 1 bước.
+        const overrideIds = [
+          ...new Set(Array.isArray(overrideRaw) ? overrideRaw : overrideRaw ? [overrideRaw] : []),
+        ];
+        const stepLabel = approverStepDisplayName(step, i);
+        if (overrideIds.length === 0) {
+          results.push({
+            index: i,
+            kind: "flexible_approver",
+            user: null,
+            name: step.name,
+            error: `Vui lòng chọn người duyệt cho bước "${stepLabel}" trước khi gửi đề xuất.`,
+          });
+          continue;
+        }
+        const allowedIds = step.users.length > 0 ? new Set(step.users.map((u) => u.id)) : null;
+        // Song song hoá giống hệt nhánh "submitter_manager" bên dưới (đều
+        // resolve nhiều uid độc lập từ cùng 1 lượt gửi) — tránh N round-trip
+        // Firestore tuần tự khi có nhiều người cùng duyệt 1 bước.
+        const resolved = await Promise.all(
+          overrideIds.map(async (uid) => {
+            if (allowedIds && !allowedIds.has(uid)) {
+              return {
+                user: null as TaggedUser | null,
+                error: `Người được chọn không nằm trong danh sách được phép duyệt bước "${stepLabel}".`,
+              };
+            }
+            const user = await resolveManagerOverride(uid);
+            if (!user) {
+              return { user: null as TaggedUser | null, error: `Không tìm thấy người dùng được chọn cho bước "${stepLabel}".` };
+            }
+            return { user: await withTitle(user), error: undefined };
+          }),
+        );
+        for (const r of resolved) {
+          results.push({ index: i, kind: "flexible_approver", user: r.user, name: step.name, error: r.error });
+        }
+        continue;
+      }
+
       // Bước "linh động" RỖNG (chưa gán ai) → BỎ QUA hoàn toàn khỏi kết quả,
       // KHÔNG đẩy phần tử lỗi/null nào — khác hẳn "fixed"/"submitter_manager"
       // (luôn có 1 kết quả, kể cả lỗi). Đây là hành vi cố ý (Sếp chốt), xem

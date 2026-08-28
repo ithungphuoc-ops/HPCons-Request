@@ -128,6 +128,19 @@ export function approverStepDisplayName(step: ApproverStepDef, index: number): s
   return step.name?.trim() || `Bước ${index + 1}`;
 }
 
+/**
+ * true nếu bước này bắt NGƯỜI GỬI ĐỀ XUẤT tự chọn ai duyệt lúc gửi (thay vì
+ * hiện sẵn người Admin đã gán) — gồm "submitter_manager" (luôn vậy, khớp
+ * Base.vn thật) và "flexible_approver" có bật `submitterAssigns` (28/08/2026,
+ * đúng ý nghĩa "Linh động" thật của Base.vn: người gửi tự tag, Admin chỉ tuỳ
+ * chọn giới hạn danh sách được chọn qua `users`). Dùng chung ở
+ * `submit/page.tsx` (hiện ô @tag) và `lib/server/requests.ts`
+ * (`resolveApproverStepsDetailed`, đọc override thay vì `users` tĩnh).
+ */
+export function isSubmitterEditableStep(step: ApproverStepDef): boolean {
+  return step.kind === "submitter_manager" || (step.kind === "flexible_approver" && !!step.submitterAssigns);
+}
+
 /** Quy đổi quyết định thật (5 giá trị `decision` của API) sang
  * `ApprovalTimeField.decisionAction` — "returned" không có field tương ứng
  * (ngoài phạm vi "Mẫu form phê duyệt", xem design.md của change

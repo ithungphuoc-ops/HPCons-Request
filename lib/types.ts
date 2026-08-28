@@ -266,10 +266,20 @@ export type ApproverStepDef =
       /** BẮT BUỘC (khác `fixed`/`submitter_manager` optional) — bước này tồn
        * tại VÌ có tên, không có `user` nào để định danh thay thế. */
       name: string;
-      /** Danh sách người duyệt do Admin tự gán tay — CHO PHÉP RỖNG ("Chưa cài
-       * đặt danh sách duyệt"). Bước rỗng bị BỎ QUA lúc gửi đề xuất (không chặn
-       * gửi, không lỗi) — xem `resolveApproverStepsDetailed()`. */
+      /** Ý nghĩa của mảng này ĐỔI tuỳ `submitterAssigns` (xem field bên dưới):
+       * `submitterAssigns` false/undefined (mặc định, hành vi cũ) → đây CHÍNH
+       * LÀ danh sách người duyệt do Admin tự gán tay, CHO PHÉP RỖNG ("Chưa cài
+       * đặt danh sách duyệt"), bước rỗng bị BỎ QUA lúc gửi đề xuất (không chặn
+       * gửi, không lỗi) — xem `resolveApproverStepsDetailed()`.
+       * `submitterAssigns` true → đây là DANH SÁCH GIỚI HẠN ai được người gửi
+       * đề xuất chọn (rỗng = không giới hạn, người gửi tag được bất kỳ ai). */
       users: TaggedUser[];
+      /** true = NGƯỜI GỬI ĐỀ XUẤT tự chọn ai duyệt bước này lúc gửi, khớp đúng
+       * cơ chế "Linh động" thật của Base.vn (Sếp đối chiếu 28/08/2026 — trước
+       * đó hiểu nhầm là Admin tự gán 1 người cố định trong `users`, xem
+       * help.base.vn: base-request-cach-thiet-lap-nguoi-duyet-linh-dong).
+       * false/undefined = hành vi cũ, không đổi cho nhóm đã cấu hình từ trước. */
+      submitterAssigns?: boolean;
       code?: string;
       condition?: ConditionGroup;
       slaHours?: number;
