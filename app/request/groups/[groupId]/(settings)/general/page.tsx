@@ -400,13 +400,22 @@ function StepRow({
 }) {
   const isFlexible = step.kind === "flexible_approver";
   const isManager = step.kind === "submitter_manager";
+  // Ý nghĩa của `step.users` ĐỔI khi `submitterAssigns` bật — không còn là
+  // danh sách người duyệt thật, mà là danh sách GIỚI HẠN ai được người gửi đề
+  // xuất chọn (rỗng = không giới hạn) — xem ApproverStepDef.flexible_approver.
+  const isSubmitterAssign = step.kind === "flexible_approver" && !!step.submitterAssigns;
   const people = step.kind === "fixed" ? fixedStepUsers(step) : isFlexible ? step.users : [];
   const displayName = step.name?.trim() || (isManager ? "Quản lý trực tiếp" : approverStepDisplayName(step, index));
   const initials = people[0]?.name?.trim().slice(0, 2).toUpperCase() ?? "";
 
   let meta: string;
   if (isManager) meta = "Tự động: trưởng đơn vị của người gửi";
-  else if (isFlexible && people.length === 0) meta = "Chưa cài đặt danh sách duyệt";
+  else if (isSubmitterAssign) {
+    meta =
+      people.length === 0
+        ? "Người gửi đề xuất tự chọn — không giới hạn"
+        : `Người gửi đề xuất tự chọn trong: ${people.map((u) => u.name).join(", ")}`;
+  } else if (isFlexible && people.length === 0) meta = "Chưa cài đặt danh sách duyệt";
   else meta = people.map((u) => u.name).join(", ") || "—";
   if (step.code) meta += ` · ${step.code}`;
 

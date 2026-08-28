@@ -3,6 +3,7 @@ import {
   approverStepDisplayName,
   assertNeverApproverKind,
   fixedStepUsers,
+  isSubmitterEditableStep,
   type ApproverState,
 } from "@/lib/approval-logic";
 import { addBusinessHours } from "@/lib/business-hours";
@@ -399,7 +400,7 @@ export async function resolveApproverStepsDetailed(
     }
 
     if (step.kind === "flexible_approver") {
-      if (step.submitterAssigns) {
+      if (isSubmitterEditableStep(step)) {
         // Người GỬI ĐỀ XUẤT tự chọn ai duyệt (đúng ý nghĩa "Linh động" thật
         // của Base.vn, 28/08/2026) — đọc lựa chọn từ `managerOverrides` (tham
         // số dùng chung cho mọi bước để client tự chọn, xem doc phía trên hàm
@@ -420,29 +421,26 @@ export async function resolveApproverStepsDetailed(
           continue;
         }
         const allowedIds = step.users.length > 0 ? new Set(step.users.map((u) => u.id)) : null;
-        for (const uid of overrideIds) {
-          if (allowedIds && !allowedIds.has(uid)) {
-            results.push({
-              index: i,
-              kind: "flexible_approver",
-              user: null,
-              name: step.name,
-              error: `Người được chọn không nằm trong danh sách được phép duyệt bước "${stepLabel}".`,
-            });
-            continue;
-          }
-          const user = await resolveManagerOverride(uid);
-          if (!user) {
-            results.push({
-              index: i,
-              kind: "flexible_approver",
-              user: null,
-              name: step.name,
-              error: `Không tìm thấy người dùng được chọn cho bước "${stepLabel}".`,
-            });
-            continue;
-          }
-          results.push({ index: i, kind: "flexible_approver", user: await withTitle(user), name: step.name });
+        // Song song hoá giống hệt nhánh "submitter_manager" bên dưới (đều
+        // resolve nhiều uid độc lập từ cùng 1 lượt gửi) — tránh N round-trip
+        // Firestore tuần tự khi có nhiều người cùng duyệt 1 bước.
+        const resolved = await Promise.all(
+          overrideIds.map(async (uid) => {
+            if (allowedIds && !allowedIds.has(uid)) {
+              return {
+                user: null as TaggedUser | null,
+                error: `Người được chọn không nằm trong danh sách được phép duyệt bước "${stepLabel}".`,
+              };
+            }
+            const user = await resolveManagerOverride(uid);
+            if (!user) {
+              return { user: null as TaggedUser | null, error: `Không tìm thấy người dùng được chọn cho bước "${stepLabel}".` };
+            }
+            return { user: await withTitle(user), error: undefined };
+          }),
+        );
+        for (const r of resolved) {
+          results.push({ index: i, kind: "flexible_approver", user: r.user, name: step.name, error: r.error });
         }
         continue;
       }

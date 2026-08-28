@@ -9,6 +9,7 @@ import { deserializeTableRows, toWireTableRows } from "@/lib/table-field";
 import { evaluateConditionGroup } from "@/lib/server/conditions";
 import { resolveComputedValue } from "@/lib/server/computed-fields";
 import { computeManagerFlowNumbers } from "@/lib/manager-flow-numbering";
+import { isSubmitterEditableStep } from "@/lib/approval-logic";
 import {
   classifyDateLeadTime,
   countBusinessDaysBetween,
@@ -363,18 +364,14 @@ export default function SubmitRequestPage() {
     }
 
     // Ô "Quản lý trực tiếp" LUÔN bắt chọn tay (không tự điền sẵn, khớp đúng
-    // hành vi Base.vn thật) — chặn gửi nếu còn bước submitter_manager nào
-    // chưa được chọn. "Linh động" có bật `submitterAssigns` cũng bắt chọn tay
-    // tương tự (28/08/2026) — tra `group.approverSteps[s.index]` vì preview
-    // trả về từ API không mang theo field cấu hình này, chỉ có `kind`.
+    // hành vi Base.vn thật) — chặn gửi nếu còn bước bắt chọn tay nào (gồm cả
+    // "Linh động" có bật `submitterAssigns`, 28/08/2026) chưa được chọn. Tra
+    // `group.approverSteps[s.index]` vì preview trả về từ API không mang theo
+    // field cấu hình `submitterAssigns`, chỉ có `kind`.
     if (
       approverPreview.steps.some((s) => {
-        if (s.kind === "submitter_manager") return !managerOverrides[s.index];
         const rawStep = group.approverSteps[s.index];
-        if (rawStep?.kind === "flexible_approver" && rawStep.submitterAssigns) {
-          return !managerOverrides[s.index];
-        }
-        return false;
+        return !!rawStep && isSubmitterEditableStep(rawStep) && !managerOverrides[s.index];
       })
     ) {
       setSubmitError("Vui lòng chọn đủ người duyệt cho các bước cần chọn trước khi gửi đề xuất.");
@@ -558,15 +555,18 @@ export default function SubmitRequestPage() {
               // submitterAssigns, thì luôn hiện đúng người Admin đã gán sẵn ở
               // cấu hình nhóm (không có gì để "chọn").
               const rawStep = group.approverSteps[step.index];
-              const isFlexibleSubmitterAssign =
-                step.kind === "flexible_approver" && rawStep?.kind === "flexible_approver" && !!rawStep.submitterAssigns;
+              // `isSubmitterEditableStep()` (lib/approval-logic.ts, dùng chung
+              // với lib/server/requests.ts) khớp cả "submitter_manager" lẫn
+              // "flexible_approver" có bật `submitterAssigns` — dùng lại đúng
+              // 1 định nghĩa, tránh 2 nơi tự lặp điều kiện rồi lệch nhau dần.
+              const isEditableKind = !!rawStep && isSubmitterEditableStep(rawStep);
+              const isFlexibleSubmitterAssign = step.kind === "flexible_approver" && isEditableKind;
               // Danh sách được PHÉP chọn khi giới hạn — rỗng = không giới hạn
               // (người gửi tag được bất kỳ ai), xem ApproverStepDef.
               const flexibleCandidates =
                 isFlexibleSubmitterAssign && rawStep?.kind === "flexible_approver" && rawStep.users.length > 0
                   ? rawStep.users
                   : undefined;
-              const isEditableKind = step.kind === "submitter_manager" || isFlexibleSubmitterAssign;
               const displayUser = isEditableKind ? managerOverrides[step.index] : step.user;
               const editing = isEditableKind && (editingStepIndex === step.index || !displayUser);
               // "fixed"/"flexible_approver" (chế độ Admin gán sẵn): ưu tiên TÊN
