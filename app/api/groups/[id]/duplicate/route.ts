@@ -101,14 +101,22 @@ export async function POST(
       printOptions: source.printOptions ? JSON.parse(JSON.stringify(source.printOptions)) : undefined,
     };
 
-    await groupRef.set(duplicate);
     try {
+      // groupRef.set() nằm CHUNG try/catch với duplicatePrintTemplates() —
+      // không tách riêng — vì cùng 1 lý do "lỗi mập mờ" (ambiguous failure)
+      // đã áp dụng ở duplicatePrintTemplates(): nếu chính groupRef.set() lỗi
+      // ở phía client nhưng document ĐÃ được ghi thành công ở Firestore
+      // (timeout/mất mạng, không đồng nghĩa lỗi server), phải rollback xoá
+      // nốt — nếu tách riêng, trường hợp đó sẽ để lại 1 nhóm mồ côi vĩnh
+      // viễn không bao giờ được dọn (CodeRabbit phát hiện).
+      await groupRef.set(duplicate);
       await duplicatePrintTemplates(id, groupRef.id, { uid: session.uid, name: session.name });
     } catch (templateError) {
       // Rollback — KHÔNG được để nhóm mới tồn tại mà thiếu mẫu in trong khi
-      // client nhận về 201 "thành công" (đây chính là vấn đề CodeRabbit
-      // phát hiện: duplicatePrintTemplates() đã tự dọn lại các file R2 lỡ
-      // copy dở của chính nó, ở đây chỉ cần xoá nốt document nhóm mới).
+      // client nhận về 201 "thành công" (duplicatePrintTemplates() đã tự
+      // dọn lại các file R2/document lỡ copy dở của chính nó, ở đây chỉ cần
+      // xoá nốt document nhóm mới — .delete() trên 1 document CHƯA từng
+      // được tạo là vô hại, không cần kiểm tra exists trước).
       await groupRef.delete().catch(() => {});
       throw templateError;
     }
