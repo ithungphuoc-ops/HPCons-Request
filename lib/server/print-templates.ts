@@ -170,8 +170,14 @@ export async function replacePrintTemplateFile(
  * isDefault/detectedVariables/validation, đặt lại createdBy = người bấm
  * "Nhân bản", createdAt/updatedAt = thời điểm nhân bản, version reset về 1
  * vì đây là bản file MỚI trong Storage, không phải bản đã qua "Thay file").
- * Lỗi copy 1 file không chặn các file còn lại — báo qua console để không làm
- * hỏng toàn bộ thao tác nhân bản nhóm chỉ vì 1 mẫu in lỗi.
+ *
+ * FAIL-FAST + TỰ DỌN: copy TUẦN TỰ (không song song) và dùng ID document
+ * Firestore thật (sinh TRƯỚC khi copy) làm phần định danh trong destPath —
+ * không chỉ dựa vào Date.now() (2 mẫu copy cùng lúc có thể trùng mili-giây,
+ * ghi đè lẫn nhau — CodeRabbit phát hiện). Nếu 1 mẫu copy lỗi giữa chừng,
+ * XOÁ NGAY các file R2 đã copy thành công trước đó rồi throw — để route gọi
+ * hàm này biết mà rollback (xoá luôn nhóm mới), KHÔNG được để lọt trường hợp
+ * trả về 201 "thành công" trong khi nhóm mới thiếu mẫu in mà không báo gì.
  */
 export async function duplicatePrintTemplates(
   sourceGroupId: string,
@@ -183,10 +189,14 @@ export async function duplicatePrintTemplates(
 
   const now = new Date().toISOString();
   const targetRef = templatesRef(targetGroupId);
-  const results = await Promise.allSettled(
-    templates.map(async (template) => {
-      const destPath = `print-templates/${targetGroupId}/${Date.now()}-${sanitizeFileNameForPath(template.fileName)}`;
+  const copiedPaths: string[] = [];
+
+  try {
+    for (const template of templates) {
+      const templateRef = targetRef.doc();
+      const destPath = `print-templates/${targetGroupId}/${templateRef.id}-${sanitizeFileNameForPath(template.fileName)}`;
       await copyObject(template.path, destPath);
+      copiedPaths.push(destPath);
       const doc: Omit<PrintTemplate, "id"> = {
         groupId: targetGroupId,
         name: template.name,
@@ -200,15 +210,17 @@ export async function duplicatePrintTemplates(
         detectedVariables: template.detectedVariables,
         validation: template.validation,
       };
-      await targetRef.doc().set(doc);
-    }),
-  );
-
-  results.forEach((result, i) => {
-    if (result.status === "rejected") {
-      console.error(`[duplicatePrintTemplates] Không copy được mẫu in "${templates[i].name}":`, result.reason);
+      await templateRef.set(doc);
     }
-  });
+  } catch (error) {
+    // Dọn lại MỌI file R2 đã copy thành công trước khi lỗi xảy ra — tránh
+    // rác trong R2 (các file đó sẽ không có document Firestore nào tham
+    // chiếu tới nữa vì route gọi hàm này sẽ xoá luôn nhóm mới ở bước sau).
+    await Promise.all(copiedPaths.map((path) => deleteObject(path)));
+    throw error instanceof Error
+      ? error
+      : new Error("Không copy được mẫu in khi nhân bản nhóm.");
+  }
 }
 
 /** Xoá 1 mẫu — nếu là mẫu mặc định và còn mẫu khác, tự đề bạt mẫu cũ nhất còn lại làm mặc định. */

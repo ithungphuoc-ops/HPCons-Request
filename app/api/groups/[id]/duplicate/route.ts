@@ -102,7 +102,16 @@ export async function POST(
     };
 
     await groupRef.set(duplicate);
-    await duplicatePrintTemplates(id, groupRef.id, { uid: session.uid, name: session.name });
+    try {
+      await duplicatePrintTemplates(id, groupRef.id, { uid: session.uid, name: session.name });
+    } catch (templateError) {
+      // Rollback — KHÔNG được để nhóm mới tồn tại mà thiếu mẫu in trong khi
+      // client nhận về 201 "thành công" (đây chính là vấn đề CodeRabbit
+      // phát hiện: duplicatePrintTemplates() đã tự dọn lại các file R2 lỡ
+      // copy dở của chính nó, ở đây chỉ cần xoá nốt document nhóm mới).
+      await groupRef.delete().catch(() => {});
+      throw templateError;
+    }
 
     return NextResponse.json({ group: { id: groupRef.id, ...duplicate } }, { status: 201 });
   } catch (error) {
