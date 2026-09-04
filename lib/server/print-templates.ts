@@ -1,10 +1,14 @@
 import "server-only";
 import { adminDb } from "@/lib/firebase/admin";
-import { deleteObject } from "@/lib/r2";
+import { copyObject, deleteObject } from "@/lib/r2";
 import type { PrintTemplate } from "@/lib/types";
 
 function templatesRef(groupId: string) {
   return adminDb.collection("groups").doc(groupId).collection("printTemplates");
+}
+
+function sanitizeFileNameForPath(name: string): string {
+  return name.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
 export async function listPrintTemplates(groupId: string): Promise<PrintTemplate[]> {
@@ -157,6 +161,54 @@ export async function replacePrintTemplateFile(
   await ref.update(patch);
   await deleteObject(current.path);
   return { id: templateId, ...current, ...patch };
+}
+
+/**
+ * Nhân bản TOÀN BỘ mẫu in của 1 nhóm sang nhóm mới — copy từng file R2 sang
+ * path riêng của nhóm mới (KHÔNG dùng chung path với nhóm nguồn, xem lý do ở
+ * copyObject()), rồi ghi lại đúng metadata (giữ nguyên name/fileName/
+ * isDefault/detectedVariables/validation, đặt lại createdBy = người bấm
+ * "Nhân bản", createdAt/updatedAt = thời điểm nhân bản, version reset về 1
+ * vì đây là bản file MỚI trong Storage, không phải bản đã qua "Thay file").
+ * Lỗi copy 1 file không chặn các file còn lại — báo qua console để không làm
+ * hỏng toàn bộ thao tác nhân bản nhóm chỉ vì 1 mẫu in lỗi.
+ */
+export async function duplicatePrintTemplates(
+  sourceGroupId: string,
+  targetGroupId: string,
+  duplicatedBy: { uid: string; name: string },
+): Promise<void> {
+  const templates = await listPrintTemplates(sourceGroupId);
+  if (templates.length === 0) return;
+
+  const now = new Date().toISOString();
+  const targetRef = templatesRef(targetGroupId);
+  const results = await Promise.allSettled(
+    templates.map(async (template) => {
+      const destPath = `print-templates/${targetGroupId}/${Date.now()}-${sanitizeFileNameForPath(template.fileName)}`;
+      await copyObject(template.path, destPath);
+      const doc: Omit<PrintTemplate, "id"> = {
+        groupId: targetGroupId,
+        name: template.name,
+        fileName: template.fileName,
+        path: destPath,
+        isDefault: template.isDefault,
+        createdBy: duplicatedBy,
+        createdAt: now,
+        updatedAt: now,
+        version: 1,
+        detectedVariables: template.detectedVariables,
+        validation: template.validation,
+      };
+      await targetRef.doc().set(doc);
+    }),
+  );
+
+  results.forEach((result, i) => {
+    if (result.status === "rejected") {
+      console.error(`[duplicatePrintTemplates] Không copy được mẫu in "${templates[i].name}":`, result.reason);
+    }
+  });
 }
 
 /** Xoá 1 mẫu — nếu là mẫu mặc định và còn mẫu khác, tự đề bạt mẫu cũ nhất còn lại làm mặc định. */
