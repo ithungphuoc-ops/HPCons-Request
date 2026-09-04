@@ -5,7 +5,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { FileDown, Loader2, Paperclip, Plus, Trash2, Upload, X } from "lucide-react";
 import { useRequestContext } from "@/context/RequestContext";
 import { HPCORE_MEMBER_GROUPS_API } from "@/lib/constants";
-import { deserializeTableRows, toWireTableRows } from "@/lib/table-field";
+import {
+  deserializeTableRows,
+  toWireTableRows,
+  downloadTableTemplateFile,
+  parseTableImportFile,
+} from "@/lib/table-field";
 import { evaluateConditionGroup } from "@/lib/server/conditions";
 import { resolveComputedValue } from "@/lib/server/computed-fields";
 import { computeManagerFlowNumbers } from "@/lib/manager-flow-numbering";
@@ -1006,65 +1011,39 @@ function FieldControl({
       };
 
       // "Tải file mẫu" — sinh .xlsx dòng đầu đúng cột hiện có, để điền offline.
-      const downloadTemplateFile = async () => {
-        const XLSX = await import("xlsx");
-        const ws = XLSX.utils.aoa_to_sheet([columns]);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Mẫu");
-        XLSX.writeFile(wb, `mau-${field.code ?? field.name}.xlsx`);
-      };
+      // Hàm dùng chung — xem lib/table-field.ts (tách ra 04/09/2026 để dùng lại
+      // ở khu vực "Bổ sung sau duyệt" trên trang chi tiết đề xuất).
+      const downloadTemplateFile = () =>
+        downloadTableTemplateFile(columns, `mau-${field.code ?? field.name}.xlsx`);
 
-      // "+ Thêm file" — đọc file đã điền: cột khớp tên (không phân biệt hoa/
-      // thường, trim khoảng trắng) nối dòng vào cột đó; cột LẠ tự thêm vào
-      // cấu hình cột của field (thuộc GROUP, áp dụng chung nhóm — xem
-      // design.md của change add-request-detail-base-parity, Decision #10).
+      // "+ Thêm file" — đọc file đã điền qua hàm dùng chung `parseTableImportFile`
+      // (thuần, không state), rồi ghi kết quả vào state cục bộ của trang soạn.
+      // Cột LẠ tự thêm vào cấu hình cột của field (thuộc GROUP, áp dụng chung
+      // nhóm — xem design.md của change add-request-detail-base-parity,
+      // Decision #10; khác hành vi ở trang chi tiết sau duyệt, xem
+      // add-post-approval-supplement Decision 3).
       const importTableFile = async (file: File) => {
         setTableImportStatus("Đang đọc file...");
-        try {
-          const XLSX = await import("xlsx");
-          const buffer = await file.arrayBuffer();
-          const wb = XLSX.read(buffer, { type: "array" });
-          const sheet = wb.Sheets[wb.SheetNames[0]];
-          const rowsFromFile = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1, defval: "" });
-          const [headerRow, ...dataRows] = rowsFromFile;
-          if (!headerRow || headerRow.every((h) => !String(h).trim())) {
-            setTableImportStatus("File không có dòng tiêu đề hợp lệ.");
-            return;
-          }
-          const fileHeaders = headerRow.map((h) => String(h).trim());
-          const normalize = (s: string) => s.trim().toLowerCase();
-          const existingByNormalized = new Map(columns.map((c) => [normalize(c), c]));
-
-          // Cột mới = có trong file nhưng chưa khớp tên cột nào đã có.
-          const newHeaders = fileHeaders.filter((h) => h && !existingByNormalized.has(normalize(h)));
-          const finalColumns = [...columns, ...newHeaders];
-          if (newHeaders.length > 0) onTableColumnsChange?.(finalColumns);
-
-          const filledDataRows = dataRows.filter((r) => r.some((cell) => String(cell ?? "").trim()));
-          if (filledDataRows.length === 0) {
-            setTableImportStatus("File không có dòng dữ liệu nào để nhập.");
-            return;
-          }
-
-          const newRows = filledDataRows.map((r) =>
-            finalColumns.map((col) => {
-              const fileColIndex = fileHeaders.findIndex((h) => normalize(h) === normalize(col));
-              return fileColIndex >= 0 ? String(r[fileColIndex] ?? "") : "";
-            }),
-          );
-          // Dòng cũ cần bù thêm ô trống cho (các) cột mới vừa thêm để số cột khớp.
-          const paddedOldRows = rows.map((r) => finalColumns.map((_, i) => r[i] ?? ""));
-          onChange([...paddedOldRows, ...newRows]);
-          setTableImportStatus(
-            newHeaders.length > 0
-              ? `Đã thêm ${newHeaders.length} cột mới + ${newRows.length} dòng dữ liệu.`
-              : `Đã thêm ${newRows.length} dòng dữ liệu.`,
-          );
-        } catch {
-          setTableImportStatus("Không đọc được file — kiểm tra lại định dạng .xlsx/.csv.");
-        } finally {
-          if (tableFileInputRef.current) tableFileInputRef.current.value = "";
+        const result = await parseTableImportFile(file, columns);
+        if (tableFileInputRef.current) tableFileInputRef.current.value = "";
+        if (!result.ok) {
+          // Giữ đúng hành vi gốc: cột mới phát hiện được vẫn thêm vào cấu
+          // hình bảng dù không có dòng dữ liệu nào để nhập (2 việc độc lập
+          // nhau) — xem comment ở lib/table-field.ts, TableImportResult.
+          if (result.newHeaders?.length) onTableColumnsChange?.(result.finalColumns!);
+          setTableImportStatus(result.error);
+          return;
         }
+        const { newHeaders, finalColumns, newRows } = result;
+        if (newHeaders.length > 0) onTableColumnsChange?.(finalColumns);
+        // Dòng cũ cần bù thêm ô trống cho (các) cột mới vừa thêm để số cột khớp.
+        const paddedOldRows = rows.map((r) => finalColumns.map((_, i) => r[i] ?? ""));
+        onChange([...paddedOldRows, ...newRows]);
+        setTableImportStatus(
+          newHeaders.length > 0
+            ? `Đã thêm ${newHeaders.length} cột mới + ${newRows.length} dòng dữ liệu.`
+            : `Đã thêm ${newRows.length} dòng dữ liệu.`,
+        );
       };
 
       const importButtons = (

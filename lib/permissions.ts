@@ -1,4 +1,4 @@
-import type { TaggedUser } from "./types";
+import type { RequestInstance, TaggedUser } from "./types";
 
 /**
  * Vai trò TOÀN CỤC của app tổng hpcons-portal (users/{uid}.role) — dùng thẳng,
@@ -38,4 +38,19 @@ export function isWithinUsedForScope(
  */
 export function isFollowerAllowedToApprove(): boolean {
   return false;
+}
+
+/**
+ * Chỉ CHÍNH người làm đề xuất được bổ sung dữ liệu (nối dòng bảng, đính
+ * file) sau khi đề xuất đã duyệt — Owner/Admin KHÔNG được làm thay, khác
+ * hẳn quyền quản lý thông thường (canManageGroupsAtAppScope). Dùng chung ở
+ * cả backend (route table-supplement, route attachments) lẫn UI
+ * (RequestDetailView.tsx) — đổi luật này chỉ cần sửa đúng 1 chỗ, xem
+ * design.md của change add-post-approval-supplement.
+ */
+export function canSupplementAfterApproval(
+  request: Pick<RequestInstance, "status" | "submittedBy">,
+  uid: string,
+): boolean {
+  return request.status === "approved" && request.submittedBy.uid === uid;
 }

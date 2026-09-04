@@ -29,6 +29,7 @@ import {
   Star,
   Trash2,
   Undo2,
+  Upload,
   UserPlus,
   Users,
   Webhook,
@@ -51,11 +52,18 @@ import type {
   GroupPermissionRules,
   GroupPrintOptions,
   PrintTemplate,
+  ProposalField,
   RequestAttachment,
+  RequestHistoryEntry,
   RequestInstance,
   TaggedUser,
 } from "@/lib/types";
-import { deserializeTableRows } from "@/lib/table-field";
+import { deserializeTableRows, downloadTableTemplateFile, parseTableImportFile } from "@/lib/table-field";
+import { canSupplementAfterApproval as canSupplementAfterApprovalCheck } from "@/lib/permissions";
+import {
+  ATTACHMENT_SUPPLEMENT_HISTORY_PREFIX,
+  TABLE_SUPPLEMENT_HISTORY_PREFIX,
+} from "@/lib/request-history-labels";
 import { resolveRequestTitle } from "@/lib/request-title";
 
 /** Sinh 1 file CSV từ field/giá trị của ĐÚNG 1 đề xuất — "Xuất dữ liệu cho
@@ -170,12 +178,18 @@ export default function RequestDetailView({
   const [followers, setFollowers] = useState<TaggedUser[]>(request.followers);
   const [addFollowerOpen, setAddFollowerOpen] = useState(false);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
+  // Nhật ký hoạt động — nhân bản state cục bộ giống `attachments` ở trên, chỉ
+  // để tính nhãn "Đính kèm/Bổ sung sau duyệt · lần N" ngay lập tức mà không
+  // cần chờ tải lại cả trang (xem khu vực "Bổ sung sau duyệt", change
+  // add-post-approval-supplement).
+  const [history, setHistory] = useState<RequestHistoryEntry[]>(request.history);
 
   useEffect(() => {
     setBookmarked(currentUid !== null && (request.bookmarkedByUids ?? []).includes(currentUid));
     setAttachments(request.attachments ?? []);
     setFollowers(request.followers);
-  }, [request.bookmarkedByUids, request.attachments, request.followers, currentUid]);
+    setHistory(request.history);
+  }, [request.bookmarkedByUids, request.attachments, request.followers, request.history, currentUid]);
 
   useEffect(() => {
     const reset = () => setPrintHideDiscussion(false);
@@ -193,6 +207,13 @@ export default function RequestDetailView({
 
   const isOwnRequest = currentUid !== null && currentUid === request.submittedBy.uid;
   const canManage = isOwnRequest || isAdmin;
+  // Dùng chung 1 hàm với 2 route table-supplement/attachments
+  // (lib/permissions.ts) — đổi luật chỉ cần sửa 1 chỗ, xem design.md của
+  // change add-post-approval-supplement.
+  const canSupplementAfterApproval = currentUid !== null && canSupplementAfterApprovalCheck(request, currentUid);
+  const attachmentSupplementEntries = history.filter((h) =>
+    h.action.startsWith(ATTACHMENT_SUPPLEMENT_HISTORY_PREFIX),
+  );
 
   useEffect(() => {
     if (!request.groupId) return;
@@ -359,8 +380,9 @@ export default function RequestDetailView({
         const body = await res.json().catch(() => ({}) as { error?: string });
         throw new Error(body.error ?? "Không thể thêm tài liệu.");
       }
-      const data = (await res.json()) as { attachments: RequestAttachment[] };
+      const data = (await res.json()) as { attachments: RequestAttachment[]; history?: RequestHistoryEntry[] };
       setAttachments(data.attachments);
+      if (data.history) setHistory(data.history);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Có lỗi xảy ra.");
     } finally {
@@ -819,10 +841,20 @@ export default function RequestDetailView({
                         </span>
                       </dt>
                       {isTable ? (
-                        <TableValueView
-                          columns={field.tableColumns ?? []}
-                          rows={deserializeTableRows(request.values[field.id])}
-                        />
+                        <>
+                          <TableValueView
+                            columns={field.tableColumns ?? []}
+                            rows={deserializeTableRows(request.values[field.id])}
+                          />
+                          {canSupplementAfterApproval && (
+                            <TableSupplementControl
+                              requestId={request.id}
+                              field={field}
+                              history={history}
+                              onSupplemented={onActed}
+                            />
+                          )}
+                        </>
                       ) : isFile ? (
                         <FileValueView
                           requestId={request.id}
@@ -873,7 +905,10 @@ export default function RequestDetailView({
             <h2 className="flex items-center gap-1.5 text-[13px] font-semibold uppercase tracking-wide text-gray-500">
               <Paperclip size={14} /> Tài liệu đính kèm
             </h2>
-            {(isOwnRequest || canManage) && (
+            {/* Đề xuất đã duyệt: chỉ CHÍNH submitter được thêm — Owner/Admin
+                không được làm thay (siết chặt hơn ở trạng thái khác), xem
+                design.md của change add-post-approval-supplement. */}
+            {(request.status === "approved" ? isOwnRequest : isOwnRequest || canManage) && (
               <button
                 type="button"
                 onClick={() => attachmentInputRef.current?.click()}
@@ -897,19 +932,35 @@ export default function RequestDetailView({
             <p className="text-[13px] text-gray-400">Chưa có tài liệu nào.</p>
           ) : (
             <ul className="flex flex-col gap-1">
-              {attachments.map((att) => (
-                <li key={att.path}>
-                  <button
-                    type="button"
-                    onClick={() => setPreviewingAttachment(att)}
-                    className="flex w-full items-center gap-1.5 text-left text-[13px] text-[var(--color-action-blue)] hover:underline"
-                  >
-                    <Paperclip size={13} className="shrink-0" />
-                    <span className="truncate">{att.name}</span>
-                    <span className="shrink-0 text-gray-400">({(att.size / 1024 / 1024).toFixed(1)}MB)</span>
-                  </button>
-                </li>
-              ))}
+              {attachments.map((att, i) => {
+                // `attachments[]` chỉ NỐI THÊM (không chèn giữa/xoá), và
+                // trạng thái "approved" không quay lại trạng thái khác — nên
+                // K mục cuối cùng luôn ĐÚNG là K lần đính "sau duyệt" đã ghi
+                // trong history, cùng thứ tự. Xem design.md của change
+                // add-post-approval-supplement, Decision 5.
+                const firstPostApprovalIndex = attachments.length - attachmentSupplementEntries.length;
+                const supplementEntry =
+                  i >= firstPostApprovalIndex ? attachmentSupplementEntries[i - firstPostApprovalIndex] : null;
+                return (
+                  <li key={att.path}>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewingAttachment(att)}
+                      className="flex w-full items-center gap-1.5 text-left text-[13px] text-[var(--color-action-blue)] hover:underline"
+                    >
+                      <Paperclip size={13} className="shrink-0" />
+                      <span className="truncate">{att.name}</span>
+                      <span className="shrink-0 text-gray-400">({(att.size / 1024 / 1024).toFixed(1)}MB)</span>
+                    </button>
+                    {supplementEntry && (
+                      <p className="ml-[19px] text-[10.5px] font-medium text-amber-600">
+                        🕘 Đính sau duyệt · lần {i - firstPostApprovalIndex + 1} ·{" "}
+                        {new Date(supplementEntry.at).toLocaleString("vi-VN")}
+                      </p>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           )}
           {previewingAttachment && (
@@ -1172,6 +1223,129 @@ function FileValueView({
         <FilePreviewModal requestId={requestId} attachment={previewing} onClose={() => setPreviewing(null)} />
       )}
     </>
+  );
+}
+
+/**
+ * Khu vực "Bổ sung sau duyệt" cho field kiểu bảng — CHỈ hiện khi đề xuất đã
+ * duyệt và người xem chính là submitter (điều kiện gọi ở nơi dùng, xem
+ * `canSupplementAfterApproval`). Nối thêm dòng qua route riêng
+ * `POST /api/requests/[id]/table-supplement` — KHÔNG sửa/xoá dòng cũ, xem
+ * design.md của change add-post-approval-supplement.
+ */
+function TableSupplementControl({
+  requestId,
+  field,
+  history,
+  onSupplemented,
+}: {
+  requestId: string;
+  field: ProposalField;
+  history: RequestHistoryEntry[];
+  onSupplemented: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const columns = field.tableColumns ?? [];
+  const supplementEntries = history.filter((h) => h.action.startsWith(TABLE_SUPPLEMENT_HISTORY_PREFIX));
+  const lastEntry = supplementEntries[supplementEntries.length - 1];
+
+  const downloadTemplate = () =>
+    downloadTableTemplateFile(columns, `mau-${field.code ?? field.name}.xlsx`);
+
+  const importFile = async (file: File) => {
+    setSubmitting(true);
+    setStatus("Đang đọc file...");
+    const parsed = await parseTableImportFile(file, columns);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (!parsed.ok) {
+      setStatus(parsed.error);
+      setSubmitting(false);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/requests/${requestId}/table-supplement`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fieldId: field.id,
+          newRows: parsed.newRows,
+          newColumns: parsed.newHeaders,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setStatus(data.error ?? "Không thể bổ sung dữ liệu.");
+        return;
+      }
+      setStatus(null);
+      setExpanded(false);
+      onSupplemented();
+    } catch {
+      setStatus("Có lỗi xảy ra, vui lòng thử lại.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="mt-2">
+      {lastEntry && (
+        <p className="mb-1.5 text-[10.5px] font-medium text-amber-600">
+          🕘 Bổ sung sau duyệt · lần {supplementEntries.length} ·{" "}
+          {new Date(lastEntry.at).toLocaleString("vi-VN")}
+        </p>
+      )}
+      {!expanded ? (
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          className="print-hide flex items-center gap-1 text-[12px] font-medium text-[var(--color-action-blue)] hover:underline"
+        >
+          <Plus size={13} /> Bổ sung dữ liệu
+        </button>
+      ) : (
+        <div className="print-hide flex flex-wrap items-center gap-2 rounded border border-dashed border-gray-300 p-2">
+          <button
+            type="button"
+            onClick={downloadTemplate}
+            disabled={columns.length === 0}
+            className="flex h-7 items-center gap-1 rounded border border-[var(--color-border)] px-2 text-[11px] font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+          >
+            <FileDown size={12} /> Tải file mẫu
+          </button>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={submitting}
+            className="flex h-7 items-center gap-1 rounded border border-[var(--color-action-blue)] px-2 text-[11px] font-medium text-[var(--color-action-blue)] hover:bg-blue-50 disabled:opacity-50"
+          >
+            <Upload size={12} /> {submitting ? "Đang xử lý..." : "Thêm file"}
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) importFile(file);
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => setExpanded(false)}
+            className="text-[11px] text-gray-400 hover:underline"
+          >
+            Huỷ
+          </button>
+          {status && <span className="text-[11px] text-gray-500">{status}</span>}
+        </div>
+      )}
+    </div>
   );
 }
 

@@ -3,11 +3,12 @@ import { adminDb } from "@/lib/firebase/admin";
 import { createSignedReadUrl } from "@/lib/r2";
 import { apiErrorResponse } from "@/lib/http";
 import { MAX_UPLOAD_FILE_SIZE } from "@/lib/constants";
-import { canManageGroupsAtAppScope } from "@/lib/permissions";
+import { canManageGroupsAtAppScope, canSupplementAfterApproval } from "@/lib/permissions";
 import { canView, loadRequest } from "@/lib/server/requests";
 import { isOwnUploadPath } from "@/lib/server/uploads";
 import { requireSession } from "@/lib/session";
-import type { RequestAttachment, RequestInstance } from "@/lib/types";
+import { ATTACHMENT_SUPPLEMENT_HISTORY_PREFIX } from "@/lib/request-history-labels";
+import type { RequestAttachment, RequestHistoryEntry, RequestInstance } from "@/lib/types";
 
 export const runtime = "nodejs";
 
@@ -84,7 +85,21 @@ export async function POST(
       return NextResponse.json({ error: "Bạn không có quyền trên đề xuất này." }, { status: 403 });
     }
     const isOwnRequest = found.submittedBy.uid === session.uid;
-    if (!isOwnRequest && !canManageGroupsAtAppScope(session.role)) {
+    // Đề xuất ĐÃ DUYỆT: chỉ CHÍNH submitter được thêm tài liệu — Owner/Admin
+    // không được làm thay (siết chặt hơn quy tắc mặc định bên dưới, đặc thù
+    // cho "xác nhận giữa 2 bên" — không phải ai cũng được xác nhận thay chủ
+    // đề xuất). Trạng thái khác (draft/pending/returned) giữ nguyên hành vi
+    // cũ. Dùng chung 1 hàm với route table-supplement + UI
+    // (lib/permissions.ts) — đổi luật chỉ cần sửa 1 chỗ, xem design.md của
+    // change add-post-approval-supplement.
+    if (found.status === "approved") {
+      if (!canSupplementAfterApproval(found, session.uid)) {
+        return NextResponse.json(
+          { error: "Đề xuất đã duyệt — chỉ chính người làm đề xuất mới thêm được tài liệu." },
+          { status: 403 },
+        );
+      }
+    } else if (!isOwnRequest && !canManageGroupsAtAppScope(session.role)) {
       return NextResponse.json(
         { error: "Chỉ chủ đề xuất hoặc Owner/Admin mới thêm được tài liệu." },
         { status: 403 },
@@ -120,8 +135,25 @@ export async function POST(
     }
 
     const attachments = [...(found.attachments ?? []), attachment];
-    await adminDb.collection("requests").doc(id).update({ attachments });
-    return NextResponse.json({ attachments });
+
+    // Chỉ ghi nhật ký "sau duyệt" khi đúng là đang bổ sung sau duyệt — đính
+    // file lúc còn draft/pending/returned là hành vi cũ, không cần đếm "lần
+    // mấy" (không thuộc phạm vi "Bổ sung sau duyệt").
+    const patch: { attachments: RequestAttachment[]; history?: RequestHistoryEntry[] } = { attachments };
+    if (found.status === "approved") {
+      const priorCount = found.history.filter((h) =>
+        h.action.startsWith(ATTACHMENT_SUPPLEMENT_HISTORY_PREFIX),
+      ).length;
+      const historyEntry: RequestHistoryEntry = {
+        at: new Date().toISOString(),
+        actor: session.name,
+        action: `${ATTACHMENT_SUPPLEMENT_HISTORY_PREFIX} (lần ${priorCount + 1}): ${attachment.name}`,
+      };
+      patch.history = [...found.history, historyEntry];
+    }
+
+    await adminDb.collection("requests").doc(id).update(patch);
+    return NextResponse.json({ attachments, history: patch.history });
   } catch (error) {
     return apiErrorResponse(error);
   }
