@@ -200,8 +200,14 @@ export async function duplicatePrintTemplates(
     for (const template of templates) {
       const templateRef = targetRef.doc();
       const destPath = `print-templates/${targetGroupId}/${templateRef.id}-${sanitizeFileNameForPath(template.fileName)}`;
-      await copyObject(template.path, destPath);
+      // Ghi nhận TRƯỚC KHI gọi, không phải sau khi await thành công — nếu
+      // copyObject() ném lỗi nhưng thao tác thực ra ĐÃ áp dụng phía R2 (lỗi
+      // mạng/timeout phía client, không đồng nghĩa lỗi ở server — bài toán
+      // kinh điển "ambiguous failure" của hệ phân tán, CodeRabbit phát
+      // hiện), rollback ở catch bên dưới vẫn phải biết mà dọn. Gọi xoá 1 thứ
+      // chưa từng tồn tại thì vô hại; bỏ sót thứ đã tồn tại thì thành rác.
       copiedPaths.push(destPath);
+      await copyObject(template.path, destPath);
       const doc: Omit<PrintTemplate, "id"> = {
         groupId: targetGroupId,
         name: template.name,
@@ -215,8 +221,9 @@ export async function duplicatePrintTemplates(
         detectedVariables: template.detectedVariables,
         validation: template.validation,
       };
-      await templateRef.set(doc);
+      // Cùng lý do — ghi nhận TRƯỚC khi gọi .set(), không phải sau.
       writtenTemplateIds.push(templateRef.id);
+      await templateRef.set(doc);
     }
   } catch (error) {
     // Dọn lại MỌI file R2 đã copy thành công VÀ document Firestore đã ghi
