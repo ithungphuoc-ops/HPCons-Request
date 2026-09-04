@@ -175,9 +175,13 @@ export async function replacePrintTemplateFile(
  * Firestore thật (sinh TRƯỚC khi copy) làm phần định danh trong destPath —
  * không chỉ dựa vào Date.now() (2 mẫu copy cùng lúc có thể trùng mili-giây,
  * ghi đè lẫn nhau — CodeRabbit phát hiện). Nếu 1 mẫu copy lỗi giữa chừng,
- * XOÁ NGAY các file R2 đã copy thành công trước đó rồi throw — để route gọi
- * hàm này biết mà rollback (xoá luôn nhóm mới), KHÔNG được để lọt trường hợp
- * trả về 201 "thành công" trong khi nhóm mới thiếu mẫu in mà không báo gì.
+ * XOÁ NGAY cả file R2 LẪN document Firestore của MỌI mẫu đã ghi thành công
+ * trước đó rồi throw (xoá document là bắt buộc — nếu chỉ xoá file R2 thì
+ * document mẫu in cũ vẫn còn trong Firestore, trỏ tới 1 path đã bị xoá,
+ * thành rác mồ côi mãi mãi vì `groupRef.delete()` ở route KHÔNG cascade-xoá
+ * subcollection con — CodeRabbit phát hiện) — để route gọi hàm này biết mà
+ * rollback tiếp (xoá luôn nhóm mới), KHÔNG được để lọt trường hợp trả về 201
+ * "thành công" trong khi nhóm mới thiếu mẫu in mà không báo gì.
  */
 export async function duplicatePrintTemplates(
   sourceGroupId: string,
@@ -190,6 +194,7 @@ export async function duplicatePrintTemplates(
   const now = new Date().toISOString();
   const targetRef = templatesRef(targetGroupId);
   const copiedPaths: string[] = [];
+  const writtenTemplateIds: string[] = [];
 
   try {
     for (const template of templates) {
@@ -211,12 +216,17 @@ export async function duplicatePrintTemplates(
         validation: template.validation,
       };
       await templateRef.set(doc);
+      writtenTemplateIds.push(templateRef.id);
     }
   } catch (error) {
-    // Dọn lại MỌI file R2 đã copy thành công trước khi lỗi xảy ra — tránh
-    // rác trong R2 (các file đó sẽ không có document Firestore nào tham
-    // chiếu tới nữa vì route gọi hàm này sẽ xoá luôn nhóm mới ở bước sau).
-    await Promise.all(copiedPaths.map((path) => deleteObject(path)));
+    // Dọn lại MỌI file R2 đã copy thành công VÀ document Firestore đã ghi
+    // thành công trước khi lỗi xảy ra — thiếu 1 trong 2 đều để lại rác
+    // (thiếu xoá file → tốn dung lượng R2; thiếu xoá document → metadata mồ
+    // côi trỏ tới file đã bị xoá).
+    await Promise.all([
+      ...copiedPaths.map((path) => deleteObject(path)),
+      ...writtenTemplateIds.map((templateId) => targetRef.doc(templateId).delete().catch(() => {})),
+    ]);
     throw error instanceof Error
       ? error
       : new Error("Không copy được mẫu in khi nhân bản nhóm.");
