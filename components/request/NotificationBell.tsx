@@ -4,6 +4,10 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { Bell } from "lucide-react";
 import type { NotificationSettings, RequestInstance } from "@/lib/types";
+import {
+  ATTACHMENT_SUPPLEMENT_HISTORY_PREFIX,
+  TABLE_SUPPLEMENT_HISTORY_PREFIX,
+} from "@/lib/request-history-labels";
 
 interface NotificationItem {
   id: string;
@@ -63,7 +67,18 @@ function buildNotifications(
   if (enabled("own_decided")) {
     for (const r of mine) {
       if (r.status !== "approved" && r.status !== "rejected") continue;
-      const lastEntry = r.history[r.history.length - 1];
+      // Bỏ qua các dòng "Bổ sung sau duyệt" khi tìm entry quyết định gần
+      // nhất — nếu không, submitter tự bổ sung dữ liệu/đính file muộn sẽ
+      // đẩy dòng đó lên cuối history[], khiến thông báo "đã được chấp
+      // thuận" tưởng vừa xảy ra với thời điểm SAI (lúc bổ sung, không phải
+      // lúc duyệt thật) — xem design.md của change add-post-approval-supplement.
+      const lastEntry = [...r.history]
+        .reverse()
+        .find(
+          (h) =>
+            !h.action.startsWith(TABLE_SUPPLEMENT_HISTORY_PREFIX) &&
+            !h.action.startsWith(ATTACHMENT_SUPPLEMENT_HISTORY_PREFIX),
+        );
       items.push({
         id: `mine-${r.id}`,
         requestId: r.id,

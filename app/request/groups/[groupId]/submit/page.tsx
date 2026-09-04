@@ -1027,6 +1027,10 @@ function FieldControl({
         const result = await parseTableImportFile(file, columns);
         if (tableFileInputRef.current) tableFileInputRef.current.value = "";
         if (!result.ok) {
+          // Giữ đúng hành vi gốc: cột mới phát hiện được vẫn thêm vào cấu
+          // hình bảng dù không có dòng dữ liệu nào để nhập (2 việc độc lập
+          // nhau) — xem comment ở lib/table-field.ts, TableImportResult.
+          if (result.newHeaders?.length) onTableColumnsChange?.(result.finalColumns!);
           setTableImportStatus(result.error);
           return;
         }

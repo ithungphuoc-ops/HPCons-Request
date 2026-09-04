@@ -59,6 +59,7 @@ import type {
   TaggedUser,
 } from "@/lib/types";
 import { deserializeTableRows, downloadTableTemplateFile, parseTableImportFile } from "@/lib/table-field";
+import { canSupplementAfterApproval as canSupplementAfterApprovalCheck } from "@/lib/permissions";
 import {
   ATTACHMENT_SUPPLEMENT_HISTORY_PREFIX,
   TABLE_SUPPLEMENT_HISTORY_PREFIX,
@@ -206,7 +207,10 @@ export default function RequestDetailView({
 
   const isOwnRequest = currentUid !== null && currentUid === request.submittedBy.uid;
   const canManage = isOwnRequest || isAdmin;
-  const canSupplementAfterApproval = isOwnRequest && request.status === "approved";
+  // Dùng chung 1 hàm với 2 route table-supplement/attachments
+  // (lib/permissions.ts) — đổi luật chỉ cần sửa 1 chỗ, xem design.md của
+  // change add-post-approval-supplement.
+  const canSupplementAfterApproval = currentUid !== null && canSupplementAfterApprovalCheck(request, currentUid);
   const attachmentSupplementEntries = history.filter((h) =>
     h.action.startsWith(ATTACHMENT_SUPPLEMENT_HISTORY_PREFIX),
   );

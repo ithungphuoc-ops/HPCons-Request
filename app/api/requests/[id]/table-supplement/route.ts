@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebase/admin";
 import { apiErrorResponse } from "@/lib/http";
+import { canSupplementAfterApproval } from "@/lib/permissions";
 import { loadRequest } from "@/lib/server/requests";
 import { requireSession, ForbiddenError } from "@/lib/session";
 import { deserializeTableRows, normalizeColumnName, toWireTableRows } from "@/lib/table-field";
@@ -39,8 +40,9 @@ export async function POST(
     }
     // Chỉ CHÍNH người làm đề xuất — Owner/Admin không được thao tác thay,
     // khác hẳn quy tắc "submitter hoặc Owner/Admin" ở các nơi khác của app
-    // này (quyết định của Sếp, xem proposal.md).
-    if (found.submittedBy.uid !== session.uid) {
+    // này (quyết định của Sếp, xem proposal.md). Dùng chung 1 hàm với route
+    // attachments + UI (lib/permissions.ts) — đổi luật chỉ cần sửa 1 chỗ.
+    if (!canSupplementAfterApproval(found, session.uid)) {
       throw new ForbiddenError("Chỉ chính người làm đề xuất mới bổ sung được dữ liệu bảng.");
     }
 
@@ -110,10 +112,14 @@ export async function POST(
     };
     const history = [...found.history, historyEntry];
 
+    // KHÔNG cập nhật `updatedAt` — giống hành vi route attachments khi đính
+    // file, field này chỉ dành cho các mốc "sửa nháp/gửi/quyết định duyệt"
+    // (xem comment tại RequestInstance.updatedAt, lib/types.ts) chứ không
+    // phải mọi thao tác bổ sung nhỏ sau duyệt.
     const ref = adminDb.collection("requests").doc(id);
-    await ref.update({ values, fieldsSnapshot, history, updatedAt: nowIso });
+    await ref.update({ values, fieldsSnapshot, history });
 
-    const updated: RequestInstance = { ...found, values, fieldsSnapshot, history, updatedAt: nowIso };
+    const updated: RequestInstance = { ...found, values, fieldsSnapshot, history };
     return NextResponse.json({ request: updated });
   } catch (error) {
     return apiErrorResponse(error);

@@ -53,7 +53,14 @@ export async function downloadTableTemplateFile(columns: string[], filename: str
 
 export type TableImportResult =
   | { ok: true; newHeaders: string[]; finalColumns: string[]; newRows: string[][] }
-  | { ok: false; error: string };
+  // newHeaders/finalColumns có mặt CẢ KHI ok:false, đúng cho trường hợp file
+  // đọc được tiêu đề (nên đã tính ra được cột mới) nhưng KHÔNG có dòng dữ
+  // liệu nào — giữ đúng hành vi gốc ở submit/page.tsx (trước khi tách hàm
+  // 04/09/2026): cột mới VẪN được thêm vào cấu hình bảng dù việc nhập dòng
+  // báo lỗi, vì 2 việc "phát hiện cột mới" và "có dòng dữ liệu để nhập" độc
+  // lập nhau trong code cũ. Vắng mặt (undefined) = chưa tính tới bước đó
+  // (file không có dòng tiêu đề hợp lệ, hoặc lỗi đọc file).
+  | { ok: false; error: string; newHeaders?: string[]; finalColumns?: string[] };
 
 /**
  * Đọc 1 file Excel/CSV đã điền, đối chiếu với các cột hiện có (`existingColumns`):
@@ -86,7 +93,7 @@ export async function parseTableImportFile(
 
     const filledDataRows = dataRows.filter((r) => r.some((cell) => String(cell ?? "").trim()));
     if (filledDataRows.length === 0) {
-      return { ok: false, error: "File không có dòng dữ liệu nào để nhập." };
+      return { ok: false, error: "File không có dòng dữ liệu nào để nhập.", newHeaders, finalColumns };
     }
 
     const newRows = filledDataRows.map((r) =>

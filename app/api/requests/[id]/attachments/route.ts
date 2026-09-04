@@ -3,7 +3,7 @@ import { adminDb } from "@/lib/firebase/admin";
 import { createSignedReadUrl } from "@/lib/r2";
 import { apiErrorResponse } from "@/lib/http";
 import { MAX_UPLOAD_FILE_SIZE } from "@/lib/constants";
-import { canManageGroupsAtAppScope } from "@/lib/permissions";
+import { canManageGroupsAtAppScope, canSupplementAfterApproval } from "@/lib/permissions";
 import { canView, loadRequest } from "@/lib/server/requests";
 import { isOwnUploadPath } from "@/lib/server/uploads";
 import { requireSession } from "@/lib/session";
@@ -89,9 +89,11 @@ export async function POST(
     // không được làm thay (siết chặt hơn quy tắc mặc định bên dưới, đặc thù
     // cho "xác nhận giữa 2 bên" — không phải ai cũng được xác nhận thay chủ
     // đề xuất). Trạng thái khác (draft/pending/returned) giữ nguyên hành vi
-    // cũ. Xem design.md của change add-post-approval-supplement.
+    // cũ. Dùng chung 1 hàm với route table-supplement + UI
+    // (lib/permissions.ts) — đổi luật chỉ cần sửa 1 chỗ, xem design.md của
+    // change add-post-approval-supplement.
     if (found.status === "approved") {
-      if (!isOwnRequest) {
+      if (!canSupplementAfterApproval(found, session.uid)) {
         return NextResponse.json(
           { error: "Đề xuất đã duyệt — chỉ chính người làm đề xuất mới thêm được tài liệu." },
           { status: 403 },
