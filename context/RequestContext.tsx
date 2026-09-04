@@ -248,7 +248,12 @@ export function RequestProvider({ children }: { children: React.ReactNode }) {
       setCategoryGroups((prev) =>
         prev.map((cat) => (cat.name === group.category ? { ...cat, groups: [...cat.groups, group] } : cat)),
       );
-      await refetchGroups();
+      // Best-effort — nhóm mới ĐÃ tạo thành công trên server và ĐÃ có trong
+      // state (chèn ở trên) trước khi gọi refetch này; nếu chính fetch() ở
+      // refetchGroups ném lỗi (mất mạng...), không được để lỗi đó vọt lên
+      // làm duplicateGroup() reject — nơi gọi sẽ hiểu lầm là NHÂN BẢN thất
+      // bại và báo lỗi cho Admin, dù thực tế đã thành công (CodeRabbit phát hiện).
+      await refetchGroups().catch(() => {});
       return group;
     },
     [getGroupById, refetchGroups],
