@@ -1,10 +1,14 @@
 import "server-only";
 import { adminDb } from "@/lib/firebase/admin";
-import { deleteObject } from "@/lib/r2";
+import { copyObject, deleteObject } from "@/lib/r2";
 import type { PrintTemplate } from "@/lib/types";
 
 function templatesRef(groupId: string) {
   return adminDb.collection("groups").doc(groupId).collection("printTemplates");
+}
+
+function sanitizeFileNameForPath(name: string): string {
+  return name.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
 export async function listPrintTemplates(groupId: string): Promise<PrintTemplate[]> {
@@ -157,6 +161,83 @@ export async function replacePrintTemplateFile(
   await ref.update(patch);
   await deleteObject(current.path);
   return { id: templateId, ...current, ...patch };
+}
+
+/**
+ * Nhân bản TOÀN BỘ mẫu in của 1 nhóm sang nhóm mới — copy từng file R2 sang
+ * path riêng của nhóm mới (KHÔNG dùng chung path với nhóm nguồn, xem lý do ở
+ * copyObject()), rồi ghi lại đúng metadata (giữ nguyên name/fileName/
+ * isDefault/detectedVariables/validation, đặt lại createdBy = người bấm
+ * "Nhân bản", createdAt/updatedAt = thời điểm nhân bản, version reset về 1
+ * vì đây là bản file MỚI trong Storage, không phải bản đã qua "Thay file").
+ *
+ * FAIL-FAST + TỰ DỌN: copy TUẦN TỰ (không song song) và dùng ID document
+ * Firestore thật (sinh TRƯỚC khi copy) làm phần định danh trong destPath —
+ * không chỉ dựa vào Date.now() (2 mẫu copy cùng lúc có thể trùng mili-giây,
+ * ghi đè lẫn nhau — CodeRabbit phát hiện). Nếu 1 mẫu copy lỗi giữa chừng,
+ * XOÁ NGAY cả file R2 LẪN document Firestore của MỌI mẫu đã ghi thành công
+ * trước đó rồi throw (xoá document là bắt buộc — nếu chỉ xoá file R2 thì
+ * document mẫu in cũ vẫn còn trong Firestore, trỏ tới 1 path đã bị xoá,
+ * thành rác mồ côi mãi mãi vì `groupRef.delete()` ở route KHÔNG cascade-xoá
+ * subcollection con — CodeRabbit phát hiện) — để route gọi hàm này biết mà
+ * rollback tiếp (xoá luôn nhóm mới), KHÔNG được để lọt trường hợp trả về 201
+ * "thành công" trong khi nhóm mới thiếu mẫu in mà không báo gì.
+ */
+export async function duplicatePrintTemplates(
+  sourceGroupId: string,
+  targetGroupId: string,
+  duplicatedBy: { uid: string; name: string },
+): Promise<void> {
+  const templates = await listPrintTemplates(sourceGroupId);
+  if (templates.length === 0) return;
+
+  const now = new Date().toISOString();
+  const targetRef = templatesRef(targetGroupId);
+  const copiedPaths: string[] = [];
+  const writtenTemplateIds: string[] = [];
+
+  try {
+    for (const template of templates) {
+      const templateRef = targetRef.doc();
+      const destPath = `print-templates/${targetGroupId}/${templateRef.id}-${sanitizeFileNameForPath(template.fileName)}`;
+      // Ghi nhận TRƯỚC KHI gọi, không phải sau khi await thành công — nếu
+      // copyObject() ném lỗi nhưng thao tác thực ra ĐÃ áp dụng phía R2 (lỗi
+      // mạng/timeout phía client, không đồng nghĩa lỗi ở server — bài toán
+      // kinh điển "ambiguous failure" của hệ phân tán, CodeRabbit phát
+      // hiện), rollback ở catch bên dưới vẫn phải biết mà dọn. Gọi xoá 1 thứ
+      // chưa từng tồn tại thì vô hại; bỏ sót thứ đã tồn tại thì thành rác.
+      copiedPaths.push(destPath);
+      await copyObject(template.path, destPath);
+      const doc: Omit<PrintTemplate, "id"> = {
+        groupId: targetGroupId,
+        name: template.name,
+        fileName: template.fileName,
+        path: destPath,
+        isDefault: template.isDefault,
+        createdBy: duplicatedBy,
+        createdAt: now,
+        updatedAt: now,
+        version: 1,
+        detectedVariables: template.detectedVariables,
+        validation: template.validation,
+      };
+      // Cùng lý do — ghi nhận TRƯỚC khi gọi .set(), không phải sau.
+      writtenTemplateIds.push(templateRef.id);
+      await templateRef.set(doc);
+    }
+  } catch (error) {
+    // Dọn lại MỌI file R2 đã copy thành công VÀ document Firestore đã ghi
+    // thành công trước khi lỗi xảy ra — thiếu 1 trong 2 đều để lại rác
+    // (thiếu xoá file → tốn dung lượng R2; thiếu xoá document → metadata mồ
+    // côi trỏ tới file đã bị xoá).
+    await Promise.all([
+      ...copiedPaths.map((path) => deleteObject(path)),
+      ...writtenTemplateIds.map((templateId) => targetRef.doc(templateId).delete().catch(() => {})),
+    ]);
+    throw error instanceof Error
+      ? error
+      : new Error("Không copy được mẫu in khi nhân bản nhóm.");
+  }
 }
 
 /** Xoá 1 mẫu — nếu là mẫu mặc định và còn mẫu khác, tự đề bạt mẫu cũ nhất còn lại làm mặc định. */

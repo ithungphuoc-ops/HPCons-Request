@@ -32,6 +32,11 @@ interface RequestContextValue {
   ) => Promise<ProposalGroup>;
   getGroupById: (groupId: string) => ProposalGroup | undefined;
   updateGroup: (groupId: string, patch: Partial<ProposalGroup>) => void;
+  /** Nhân bản 1 nhóm đề xuất — chép toàn bộ cấu hình sang nhóm mới, tạo sẵn
+   * ở trạng thái "closed" (xem app/api/groups/[id]/duplicate/route.ts). Trả
+   * về nhóm mới để nơi gọi tự điều hướng tới. `sourceName` tuỳ chọn để nơi
+   * gọi truyền thẳng tên đã có sẵn, khỏi tự tra lại. */
+  duplicateGroup: (groupId: string, sourceName?: string) => Promise<ProposalGroup>;
   addField: (
     groupId: string,
     field: Omit<ProposalField, "id" | "order">,
@@ -216,6 +221,44 @@ export function RequestProvider({ children }: { children: React.ReactNode }) {
     [mutateGroup, refetchGroups],
   );
 
+  const duplicateGroup = useCallback(
+    // `sourceName` tuỳ chọn — nơi gọi (vd layout.tsx) thường đã có sẵn tên
+    // nhóm trong scope, truyền thẳng vào để khỏi tra lại categoryGroups lần
+    // nữa; không truyền thì tự tra qua getGroupById() như trước.
+    async (groupId: string, sourceName?: string): Promise<ProposalGroup> => {
+      const resolvedSourceName = sourceName ?? getGroupById(groupId)?.name ?? groupId;
+      const res = await fetch(`/api/groups/${groupId}/duplicate`, { method: "POST" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}) as { error?: string });
+        throw new Error(body.error ?? "Không thể nhân bản nhóm đề xuất.");
+      }
+      const { group } = (await res.json()) as { group: ProposalGroup };
+      reportActivity({
+        action: "Nhân bản nhóm đề xuất",
+        entityType: "proposal_group",
+        entityId: group.id,
+        detail: `Nhân bản từ "${resolvedSourceName}" → "${group.name}"`,
+      });
+      // Chèn ngay nhóm mới vào state TRƯỚC khi refetch — nơi gọi (layout.tsx)
+      // điều hướng sang trang nhóm mới NGAY sau khi hàm này resolve, và
+      // refetchGroups() ở dưới âm thầm bỏ qua nếu GET /api/groups lỗi (xem
+      // định nghĩa refetchGroups) — không chèn trước thì getGroupById() ở
+      // trang mới có thể trả undefined ngay cả khi nhóm đã tạo thành công
+      // trên server, hiện lầm "Không tìm thấy nhóm đề xuất này".
+      setCategoryGroups((prev) =>
+        prev.map((cat) => (cat.name === group.category ? { ...cat, groups: [...cat.groups, group] } : cat)),
+      );
+      // Best-effort — nhóm mới ĐÃ tạo thành công trên server và ĐÃ có trong
+      // state (chèn ở trên) trước khi gọi refetch này; nếu chính fetch() ở
+      // refetchGroups ném lỗi (mất mạng...), không được để lỗi đó vọt lên
+      // làm duplicateGroup() reject — nơi gọi sẽ hiểu lầm là NHÂN BẢN thất
+      // bại và báo lỗi cho Admin, dù thực tế đã thành công (CodeRabbit phát hiện).
+      await refetchGroups().catch(() => {});
+      return group;
+    },
+    [getGroupById, refetchGroups],
+  );
+
   const addField = useCallback(
     (
       groupId: string,
@@ -342,6 +385,7 @@ export function RequestProvider({ children }: { children: React.ReactNode }) {
     createGroup,
     getGroupById,
     updateGroup,
+    duplicateGroup,
     addField,
     updateField,
     removeField,

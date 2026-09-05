@@ -1,5 +1,11 @@
 import "server-only";
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+  DeleteObjectCommand,
+  CopyObjectCommand,
+} from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 /**
@@ -50,6 +56,24 @@ export async function downloadObject(path: string): Promise<Buffer> {
 export async function createSignedReadUrl(path: string, expiresIn = 300): Promise<string> {
   const command = new GetObjectCommand({ Bucket: getBucketName(), Key: path });
   return getSignedUrl(getR2Client(), command, { expiresIn });
+}
+
+/**
+ * Copy 1 object sang path mới NGAY TRONG bucket (server-side, không tải về
+ * rồi tải lại) — dùng khi nhân bản nhóm để mẫu in của bản sao có file R2
+ * RIÊNG, không trỏ chung path với nhóm nguồn (nếu dùng chung, "Thay file" hay
+ * "Xoá mẫu" ở nhóm nguồn sau này sẽ xoá luôn file mà nhóm bản sao đang tham
+ * chiếu, làm mẫu in của bản sao vỡ mà không có cảnh báo).
+ */
+export async function copyObject(sourcePath: string, destPath: string): Promise<void> {
+  const bucket = getBucketName();
+  await getR2Client().send(
+    new CopyObjectCommand({
+      Bucket: bucket,
+      CopySource: `${bucket}/${encodeURIComponent(sourcePath)}`,
+      Key: destPath,
+    }),
+  );
 }
 
 /** Xoá file cũ (thay/xoá mẫu in). Bỏ qua lỗi — không chặn thao tác chính nếu xoá thất bại. */
