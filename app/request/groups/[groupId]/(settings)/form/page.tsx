@@ -9,7 +9,7 @@ import { useRequestContext } from "@/context/RequestContext";
 import FieldListItem from "@/components/request/FieldListItem";
 import RequireAdminRole from "@/components/request/RequireAdminRole";
 import ApprovalTimeFieldModal from "@/components/request/modals/ApprovalTimeFieldModal";
-import { fieldDataTypeLabels, type ApprovalTimeField } from "@/lib/types";
+import { computedFieldEligibleTypes, fieldDataTypeLabels, type ApprovalTimeField } from "@/lib/types";
 
 const DECISION_ACTION_LABELS: Record<ApprovalTimeField["decisionAction"], string> = {
   approve: "Chấp thuận",
@@ -67,8 +67,15 @@ function ProposalFormPageInner() {
   // ở dạng gõ tay thay vì tự khoá + tự tính như các nhóm đã cấu hình đúng. Chỉ
   // NHẮC (không tự bật hộ) — Admin vẫn phải tự vào điền mẫu chuỗi, vì hệ thống
   // không biết trước nên ghép từ những trường nào.
+  //
+  // Chỉ nhắc khi field ĐANG ở loại dữ liệu cho phép cấu hình (short_text/
+  // paragraph, xem computedFieldEligibleTypes) — nhắc cho field kiểu khác
+  // (vd date/single_choice) sẽ sai vì AddFieldModal không cho bật ở loại đó,
+  // Admin bấm vào cũng không thấy phần cấu hình đó (CodeRabbit phát hiện).
   const tenDeXuatField = sortedFields.find(
-    (f) => f.name.trim().toLowerCase() === "tên đề xuất",
+    (f) =>
+      f.name.trim().toLowerCase() === "tên đề xuất" &&
+      computedFieldEligibleTypes.includes(f.dataType),
   );
   const showTenDeXuatReminder = !!tenDeXuatField && !tenDeXuatField.computedFrom;
 

@@ -13,6 +13,7 @@ import {
 import { useRequestContext } from "@/context/RequestContext";
 import { CONDITION_ELIGIBLE_TYPES, ConditionEditor } from "@/components/request/ApproverStepsEditor";
 import {
+  computedFieldEligibleTypes,
   fieldDataTypeLabels,
   type ComputedTemplateBranch,
   type ConditionGroup,
@@ -25,8 +26,9 @@ import { validateFieldName, validateFieldOptions } from "@/lib/validation";
 const dataTypes = Object.keys(fieldDataTypeLabels) as FieldDataType[];
 const choiceTypes: FieldDataType[] = ["single_choice", "multiple_choice"];
 const tableTypes: FieldDataType[] = ["table", "base_table"];
-/** Chỉ field văn bản mới cấu hình được "tự động ghép giá trị từ trường khác". */
-const computedEligibleTypes: FieldDataType[] = ["short_text", "paragraph"];
+// Định nghĩa dùng chung ở lib/types.ts (cả trang cấu hình nhóm cũng cần biết
+// loại field nào được phép, để quyết định có hiện banner nhắc hay không).
+const computedEligibleTypes = computedFieldEligibleTypes;
 /** Chỉ field ngày mới cấu hình được ràng buộc "ngày cần cấp" (dateLeadTimeRule). */
 const dateLeadTimeEligibleTypes: FieldDataType[] = ["date", "datetime"];
 const DATE_LEAD_TIME_STANDARD_OPTIONS: DateLeadTimeRule["standardDays"][] = [5, 7, 15];
@@ -231,6 +233,7 @@ export default function AddFieldModal() {
                 !isEditMode &&
                 !computedTouched &&
                 computedBranches === null &&
+                computedEligibleTypes.includes(dataType) &&
                 next.trim().toLowerCase() === "tên đề xuất"
               ) {
                 setComputedBranches([{ template: "" }]);
@@ -261,7 +264,20 @@ export default function AddFieldModal() {
           <select
             className={selectClass}
             value={dataType}
-            onChange={(e) => setDataType(e.target.value as FieldDataType)}
+            onChange={(e) => {
+              const nextType = e.target.value as FieldDataType;
+              setDataType(nextType);
+              // Đổi sang loại KHÔNG hợp lệ cho "tự động ghép" — dọn luôn nhánh
+              // vừa được TỰ ĐỘNG gợi ý (chưa bị Admin đụng tới) để tránh trạng
+              // thái "đã tích sẵn" ẩn trong state, lỡ đổi type qua lại có thể
+              // hiện lại ô tích dù Admin chưa từng cố ý bật (CodeRabbit phát
+              // hiện). Không đụng tới nếu Admin đã tự tay cấu hình
+              // (`computedTouched`) — submit vẫn tự bỏ qua computedFrom cho
+              // loại không hợp lệ (xem cleanedBranches ở handleSubmit).
+              if (!computedTouched && !computedEligibleTypes.includes(nextType)) {
+                setComputedBranches(null);
+              }
+            }}
           >
             {dataTypes.map((type) => (
               <option key={type} value={type}>
