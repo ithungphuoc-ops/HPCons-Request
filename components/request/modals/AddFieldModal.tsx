@@ -51,6 +51,12 @@ export default function AddFieldModal() {
   // null = tắt "tự động ghép giá trị"; mảng (kể cả rỗng) = đang bật, mỗi phần
   // tử là 1 nhánh { điều kiện tuỳ chọn + mẫu chuỗi ${ma_truong} }.
   const [computedBranches, setComputedBranches] = useState<ComputedTemplateBranch[] | null>(null);
+  // Sếp hay quên bật "Tự động ghép giá trị" cho trường "Tên đề xuất" ở nhóm
+  // mới (phát hiện 06/09/2026) — tự gợi ý bật sẵn (1 nhánh rỗng, chưa điền
+  // mẫu chuỗi) khi ĐANG TẠO MỚI (không áp dụng lúc sửa field có sẵn) và tên
+  // gõ đúng "Tên đề xuất". Chỉ gợi ý 1 lần; nếu Admin tự tay bỏ tích sau đó
+  // thì tôn trọng lựa chọn đó, không tự bật lại (cờ `computedTouched`).
+  const [computedTouched, setComputedTouched] = useState(false);
   const [dateLeadTimeEnabled, setDateLeadTimeEnabled] = useState(false);
   const [dateLeadTimeStandardDays, setDateLeadTimeStandardDays] = useState<DateLeadTimeRule["standardDays"]>(5);
   const [errors, setErrors] = useState<{ name?: string; options?: string; code?: string; computed?: string }>({});
@@ -90,6 +96,7 @@ export default function AddFieldModal() {
     setFormula("");
     setVisibleWhen(undefined);
     setComputedBranches(null);
+    setComputedTouched(false);
     setDateLeadTimeEnabled(false);
     setDateLeadTimeStandardDays(5);
     setErrors({});
@@ -108,6 +115,9 @@ export default function AddFieldModal() {
       setFormula(editingField.formula ?? "");
       setVisibleWhen(editingField.visibleWhen);
       setComputedBranches(editingField.computedFrom?.branches ?? null);
+      // Đang sửa field CÓ SẴN — coi như đã "chạm" rồi, không gợi ý tự bật nữa
+      // dù tên trùng "Tên đề xuất" (tránh ghi đè lựa chọn Admin đã cố ý tắt).
+      setComputedTouched(true);
       setDateLeadTimeEnabled(editingField.dateLeadTimeRule?.enabled ?? false);
       setDateLeadTimeStandardDays(editingField.dateLeadTimeRule?.standardDays ?? 5);
       setErrors({});
@@ -214,7 +224,18 @@ export default function AddFieldModal() {
           <input
             className={inputClass}
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => {
+              const next = e.target.value;
+              setName(next);
+              if (
+                !isEditMode &&
+                !computedTouched &&
+                computedBranches === null &&
+                next.trim().toLowerCase() === "tên đề xuất"
+              ) {
+                setComputedBranches([{ template: "" }]);
+              }
+            }}
             placeholder="Hiển thị làm nhãn trên mẫu đề xuất"
           />
           {errors.name && <p className="mt-1 text-[12px] text-[var(--color-danger-red)]">{errors.name}</p>}
@@ -387,9 +408,10 @@ export default function AddFieldModal() {
                 <input
                   type="checkbox"
                   checked={computedBranches !== null}
-                  onChange={(e) =>
-                    setComputedBranches(e.target.checked ? [{ template: "" }] : null)
-                  }
+                  onChange={(e) => {
+                    setComputedTouched(true);
+                    setComputedBranches(e.target.checked ? [{ template: "" }] : null);
+                  }}
                 />
                 Bật — trường này KHÔNG cho gõ tay nữa, giá trị tự ghép từ (các) trường khác trong cùng đề xuất
               </label>
