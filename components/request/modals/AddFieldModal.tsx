@@ -229,14 +229,19 @@ export default function AddFieldModal() {
             onChange={(e) => {
               const next = e.target.value;
               setName(next);
-              if (
-                !isEditMode &&
-                !computedTouched &&
-                computedBranches === null &&
-                computedEligibleTypes.includes(dataType) &&
-                next.trim().toLowerCase() === "tên đề xuất"
-              ) {
+              // Chỉ tự động bật/tắt khi ĐANG TẠO MỚI và Admin CHƯA từng tự tay
+              // đụng vào phần "Tự động ghép" (computedTouched) — tôn trọng
+              // hoàn toàn nếu Admin đã tự cấu hình, dù tên có đổi qua lại.
+              if (isEditMode || computedTouched) return;
+              const isTenDeXuat = next.trim().toLowerCase() === "tên đề xuất";
+              if (isTenDeXuat && computedBranches === null && computedEligibleTypes.includes(dataType)) {
                 setComputedBranches([{ template: "" }]);
+              } else if (!isTenDeXuat && computedBranches !== null) {
+                // Đã lỡ gợi ý (do gõ đúng "Tên đề xuất" trước đó) nhưng giờ
+                // Admin sửa tên sang chữ khác — dọn lại nhánh rỗng vừa tự
+                // thêm, tránh còn sót 1 ô "đã tích sẵn" cho field không còn
+                // tên là "Tên đề xuất" nữa (CodeRabbit phát hiện).
+                setComputedBranches(null);
               }
             }}
             placeholder="Hiển thị làm nhãn trên mẫu đề xuất"
@@ -446,9 +451,10 @@ export default function AddFieldModal() {
                         <button
                           type="button"
                           aria-label="Xóa nhánh"
-                          onClick={() =>
-                            setComputedBranches((prev) => prev!.filter((_, i) => i !== index))
-                          }
+                          onClick={() => {
+                            setComputedTouched(true);
+                            setComputedBranches((prev) => prev!.filter((_, i) => i !== index));
+                          }}
                           className="text-gray-400 hover:text-[var(--color-danger-red)]"
                         >
                           <X size={14} />
@@ -461,11 +467,12 @@ export default function AddFieldModal() {
                         <ConditionEditor
                           condition={branch.condition}
                           fields={conditionFields}
-                          onChange={(next) =>
+                          onChange={(next) => {
+                            setComputedTouched(true);
                             setComputedBranches((prev) =>
                               prev!.map((b, i) => (i === index ? { ...b, condition: next } : b)),
-                            )
-                          }
+                            );
+                          }}
                         />
                       </div>
                       <div>
@@ -478,11 +485,12 @@ export default function AddFieldModal() {
                           className={textareaClass}
                           rows={2}
                           value={branch.template}
-                          onChange={(e) =>
+                          onChange={(e) => {
+                            setComputedTouched(true);
                             setComputedBranches((prev) =>
                               prev!.map((b, i) => (i === index ? { ...b, template: e.target.value } : b)),
-                            )
-                          }
+                            );
+                          }}
                           placeholder={"Ví dụ: ${so_hop_dong}-${ten_cong_trinh}"}
                         />
                       </div>
@@ -491,7 +499,10 @@ export default function AddFieldModal() {
 
                   <button
                     type="button"
-                    onClick={() => setComputedBranches((prev) => [...(prev ?? []), { template: "" }])}
+                    onClick={() => {
+                      setComputedTouched(true);
+                      setComputedBranches((prev) => [...(prev ?? []), { template: "" }]);
+                    }}
                     className="flex items-center gap-1 self-start text-[12px] text-[var(--color-action-blue)]"
                   >
                     <Plus size={13} /> Thêm nhánh
