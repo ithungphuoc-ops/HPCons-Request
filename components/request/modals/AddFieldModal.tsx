@@ -272,15 +272,25 @@ export default function AddFieldModal() {
             onChange={(e) => {
               const nextType = e.target.value as FieldDataType;
               setDataType(nextType);
-              // Đổi sang loại KHÔNG hợp lệ cho "tự động ghép" — dọn luôn nhánh
-              // vừa được TỰ ĐỘNG gợi ý (chưa bị Admin đụng tới) để tránh trạng
-              // thái "đã tích sẵn" ẩn trong state, lỡ đổi type qua lại có thể
-              // hiện lại ô tích dù Admin chưa từng cố ý bật (CodeRabbit phát
-              // hiện). Không đụng tới nếu Admin đã tự tay cấu hình
-              // (`computedTouched`) — submit vẫn tự bỏ qua computedFrom cho
-              // loại không hợp lệ (xem cleanedBranches ở handleSubmit).
-              if (!computedTouched && !computedEligibleTypes.includes(nextType)) {
+              // Chỉ tự đổi khi ĐANG TẠO MỚI + Admin CHƯA từng tự tay đụng vào
+              // phần "Tự động ghép" (computedTouched) — không can thiệp gì nếu
+              // Admin đã tự cấu hình.
+              if (isEditMode || computedTouched) return;
+              const isTenDeXuat = name.trim().toLowerCase() === "tên đề xuất";
+              if (!computedEligibleTypes.includes(nextType)) {
+                // Đổi sang loại KHÔNG hợp lệ — dọn luôn nhánh vừa được TỰ ĐỘNG
+                // gợi ý, tránh trạng thái "đã tích sẵn" ẩn trong state, lỡ đổi
+                // qua lại có thể hiện lại ô tích dù Admin chưa từng cố ý bật
+                // (submit vẫn tự bỏ qua computedFrom cho loại không hợp lệ,
+                // xem cleanedBranches ở handleSubmit, nhưng dọn sớm ở đây cho
+                // rõ ràng, không để UI hiện sai trạng thái).
                 setComputedBranches(null);
+              } else if (isTenDeXuat && computedBranches === null) {
+                // Đổi NGƯỢC LẠI về loại hợp lệ trong khi tên vẫn đúng "Tên đề
+                // xuất" (ví dụ Admin lỡ tay đổi loại rồi đổi lại) — gợi ý lại
+                // đúng như lúc gõ tên lần đầu, không để Admin phải tự tích lại
+                // (CodeRabbit phát hiện thiếu chiều ngược này).
+                setComputedBranches([{ template: "" }]);
               }
             }}
           >
