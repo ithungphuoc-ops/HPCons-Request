@@ -13,6 +13,7 @@ import {
 import { useRequestContext } from "@/context/RequestContext";
 import { CONDITION_ELIGIBLE_TYPES, ConditionEditor } from "@/components/request/ApproverStepsEditor";
 import {
+  computedFieldEligibleTypes,
   fieldDataTypeLabels,
   type ComputedTemplateBranch,
   type ConditionGroup,
@@ -25,8 +26,9 @@ import { validateFieldName, validateFieldOptions } from "@/lib/validation";
 const dataTypes = Object.keys(fieldDataTypeLabels) as FieldDataType[];
 const choiceTypes: FieldDataType[] = ["single_choice", "multiple_choice"];
 const tableTypes: FieldDataType[] = ["table", "base_table"];
-/** Chỉ field văn bản mới cấu hình được "tự động ghép giá trị từ trường khác". */
-const computedEligibleTypes: FieldDataType[] = ["short_text", "paragraph"];
+// Định nghĩa dùng chung ở lib/types.ts (cả trang cấu hình nhóm cũng cần biết
+// loại field nào được phép, để quyết định có hiện banner nhắc hay không).
+const computedEligibleTypes = computedFieldEligibleTypes;
 /** Chỉ field ngày mới cấu hình được ràng buộc "ngày cần cấp" (dateLeadTimeRule). */
 const dateLeadTimeEligibleTypes: FieldDataType[] = ["date", "datetime"];
 const DATE_LEAD_TIME_STANDARD_OPTIONS: DateLeadTimeRule["standardDays"][] = [5, 7, 15];
@@ -51,6 +53,12 @@ export default function AddFieldModal() {
   // null = tắt "tự động ghép giá trị"; mảng (kể cả rỗng) = đang bật, mỗi phần
   // tử là 1 nhánh { điều kiện tuỳ chọn + mẫu chuỗi ${ma_truong} }.
   const [computedBranches, setComputedBranches] = useState<ComputedTemplateBranch[] | null>(null);
+  // Sếp hay quên bật "Tự động ghép giá trị" cho trường "Tên đề xuất" ở nhóm
+  // mới (phát hiện 06/09/2026) — tự gợi ý bật sẵn (1 nhánh rỗng, chưa điền
+  // mẫu chuỗi) khi ĐANG TẠO MỚI (không áp dụng lúc sửa field có sẵn) và tên
+  // gõ đúng "Tên đề xuất". Chỉ gợi ý 1 lần; nếu Admin tự tay bỏ tích sau đó
+  // thì tôn trọng lựa chọn đó, không tự bật lại (cờ `computedTouched`).
+  const [computedTouched, setComputedTouched] = useState(false);
   const [dateLeadTimeEnabled, setDateLeadTimeEnabled] = useState(false);
   const [dateLeadTimeStandardDays, setDateLeadTimeStandardDays] = useState<DateLeadTimeRule["standardDays"]>(5);
   const [errors, setErrors] = useState<{ name?: string; options?: string; code?: string; computed?: string }>({});
@@ -90,6 +98,7 @@ export default function AddFieldModal() {
     setFormula("");
     setVisibleWhen(undefined);
     setComputedBranches(null);
+    setComputedTouched(false);
     setDateLeadTimeEnabled(false);
     setDateLeadTimeStandardDays(5);
     setErrors({});
@@ -108,6 +117,9 @@ export default function AddFieldModal() {
       setFormula(editingField.formula ?? "");
       setVisibleWhen(editingField.visibleWhen);
       setComputedBranches(editingField.computedFrom?.branches ?? null);
+      // Đang sửa field CÓ SẴN — coi như đã "chạm" rồi, không gợi ý tự bật nữa
+      // dù tên trùng "Tên đề xuất" (tránh ghi đè lựa chọn Admin đã cố ý tắt).
+      setComputedTouched(true);
       setDateLeadTimeEnabled(editingField.dateLeadTimeRule?.enabled ?? false);
       setDateLeadTimeStandardDays(editingField.dateLeadTimeRule?.standardDays ?? 5);
       setErrors({});
@@ -214,7 +226,24 @@ export default function AddFieldModal() {
           <input
             className={inputClass}
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => {
+              const next = e.target.value;
+              setName(next);
+              // Chỉ tự động bật/tắt khi ĐANG TẠO MỚI và Admin CHƯA từng tự tay
+              // đụng vào phần "Tự động ghép" (computedTouched) — tôn trọng
+              // hoàn toàn nếu Admin đã tự cấu hình, dù tên có đổi qua lại.
+              if (isEditMode || computedTouched) return;
+              const isTenDeXuat = next.trim().toLowerCase() === "tên đề xuất";
+              if (isTenDeXuat && computedBranches === null && computedEligibleTypes.includes(dataType)) {
+                setComputedBranches([{ template: "" }]);
+              } else if (!isTenDeXuat && computedBranches !== null) {
+                // Đã lỡ gợi ý (do gõ đúng "Tên đề xuất" trước đó) nhưng giờ
+                // Admin sửa tên sang chữ khác — dọn lại nhánh rỗng vừa tự
+                // thêm, tránh còn sót 1 ô "đã tích sẵn" cho field không còn
+                // tên là "Tên đề xuất" nữa (CodeRabbit phát hiện).
+                setComputedBranches(null);
+              }
+            }}
             placeholder="Hiển thị làm nhãn trên mẫu đề xuất"
           />
           {errors.name && <p className="mt-1 text-[12px] text-[var(--color-danger-red)]">{errors.name}</p>}
@@ -240,7 +269,30 @@ export default function AddFieldModal() {
           <select
             className={selectClass}
             value={dataType}
-            onChange={(e) => setDataType(e.target.value as FieldDataType)}
+            onChange={(e) => {
+              const nextType = e.target.value as FieldDataType;
+              setDataType(nextType);
+              // Chỉ tự đổi khi ĐANG TẠO MỚI + Admin CHƯA từng tự tay đụng vào
+              // phần "Tự động ghép" (computedTouched) — không can thiệp gì nếu
+              // Admin đã tự cấu hình.
+              if (isEditMode || computedTouched) return;
+              const isTenDeXuat = name.trim().toLowerCase() === "tên đề xuất";
+              if (!computedEligibleTypes.includes(nextType)) {
+                // Đổi sang loại KHÔNG hợp lệ — dọn luôn nhánh vừa được TỰ ĐỘNG
+                // gợi ý, tránh trạng thái "đã tích sẵn" ẩn trong state, lỡ đổi
+                // qua lại có thể hiện lại ô tích dù Admin chưa từng cố ý bật
+                // (submit vẫn tự bỏ qua computedFrom cho loại không hợp lệ,
+                // xem cleanedBranches ở handleSubmit, nhưng dọn sớm ở đây cho
+                // rõ ràng, không để UI hiện sai trạng thái).
+                setComputedBranches(null);
+              } else if (isTenDeXuat && computedBranches === null) {
+                // Đổi NGƯỢC LẠI về loại hợp lệ trong khi tên vẫn đúng "Tên đề
+                // xuất" (ví dụ Admin lỡ tay đổi loại rồi đổi lại) — gợi ý lại
+                // đúng như lúc gõ tên lần đầu, không để Admin phải tự tích lại
+                // (CodeRabbit phát hiện thiếu chiều ngược này).
+                setComputedBranches([{ template: "" }]);
+              }
+            }}
           >
             {dataTypes.map((type) => (
               <option key={type} value={type}>
@@ -387,9 +439,10 @@ export default function AddFieldModal() {
                 <input
                   type="checkbox"
                   checked={computedBranches !== null}
-                  onChange={(e) =>
-                    setComputedBranches(e.target.checked ? [{ template: "" }] : null)
-                  }
+                  onChange={(e) => {
+                    setComputedTouched(true);
+                    setComputedBranches(e.target.checked ? [{ template: "" }] : null);
+                  }}
                 />
                 Bật — trường này KHÔNG cho gõ tay nữa, giá trị tự ghép từ (các) trường khác trong cùng đề xuất
               </label>
@@ -408,9 +461,10 @@ export default function AddFieldModal() {
                         <button
                           type="button"
                           aria-label="Xóa nhánh"
-                          onClick={() =>
-                            setComputedBranches((prev) => prev!.filter((_, i) => i !== index))
-                          }
+                          onClick={() => {
+                            setComputedTouched(true);
+                            setComputedBranches((prev) => prev!.filter((_, i) => i !== index));
+                          }}
                           className="text-gray-400 hover:text-[var(--color-danger-red)]"
                         >
                           <X size={14} />
@@ -423,11 +477,12 @@ export default function AddFieldModal() {
                         <ConditionEditor
                           condition={branch.condition}
                           fields={conditionFields}
-                          onChange={(next) =>
+                          onChange={(next) => {
+                            setComputedTouched(true);
                             setComputedBranches((prev) =>
                               prev!.map((b, i) => (i === index ? { ...b, condition: next } : b)),
-                            )
-                          }
+                            );
+                          }}
                         />
                       </div>
                       <div>
@@ -440,11 +495,12 @@ export default function AddFieldModal() {
                           className={textareaClass}
                           rows={2}
                           value={branch.template}
-                          onChange={(e) =>
+                          onChange={(e) => {
+                            setComputedTouched(true);
                             setComputedBranches((prev) =>
                               prev!.map((b, i) => (i === index ? { ...b, template: e.target.value } : b)),
-                            )
-                          }
+                            );
+                          }}
                           placeholder={"Ví dụ: ${so_hop_dong}-${ten_cong_trinh}"}
                         />
                       </div>
@@ -453,7 +509,10 @@ export default function AddFieldModal() {
 
                   <button
                     type="button"
-                    onClick={() => setComputedBranches((prev) => [...(prev ?? []), { template: "" }])}
+                    onClick={() => {
+                      setComputedTouched(true);
+                      setComputedBranches((prev) => [...(prev ?? []), { template: "" }]);
+                    }}
                     className="flex items-center gap-1 self-start text-[12px] text-[var(--color-action-blue)]"
                   >
                     <Plus size={13} /> Thêm nhánh
