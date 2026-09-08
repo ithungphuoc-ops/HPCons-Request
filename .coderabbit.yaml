@@ -1,0 +1,65 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+#
+# Cấu hình CodeRabbit — thêm 04/09/2026 theo yêu cầu chuẩn hoá review cho toàn bộ app con.
+# Tài liệu đầy đủ: https://docs.coderabbit.ai/reference/configuration
+
+language: "vi-VN"
+
+tone_instructions: >
+  Ưu tiên chỉ ra lỗi logic thật, lỗ hổng bảo mật, và sai sót phân quyền. Hạn chế góp ý
+  style/format nếu code đã nhất quán với phần còn lại của repo. Trả lời ngắn gọn, không lặp
+  lại nội dung diff.
+
+reviews:
+  profile: "assertive"
+  auto_review:
+    enabled: true
+    drafts: false
+
+  path_filters:
+    - "!node_modules/**"
+    - "!.next/**"
+    - "!openspec/changes/**/tasks.md"
+    - "!**/*.lock"
+    - "!package-lock.json"
+
+  path_instructions:
+    - path: "app/api/**"
+      instructions: >
+        App Đề xuất (Request) nhiều bước phê duyệt linh hoạt (flexible_approver). Kiểm tra kỹ: bước
+        duyệt sau không được bỏ qua điều kiện của bước duyệt trước, và người duyệt được xác định đúng
+        theo cấu hình nhóm/phòng ban tại THỜI ĐIỂM trình duyệt, không lấy nhầm theo cấu hình hiện tại.
+    - path: "components/**"
+      instructions: >
+        Trước khi thêm cơ chế đính kèm file/thông báo/bình luận mới, kiểm tra xem app đã có cơ chế
+        tương tự ở nơi khác (FilePreviewModal, followers, R2 upload...) chưa — nếu có, phải tái dùng,
+        không tạo cơ chế lưu trữ/hiển thị thứ hai cho cùng một việc.
+
+  pre_merge_checks:
+    docstrings:
+      mode: "warning"
+      threshold: 80
+    title:
+      mode: "warning"
+    description:
+      mode: "warning"
+    issue_assessment:
+      mode: "off" # repo không dùng issue tracker liên kết PR
+    custom_checks:
+      - name: "Một luật, một nơi giữ"
+        mode: "warning"
+        instructions: >
+          Nếu PR thêm một điều kiện/luật nghiệp vụ (chặn hành động, tính quyền, tính trạng
+          thái...) mà điều kiện tương đương đã tồn tại ở một hàm/nơi khác trong repo, PR phải
+          GỌI LẠI đúng hàm đó — không viết lại điều kiện tương đương ở một nơi thứ hai. Hai nơi
+          cùng trả lời một câu hỏi mà có thể lệch nhau là lỗi nghiêm trọng cần gắn cờ.
+      - name: "Không tin dữ liệu từ client"
+        mode: "warning"
+        instructions: >
+          Với API route hoặc hàm ghi dữ liệu (Firestore/DB) nhận tham số quyết định quyền/trạng
+          thái từ phía gọi (client, props UI), phải tự kiểm tra lại điều kiện đó ở tầng ghi —
+          không chỉ dựa vào việc UI đã ẩn/khóa nút. Gắn cờ nếu tầng ghi tin thẳng tham số mà
+          không xác minh lại.
+
+chat:
+  auto_reply: true
