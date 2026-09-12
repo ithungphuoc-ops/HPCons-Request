@@ -1061,7 +1061,7 @@ function FieldControl({
             onClick={() => tableFileInputRef.current?.click()}
             className="flex h-7 items-center gap-1 rounded border border-[var(--color-action-blue)] px-2 text-[11px] font-medium text-[var(--color-action-blue)] hover:bg-blue-50"
           >
-            <Upload size={12} /> Thêm file
+            <Upload size={12} /> Nhập Excel theo file mẫu
           </button>
           <input
             ref={tableFileInputRef}

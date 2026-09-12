@@ -29,7 +29,6 @@ import {
   Star,
   Trash2,
   Undo2,
-  Upload,
   UserPlus,
   Users,
   Webhook,
@@ -58,7 +57,7 @@ import type {
   RequestInstance,
   TaggedUser,
 } from "@/lib/types";
-import { deserializeTableRows, downloadTableTemplateFile, parseTableImportFile } from "@/lib/table-field";
+import { deserializeTableRows } from "@/lib/table-field";
 import { canSupplementAfterApproval as canSupplementAfterApprovalCheck } from "@/lib/permissions";
 import {
   ATTACHMENT_SUPPLEMENT_HISTORY_PREFIX,
@@ -841,20 +840,10 @@ export default function RequestDetailView({
                         </span>
                       </dt>
                       {isTable ? (
-                        <>
-                          <TableValueView
-                            columns={field.tableColumns ?? []}
-                            rows={deserializeTableRows(request.values[field.id])}
-                          />
-                          {canSupplementAfterApproval && (
-                            <TableSupplementControl
-                              requestId={request.id}
-                              field={field}
-                              history={history}
-                              onSupplemented={onActed}
-                            />
-                          )}
-                        </>
+                        <TableValueView
+                          columns={field.tableColumns ?? []}
+                          rows={deserializeTableRows(request.values[field.id])}
+                        />
                       ) : isFile ? (
                         <FileValueView
                           requestId={request.id}
@@ -900,77 +889,96 @@ export default function RequestDetailView({
           </div>
         )}
 
-        <div className="mt-4 rounded-[3px] border border-[var(--color-border)] bg-white p-4">
-          <div className="mb-3 flex items-center justify-between gap-2">
-            <h2 className="flex items-center gap-1.5 text-[13px] font-semibold uppercase tracking-wide text-gray-500">
-              <Paperclip size={14} /> Tài liệu đính kèm
+        {/* Chỉ hiện khi đề xuất ĐÃ CHẤP THUẬN hoàn toàn — trước đó ẩn hẳn,
+            không còn cách đính tài liệu chung/nối dòng bảng nào khác (yêu
+            cầu Sếp 12/09/2026, đã duyệt qua demo). Gộp 2 việc trước đây tách
+            rời: nối dòng vào field kiểu bảng (trước ở link riêng dưới mỗi
+            bảng, xem TableSupplementControl) + đính tài liệu cấp đề xuất. */}
+        {request.status === "approved" && (
+          <div className="mt-4 rounded-[3px] border border-[var(--color-border)] bg-white p-4">
+            <h2 className="mb-3 flex items-center gap-1.5 text-[13px] font-semibold uppercase tracking-wide text-gray-500">
+              <Paperclip size={14} /> Cập nhật / Bổ sung đề nghị sau duyệt
             </h2>
-            {/* Đề xuất đã duyệt: chỉ CHÍNH submitter được thêm — Owner/Admin
-                không được làm thay (siết chặt hơn ở trạng thái khác), xem
-                design.md của change add-post-approval-supplement. */}
-            {(request.status === "approved" ? isOwnRequest : isOwnRequest || canManage) && (
-              <button
-                type="button"
-                onClick={() => attachmentInputRef.current?.click()}
-                disabled={uploadingAttachment}
-                className="print-hide flex items-center gap-1 text-[12px] font-medium text-[var(--color-action-blue)] hover:underline disabled:opacity-60"
-              >
-                <Plus size={13} /> {uploadingAttachment ? "Đang tải lên..." : "Thêm tài liệu"}
-              </button>
+
+            {canSupplementAfterApproval &&
+              request.fieldsSnapshot
+                .filter((field) => field.dataType === "table" || field.dataType === "base_table")
+                .map((field) => (
+                  <TableSupplementControl
+                    key={field.id}
+                    requestId={request.id}
+                    field={field}
+                    history={history}
+                    onSupplemented={onActed}
+                  />
+                ))}
+
+            <div className="mt-3 flex items-center justify-between gap-2 border-t border-[var(--color-border)] pt-3">
+              <p className="text-[12px] font-medium text-gray-600">Tài liệu đính kèm</p>
+              {isOwnRequest && (
+                <button
+                  type="button"
+                  onClick={() => attachmentInputRef.current?.click()}
+                  disabled={uploadingAttachment}
+                  className="print-hide flex items-center gap-1 text-[12px] font-medium text-[var(--color-action-blue)] hover:underline disabled:opacity-60"
+                >
+                  <Plus size={13} /> {uploadingAttachment ? "Đang tải lên..." : "Thêm tệp tin"}
+                </button>
+              )}
+              <input
+                ref={attachmentInputRef}
+                type="file"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) uploadAttachment(file);
+                }}
+              />
+            </div>
+            {attachments.length === 0 ? (
+              <p className="mt-1.5 text-[13px] text-gray-400">Chưa có tài liệu nào.</p>
+            ) : (
+              <ul className="mt-1.5 flex flex-col gap-1">
+                {attachments.map((att, i) => {
+                  // `attachments[]` chỉ NỐI THÊM (không chèn giữa/xoá), và
+                  // trạng thái "approved" không quay lại trạng thái khác — nên
+                  // K mục cuối cùng luôn ĐÚNG là K lần đính "sau duyệt" đã ghi
+                  // trong history, cùng thứ tự. Xem design.md của change
+                  // add-post-approval-supplement, Decision 5.
+                  const firstPostApprovalIndex = attachments.length - attachmentSupplementEntries.length;
+                  const supplementEntry =
+                    i >= firstPostApprovalIndex ? attachmentSupplementEntries[i - firstPostApprovalIndex] : null;
+                  return (
+                    <li key={att.path}>
+                      <button
+                        type="button"
+                        onClick={() => setPreviewingAttachment(att)}
+                        className="flex w-full items-center gap-1.5 text-left text-[13px] text-[var(--color-action-blue)] hover:underline"
+                      >
+                        <Paperclip size={13} className="shrink-0" />
+                        <span className="truncate">{att.name}</span>
+                        <span className="shrink-0 text-gray-400">({(att.size / 1024 / 1024).toFixed(1)}MB)</span>
+                      </button>
+                      {supplementEntry && (
+                        <p className="ml-[19px] text-[10.5px] font-medium text-amber-600">
+                          🕘 Đính sau duyệt · lần {i - firstPostApprovalIndex + 1} ·{" "}
+                          {new Date(supplementEntry.at).toLocaleString("vi-VN")}
+                        </p>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
             )}
-            <input
-              ref={attachmentInputRef}
-              type="file"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) uploadAttachment(file);
-              }}
-            />
+            {previewingAttachment && (
+              <FilePreviewModal
+                requestId={request.id}
+                attachment={previewingAttachment}
+                onClose={() => setPreviewingAttachment(null)}
+              />
+            )}
           </div>
-          {attachments.length === 0 ? (
-            <p className="text-[13px] text-gray-400">Chưa có tài liệu nào.</p>
-          ) : (
-            <ul className="flex flex-col gap-1">
-              {attachments.map((att, i) => {
-                // `attachments[]` chỉ NỐI THÊM (không chèn giữa/xoá), và
-                // trạng thái "approved" không quay lại trạng thái khác — nên
-                // K mục cuối cùng luôn ĐÚNG là K lần đính "sau duyệt" đã ghi
-                // trong history, cùng thứ tự. Xem design.md của change
-                // add-post-approval-supplement, Decision 5.
-                const firstPostApprovalIndex = attachments.length - attachmentSupplementEntries.length;
-                const supplementEntry =
-                  i >= firstPostApprovalIndex ? attachmentSupplementEntries[i - firstPostApprovalIndex] : null;
-                return (
-                  <li key={att.path}>
-                    <button
-                      type="button"
-                      onClick={() => setPreviewingAttachment(att)}
-                      className="flex w-full items-center gap-1.5 text-left text-[13px] text-[var(--color-action-blue)] hover:underline"
-                    >
-                      <Paperclip size={13} className="shrink-0" />
-                      <span className="truncate">{att.name}</span>
-                      <span className="shrink-0 text-gray-400">({(att.size / 1024 / 1024).toFixed(1)}MB)</span>
-                    </button>
-                    {supplementEntry && (
-                      <p className="ml-[19px] text-[10.5px] font-medium text-amber-600">
-                        🕘 Đính sau duyệt · lần {i - firstPostApprovalIndex + 1} ·{" "}
-                        {new Date(supplementEntry.at).toLocaleString("vi-VN")}
-                      </p>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-          {previewingAttachment && (
-            <FilePreviewModal
-              requestId={request.id}
-              attachment={previewingAttachment}
-              onClose={() => setPreviewingAttachment(null)}
-            />
-          )}
-        </div>
+        )}
 
         <div className={`mt-4 rounded-[3px] border border-[var(--color-border)] bg-white p-4 ${printHideDiscussion ? "print-hide" : ""}`}>
           <h2 className="mb-3 flex items-center gap-1.5 text-[13px] font-semibold uppercase tracking-wide text-gray-500">
@@ -1229,7 +1237,9 @@ function FileValueView({
 /**
  * Khu vực "Bổ sung sau duyệt" cho field kiểu bảng — CHỈ hiện khi đề xuất đã
  * duyệt và người xem chính là submitter (điều kiện gọi ở nơi dùng, xem
- * `canSupplementAfterApproval`). Nối thêm dòng qua route riêng
+ * `canSupplementAfterApproval`). Gõ trực tiếp từng dòng ngay trên trình
+ * duyệt (đổi từ luồng tải/điền/nạp Excel trước đó, theo yêu cầu Sếp
+ * 12/09/2026 — đã duyệt qua demo tương tác), nối thêm dòng qua route riêng
  * `POST /api/requests/[id]/table-supplement` — KHÔNG sửa/xoá dòng cũ, xem
  * design.md của change add-post-approval-supplement.
  */
@@ -1244,45 +1254,46 @@ function TableSupplementControl({
   history: RequestHistoryEntry[];
   onSupplemented: () => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const columns = field.tableColumns ?? [];
+  const emptyRow = () => columns.map(() => "");
+  const [rows, setRows] = useState<string[][]>([emptyRow()]);
   const [status, setStatus] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const columns = field.tableColumns ?? [];
   const supplementEntries = history.filter((h) => h.action.startsWith(TABLE_SUPPLEMENT_HISTORY_PREFIX));
   const lastEntry = supplementEntries[supplementEntries.length - 1];
 
-  const downloadTemplate = () =>
-    downloadTableTemplateFile(columns, `mau-${field.code ?? field.name}.xlsx`);
+  if (columns.length === 0) return null;
 
-  const importFile = async (file: File) => {
-    setSubmitting(true);
-    setStatus("Đang đọc file...");
-    const parsed = await parseTableImportFile(file, columns);
-    if (fileInputRef.current) fileInputRef.current.value = "";
-    if (!parsed.ok) {
-      setStatus(parsed.error);
-      setSubmitting(false);
+  const updateCell = (rowIndex: number, colIndex: number, value: string) => {
+    setRows((prev) =>
+      prev.map((row, ri) => (ri === rowIndex ? row.map((cell, ci) => (ci === colIndex ? value : cell)) : row)),
+    );
+  };
+  const addRow = () => setRows((prev) => [...prev, emptyRow()]);
+  const removeRow = (rowIndex: number) =>
+    setRows((prev) => (prev.length <= 1 ? prev : prev.filter((_, ri) => ri !== rowIndex)));
+
+  const submit = async () => {
+    const filledRows = rows.filter((row) => row.some((cell) => cell.trim() !== ""));
+    if (filledRows.length === 0) {
+      setStatus("Chưa nhập dòng nào để bổ sung.");
       return;
     }
+    setSubmitting(true);
+    setStatus(null);
     try {
       const res = await fetch(`/api/requests/${requestId}/table-supplement`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fieldId: field.id,
-          newRows: parsed.newRows,
-          newColumns: parsed.newHeaders,
-        }),
+        body: JSON.stringify({ fieldId: field.id, newRows: filledRows, newColumns: [] }),
       });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
         setStatus(data.error ?? "Không thể bổ sung dữ liệu.");
         return;
       }
-      setStatus(null);
-      setExpanded(false);
+      setRows([emptyRow()]);
       onSupplemented();
     } catch {
       setStatus("Có lỗi xảy ra, vui lòng thử lại.");
@@ -1292,59 +1303,78 @@ function TableSupplementControl({
   };
 
   return (
-    <div className="mt-2">
-      {lastEntry && (
-        <p className="mb-1.5 text-[10.5px] font-medium text-amber-600">
-          🕘 Bổ sung sau duyệt · lần {supplementEntries.length} ·{" "}
-          {new Date(lastEntry.at).toLocaleString("vi-VN")}
-        </p>
-      )}
-      {!expanded ? (
+    <div className="mb-3 border-b border-[var(--color-border)] pb-3">
+      <p className="mb-1.5 text-[12px] font-medium text-gray-600">
+        {field.name}
+        {lastEntry && (
+          <span className="ml-2 text-[10.5px] font-medium text-amber-600">
+            🕘 Bổ sung sau duyệt · lần {supplementEntries.length} ·{" "}
+            {new Date(lastEntry.at).toLocaleString("vi-VN")}
+          </span>
+        )}
+      </p>
+      <div className="overflow-x-auto rounded border border-[var(--color-border)]">
+        <table className="w-full text-[12px]">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="w-8 px-2 py-1.5 text-left text-gray-400">#</th>
+              {columns.map((col, i) => (
+                <th key={i} className="px-2 py-1.5 text-left font-medium text-gray-600">
+                  {col}
+                </th>
+              ))}
+              <th className="w-8" />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, ri) => (
+              <tr key={ri} className="border-t border-[var(--color-border)]">
+                <td className="px-2 py-1 text-gray-400">{ri + 1}</td>
+                {row.map((cell, ci) => (
+                  <td key={ci} className="px-1 py-1">
+                    <input
+                      type="text"
+                      value={cell}
+                      onChange={(e) => updateCell(ri, ci, e.target.value)}
+                      className="w-full rounded px-1.5 py-1 text-[12px] focus:bg-blue-50 focus:outline-none"
+                    />
+                  </td>
+                ))}
+                <td className="px-1 py-1 text-center">
+                  {rows.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => removeRow(ri)}
+                      className="text-gray-300 hover:text-[var(--color-danger-red)]"
+                      title="Xoá dòng"
+                    >
+                      <X size={13} />
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="mt-1.5 flex items-center gap-3">
         <button
           type="button"
-          onClick={() => setExpanded(true)}
+          onClick={addRow}
           className="print-hide flex items-center gap-1 text-[12px] font-medium text-[var(--color-action-blue)] hover:underline"
         >
-          <Plus size={13} /> Bổ sung dữ liệu
+          <Plus size={13} /> Thêm dòng
         </button>
-      ) : (
-        <div className="print-hide flex flex-wrap items-center gap-2 rounded border border-dashed border-gray-300 p-2">
-          <button
-            type="button"
-            onClick={downloadTemplate}
-            disabled={columns.length === 0}
-            className="flex h-7 items-center gap-1 rounded border border-[var(--color-border)] px-2 text-[11px] font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
-          >
-            <FileDown size={12} /> Tải file mẫu
-          </button>
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={submitting}
-            className="flex h-7 items-center gap-1 rounded border border-[var(--color-action-blue)] px-2 text-[11px] font-medium text-[var(--color-action-blue)] hover:bg-blue-50 disabled:opacity-50"
-          >
-            <Upload size={12} /> {submitting ? "Đang xử lý..." : "Thêm file"}
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".xlsx,.xls,.csv"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) importFile(file);
-            }}
-          />
-          <button
-            type="button"
-            onClick={() => setExpanded(false)}
-            className="text-[11px] text-gray-400 hover:underline"
-          >
-            Huỷ
-          </button>
-          {status && <span className="text-[11px] text-gray-500">{status}</span>}
-        </div>
-      )}
+        <button
+          type="button"
+          onClick={submit}
+          disabled={submitting}
+          className="flex h-7 items-center gap-1 rounded bg-[var(--color-action-blue)] px-3 text-[12px] font-medium text-white hover:opacity-90 disabled:opacity-50"
+        >
+          {submitting ? "Đang gửi..." : "Gửi cập nhật"}
+        </button>
+        {status && <span className="text-[11px] text-gray-500">{status}</span>}
+      </div>
     </div>
   );
 }
