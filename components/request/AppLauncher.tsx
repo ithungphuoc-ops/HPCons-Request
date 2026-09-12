@@ -5,19 +5,30 @@ import HighlightMatch, { normalizeSearch } from "@/components/shared/HighlightMa
 import {
   AppWindow,
   BarChart3,
+  Boxes,
   Briefcase,
+  BriefcaseBusiness,
   CalendarClock,
   Clock,
   ClipboardCheck,
+  ClipboardList,
   FileCheck,
+  FileCheck2,
+  Gavel,
+  Gift,
+  Handshake,
   Heart,
   Laptop,
+  ListChecks,
   MapPin,
+  Package,
   PenTool,
   Receipt,
   Search,
   Send,
   Settings,
+  ShoppingCart,
+  UserRound,
   Warehouse,
   Workflow,
   X,
@@ -28,10 +39,15 @@ import { useCurrentSession } from "@/lib/useCurrentSession";
 
 // Cùng bộ khoá icon với hpcons-portal/lib/dashboardApps.ts — app nào chưa có
 // trong danh sách này thì rơi về icon mặc định (AppWindow).
+// Từ 12/09/2026 API trả thêm `iconKeyNew` (tên Lucide thật: FileCheck2, ClipboardList,
+// UserRound, Gift, BriefcaseBusiness, Gavel, Handshake, Package, ShoppingCart, Boxes,
+// ListChecks...) — ưu tiên dùng; `iconKey` cũ (FileCheck, ClipboardCheck, Briefcase, Heart)
+// chỉ giữ để fallback khi App Tổng chưa đổi.
 const ICONS: Record<string, LucideIcon> = {
   Clock,
   MapPin,
   FileCheck,
+  FileCheck2,
   Send,
   CalendarClock,
   BarChart3,
@@ -39,25 +55,59 @@ const ICONS: Record<string, LucideIcon> = {
   Warehouse,
   PenTool,
   Briefcase,
+  BriefcaseBusiness,
   Receipt,
   Workflow,
   Heart,
   Laptop,
   ClipboardCheck,
+  ClipboardList,
+  UserRound,
+  Gift,
+  Gavel,
+  Handshake,
+  Package,
+  ShoppingCart,
+  Boxes,
+  ListChecks,
+};
+
+// 5 nhóm chuẩn App Tổng từ 12/09/2026 — thứ tự hiển thị cố định; nhãn/màu ở đây chỉ là fallback
+// khi API không trả groupLabel/groupColor. Subtitle cố định theo App Tổng.
+const GROUP_ORDER = ["hr", "sales", "supply", "finance", "system"] as const;
+const GROUP_META: Record<(typeof GROUP_ORDER)[number], { label: string; subtitle: string; color: string }> = {
+  hr: {
+    label: "Nhân sự & Hành chính",
+    subtitle: "Chấm công, đơn từ, đề xuất, đặt phòng, liên lạc, quà tặng",
+    color: "#096AA7",
+  },
+  sales: { label: "Kinh doanh & Dự án", subtitle: "Khách hàng, đấu thầu, thiết kế, cuộc họp", color: "#0E8A5F" },
+  supply: { label: "Kho & Mua hàng", subtitle: "Kho công trình, thu mua, kho ERP", color: "#B7791F" },
+  finance: { label: "Tài chính & Tài sản", subtitle: "Công nợ, tài sản IT", color: "#0F7E8C" },
+  system: { label: "Quản trị hệ thống", subtitle: "Báo cáo, cấu hình, phân quyền", color: "#4B5B6B" },
 };
 
 type RemoteApp = {
   name: string;
   description?: string;
   iconKey?: string;
+  iconKeyNew?: string;
   color: string;
   category?: "ops" | "business";
+  group?: string;
+  groupLabel?: string;
+  groupColor?: string;
+  groupSoftColor?: string;
   image?: string | null;
   href?: string | null;
   comingSoon?: boolean;
 };
 
 /**
+ * Từ 12/09/2026 màu ô icon lấy từ `groupColor` (hex, gắn inline style) nên KHÔNG còn phụ thuộc
+ * safelist Tailwind bên dưới. Danh sách class dưới vẫn giữ vì `app.color` là fallback khi
+ * App Tổng chưa trả groupColor.
+ *
  * app.color trong dữ liệu trả về từ API là chuỗi Tailwind (vd "bg-blue-500") đọc lúc CHẠY,
  * Tailwind quét mã nguồn lúc BUILD nên không thấy được — nếu không liệt kê literal ở đâu đó
  * trong file thì class không được biên dịch ra CSS, ô icon mất màu nền (phát hiện 31/07/2026
@@ -105,18 +155,33 @@ export default function AppLauncher({ onClose }: { onClose: () => void }) {
   const list = (apps ?? []).filter(
     (a) => !q || normalizeSearch(a.name).includes(q) || normalizeSearch(a.description ?? "").includes(q),
   );
-  const groups = [
-    {
-      title: "Nhân sự & Vận hành",
-      subtitle: "Chấm công, đơn từ, đặt phòng, báo cáo...",
-      apps: list.filter((a) => a.category !== "business"),
-    },
-    {
-      title: "Ứng dụng nghiệp vụ",
-      subtitle: "Kinh doanh, kho, tài sản, quy trình...",
-      apps: list.filter((a) => a.category === "business"),
-    },
-  ].filter((g) => g.apps.length > 0);
+  // Có app nào mang `group` (API App Tổng mới) → 5 nhóm cố định; API cũ → 2 nhóm theo category.
+  const hasGroup = (apps ?? []).some((a) => !!a.group);
+  const groups: { title: string; subtitle: string; color: string | null; apps: RemoteApp[] }[] = hasGroup
+    ? GROUP_ORDER.map((key) => {
+        const inGroup = list.filter((a) => a.group === key);
+        const meta = GROUP_META[key];
+        return {
+          title: inGroup[0]?.groupLabel || meta.label,
+          subtitle: meta.subtitle,
+          color: inGroup[0]?.groupColor || meta.color,
+          apps: inGroup,
+        };
+      }).filter((g) => g.apps.length > 0)
+    : [
+        {
+          title: "Nhân sự & Vận hành",
+          subtitle: "Chấm công, đơn từ, đặt phòng, báo cáo...",
+          color: null,
+          apps: list.filter((a) => a.category !== "business"),
+        },
+        {
+          title: "Ứng dụng nghiệp vụ",
+          subtitle: "Kinh doanh, kho, tài sản, quy trình...",
+          color: null,
+          apps: list.filter((a) => a.category === "business"),
+        },
+      ].filter((g) => g.apps.length > 0);
 
   return (
     <div
@@ -184,8 +249,14 @@ export default function AppLauncher({ onClose }: { onClose: () => void }) {
           ) : (
             groups.map((g) => (
               <div key={g.title}>
-                <p className="font-semibold text-gray-800">{g.title}</p>
-                <p className="text-xs text-gray-400 mb-3">{g.subtitle}</p>
+                <div className="flex items-center gap-2">
+                  {g.color && (
+                    <span aria-hidden className="w-2.5 h-2.5 rounded-[3px] shrink-0" style={{ backgroundColor: g.color }} />
+                  )}
+                  <p className="font-semibold text-gray-800">{g.title}</p>
+                  <span className="ml-auto text-xs text-gray-400 tabular-nums">{g.apps.length}</span>
+                </div>
+                <p className={`text-xs text-gray-400 mb-3 ${g.color ? "pl-[18px]" : ""}`}>{g.subtitle}</p>
                 <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
                   {g.apps.map((app) => (
                     <Tile key={app.name} app={app} query={q} />
@@ -202,22 +273,19 @@ export default function AppLauncher({ onClose }: { onClose: () => void }) {
 
 
 function Tile({ app, query }: { app: RemoteApp; query: string }) {
-  const Icon = (app.iconKey && ICONS[app.iconKey]) || AppWindow;
+  const Icon = (app.iconKeyNew && ICONS[app.iconKeyNew]) || (app.iconKey && ICONS[app.iconKey]) || AppWindow;
   const current = !!app.href && app.href.includes(CURRENT_APP_HOST);
 
   const inner = (
     <>
+      {/* Nền đặc màu nhóm (hex inline từ App Tổng) + icon trắng; không còn ảnh 3D từ 12/09/2026 */}
       <div
         className={`w-14 h-14 rounded-2xl flex items-center justify-center overflow-hidden transition-transform group-hover:scale-105 ${
-          app.image ? "bg-white border border-gray-100" : app.color
+          app.groupColor ? "" : app.color
         } ${app.comingSoon ? "opacity-50" : ""}`}
+        style={app.groupColor ? { backgroundColor: app.groupColor } : undefined}
       >
-        {app.image ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={app.image} alt={app.name} className="w-full h-full object-cover scale-[1.15]" />
-        ) : (
-          <Icon size={26} className="text-white" aria-hidden />
-        )}
+        <Icon size={26} strokeWidth={1.75} className="text-white" aria-hidden />
       </div>
       <p className={`text-xs font-medium text-center leading-tight ${app.comingSoon ? "text-gray-400" : "text-gray-700"}`}>
         <HighlightMatch text={app.name} query={query} />
