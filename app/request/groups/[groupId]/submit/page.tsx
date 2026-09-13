@@ -26,7 +26,6 @@ import {
   DATE_LEAD_TIME_URGENT_NOTE,
   parseFieldDateOnly,
   resolveDateLeadTimeNumbers,
-  type DateLeadTimeStatus,
 } from "@/lib/date-lead-time";
 import TagUserInput from "@/components/shared/TagUserInput";
 import DatePicker from "@/components/ui/DatePicker";
@@ -87,9 +86,6 @@ export default function SubmitRequestPage() {
   const [values, setValues] = useState<FieldValues>({});
   const [followers, setFollowers] = useState<TaggedUser[]>(group?.followers ?? []);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  // Mức "gấp" hiện tại của từng field có bật dateLeadTimeRule, theo id field —
-  // suy ra lại mỗi lần đổi giá trị ngày (handleDateFieldChange bên dưới).
-  const [dateLeadTimeStatus, setDateLeadTimeStatus] = useState<Record<string, DateLeadTimeStatus>>({});
   // Field nào đã được người gửi XÁC NHẬN "thật cần thiết" ở hộp hỏi gấp — chỉ
   // field có mặt ở đây (giá trị true) mới được đánh dấu màu + ghi chú. Đổi
   // ngày là bị xoá khỏi đây, phải xác nhận lại (xem handleDateFieldChange).
@@ -226,12 +222,6 @@ export default function SubmitRequestPage() {
   };
 
   const clearDateLeadTimeFlags = (fieldId: string) => {
-    setDateLeadTimeStatus((prev) => {
-      if (!(fieldId in prev)) return prev;
-      const next = { ...prev };
-      delete next[fieldId];
-      return next;
-    });
     setUrgentConfirmed((prev) => {
       if (!(fieldId in prev)) return prev;
       const next = { ...prev };
@@ -269,7 +259,6 @@ export default function SubmitRequestPage() {
     const days = countBusinessDaysBetween(now, target);
     const status = classifyDateLeadTimeByDate(target, rule, now);
 
-    setDateLeadTimeStatus((prev) => ({ ...prev, [field.id]: status }));
     setUrgentConfirmed((prev) => {
       if (!(field.id in prev)) return prev;
       const next = { ...prev };
@@ -344,16 +333,27 @@ export default function SubmitRequestPage() {
 
   const handleSubmit = async () => {
     const nextErrors: Record<string, string> = {};
+    // Một mốc "bây giờ" duy nhất cho cả vòng lặp — tránh 2 field cạnh nhau rơi
+    // vào 2 ngày khác nhau nếu bấm Gửi đúng lúc nửa đêm.
+    const submitStartedAt = new Date();
     if (group.requiresSubmissionForm !== false) {
       for (const field of visibleFields) {
         if (field.required && isEmptyValue(values[field.id])) {
           nextErrors[field.id] = "Trường này là bắt buộc.";
         }
-        // Mốc cứng ≤2 ngày làm việc — kiểm lại ở đây (không chỉ tin state đã
-        // set lúc onChange) để phòng field bị ẩn/hiện lại qua visibleWhen mà
-        // không đi lại qua handleDateFieldChange.
+        // TÍNH LẠI từ giá trị đang có, KHÔNG đọc `dateLeadTimeStatus` —
+        // state đó chỉ được set khi người dùng tự chọn ngày qua
+        // handleDateFieldChange. Mở lại BẢN NHÁP thì `values` được nạp sẵn
+        // nhưng state kia vẫn rỗng: đọc state sẽ ra `undefined`, bỏ qua lỗi,
+        // để đơn đi thẳng lên API rồi mới bị máy chủ chặn — lúc đó câu lỗi
+        // rơi vào `submitError` chung chứ không chỉ đúng ô ngày. Lỗi thật,
+        // CodeRabbit phát hiện trên PR #13 (13/09/2026).
         if (field.dateLeadTimeRule?.enabled) {
-          const dateStatus = dateLeadTimeStatus[field.id];
+          const rawDate = values[field.id];
+          const targetDate = typeof rawDate === "string" ? parseFieldDateOnly(rawDate) : null;
+          const dateStatus = targetDate
+            ? classifyDateLeadTimeByDate(targetDate, field.dateLeadTimeRule, submitStartedAt)
+            : undefined;
           if (dateStatus === "past") nextErrors[field.id] = DATE_LEAD_TIME_PAST_MESSAGE;
           else if (dateStatus === "blocked")
             nextErrors[field.id] = dateLeadTimeBlockedMessage(
