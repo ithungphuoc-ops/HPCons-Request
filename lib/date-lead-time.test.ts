@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { classifyDateLeadTime, countBusinessDaysBetween, parseFieldDateOnly } from "./date-lead-time";
+import {
+  classifyDateLeadTime,
+  classifyDateLeadTimeByDate,
+  countBusinessDaysBetween,
+  dateLeadTimeBlockedMessage,
+  parseFieldDateOnly,
+  resolveDateLeadTimeNumbers,
+  validateDateLeadTimeNumbers,
+} from "./date-lead-time";
 
 /** Tìm ngày trong tuần (0=CN..6=T7) gần nhất >= from — test không phụ thuộc
  * vào việc nhớ đúng thứ của 1 ngày cụ thể theo lịch thật (cùng kỹ thuật
@@ -65,6 +73,87 @@ describe("classifyDateLeadTime", () => {
   it(">= standardDays -> ok", () => {
     expect(classifyDateLeadTime(5, 5)).toBe("ok");
     expect(classifyDateLeadTime(20, 15)).toBe("ok");
+  });
+
+  // Mốc 3 ngày (Sếp thêm 13/09/2026): khoảng "gấp" rỗng — 2 ngày vẫn chặn,
+  // từ 3 ngày trở lên là "ok", không bao giờ rơi vào "urgent".
+  it("standardDays = 3 -> không có khoảng urgent", () => {
+    expect(classifyDateLeadTime(2, 3)).toBe("blocked");
+    expect(classifyDateLeadTime(3, 3)).toBe("ok");
+    expect(classifyDateLeadTime(10, 3)).toBe("ok");
+  });
+});
+
+describe("classifyDateLeadTimeByDate", () => {
+  // MONDAY là mốc "hôm làm đề nghị" trong bộ test này.
+  it("ngày trước hôm làm đề nghị -> past (không phải blocked)", () => {
+    expect(classifyDateLeadTimeByDate(addDays(MONDAY, -1), { standardDays: 5 }, MONDAY)).toBe("past");
+    expect(classifyDateLeadTimeByDate(addDays(MONDAY, -30), { standardDays: 3 }, MONDAY)).toBe("past");
+  });
+
+  it("đúng hôm nay hoặc 1-2 ngày làm việc -> blocked", () => {
+    expect(classifyDateLeadTimeByDate(MONDAY, { standardDays: 5 }, MONDAY)).toBe("blocked");
+    expect(classifyDateLeadTimeByDate(addDays(MONDAY, 2), { standardDays: 5 }, MONDAY)).toBe("blocked");
+  });
+
+  it("đủ xa -> urgent/ok theo ngưỡng chuẩn", () => {
+    expect(classifyDateLeadTimeByDate(addDays(MONDAY, 3), { standardDays: 5 }, MONDAY)).toBe("urgent");
+    expect(classifyDateLeadTimeByDate(addDays(MONDAY, 3), { standardDays: 3 }, MONDAY)).toBe("ok");
+  });
+});
+
+// ===== Phương án C: Admin tự đặt 2 mốc (Sếp chốt 13/09/2026) =====
+describe("resolveDateLeadTimeNumbers", () => {
+  it("field cũ chỉ có standardDays -> blockDays mặc định 2 (giữ hành vi cũ)", () => {
+    expect(resolveDateLeadTimeNumbers({ standardDays: 7 })).toEqual({ blockDays: 2, standardDays: 7 });
+  });
+  it("không có gì -> 2/5", () => {
+    expect(resolveDateLeadTimeNumbers(undefined)).toEqual({ blockDays: 2, standardDays: 5 });
+    expect(resolveDateLeadTimeNumbers(null)).toEqual({ blockDays: 2, standardDays: 5 });
+  });
+  it("blockDays = 0 vẫn được giữ (0 là số hợp lệ, không rơi về mặc định)", () => {
+    expect(resolveDateLeadTimeNumbers({ blockDays: 0, standardDays: 1 })).toEqual({ blockDays: 0, standardDays: 1 });
+  });
+});
+
+describe("classifyDateLeadTime theo blockDays tuỳ chỉnh", () => {
+  it("blockDays = 0 -> chỉ hôm nay bị chặn", () => {
+    expect(classifyDateLeadTime(0, 5, 0)).toBe("blocked");
+    expect(classifyDateLeadTime(1, 5, 0)).toBe("urgent");
+  });
+  it("blockDays = 3 -> tới 3 ngày vẫn chặn", () => {
+    expect(classifyDateLeadTime(3, 10, 3)).toBe("blocked");
+    expect(classifyDateLeadTime(4, 10, 3)).toBe("urgent");
+    expect(classifyDateLeadTime(10, 10, 3)).toBe("ok");
+  });
+  it("standardDays = blockDays + 1 -> không có vùng gấp", () => {
+    expect(classifyDateLeadTime(3, 4, 3)).toBe("blocked");
+    expect(classifyDateLeadTime(4, 4, 3)).toBe("ok");
+  });
+});
+
+describe("validateDateLeadTimeNumbers", () => {
+  it("hợp lệ -> null", () => {
+    expect(validateDateLeadTimeNumbers({ blockDays: 2, standardDays: 5 })).toBeNull();
+    expect(validateDateLeadTimeNumbers({ blockDays: 0, standardDays: 1 })).toBeNull();
+  });
+  it("ngưỡng chuẩn <= mốc chặn -> báo lỗi", () => {
+    expect(validateDateLeadTimeNumbers({ blockDays: 5, standardDays: 3 })).toMatch(/lớn hơn mốc chặn/);
+    expect(validateDateLeadTimeNumbers({ blockDays: 3, standardDays: 3 })).toMatch(/lớn hơn mốc chặn/);
+  });
+  it("số âm / không nguyên / quá lớn -> báo lỗi", () => {
+    expect(validateDateLeadTimeNumbers({ blockDays: -1, standardDays: 5 })).toMatch(/Mốc chặn/);
+    expect(validateDateLeadTimeNumbers({ blockDays: 2, standardDays: 999 })).toMatch(/Ngưỡng chuẩn/);
+    expect(validateDateLeadTimeNumbers({ blockDays: 1.5, standardDays: 5 })).toMatch(/Mốc chặn/);
+    expect(validateDateLeadTimeNumbers({ blockDays: 2, standardDays: 0 })).toMatch(/Ngưỡng chuẩn/);
+  });
+});
+
+describe("dateLeadTimeBlockedMessage", () => {
+  it("nói ÍT NHẤT blockDays + 1 ngày", () => {
+    expect(dateLeadTimeBlockedMessage(2)).toContain("ÍT NHẤT 3 ngày làm việc");
+    expect(dateLeadTimeBlockedMessage(0)).toContain("ÍT NHẤT 1 ngày làm việc");
+    expect(dateLeadTimeBlockedMessage()).toContain("ÍT NHẤT 3 ngày làm việc");
   });
 });
 

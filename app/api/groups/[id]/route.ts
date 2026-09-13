@@ -11,6 +11,7 @@ import {
   sanitizeDescriptionHtml,
 } from "@/lib/server/groups";
 import { sanitizeHelpText } from "@/lib/validation";
+import { resolveDateLeadTimeNumbers, validateDateLeadTimeNumbers } from "@/lib/date-lead-time";
 import { validateConditionGroupFieldCodes } from "@/lib/server/conditions";
 import { findReferencedComputedFieldCode } from "@/lib/server/computed-fields";
 import { requireWriteAccess } from "@/lib/session";
@@ -51,7 +52,26 @@ export async function PATCH(
       const normalized = patch.fields.map((f) => ({
         ...(f.code ? { ...f, code: slugifyFieldName(f.code) || undefined } : f),
         helpText: f.helpText !== undefined ? sanitizeHelpText(f.helpText) || undefined : undefined,
+        // Luật "ngày cần cấp": luôn ghi ĐỦ 2 con số xuống DB (điền mặc định cho
+        // field cũ chỉ có standardDays) để nơi đọc không phải đoán — Sếp chốt
+        // "phương án C" 13/09/2026.
+        dateLeadTimeRule: f.dateLeadTimeRule?.enabled
+          ? { enabled: true as const, ...resolveDateLeadTimeNumbers(f.dateLeadTimeRule) }
+          : undefined,
       }));
+
+      // Máy chủ kiểm lại 2 mốc — dùng CHUNG hàm với hộp thoại sửa trường, phòng
+      // người gọi thẳng API né qua giao diện.
+      for (const f of normalized) {
+        if (!f.dateLeadTimeRule?.enabled) continue;
+        const ruleError = validateDateLeadTimeNumbers(f.dateLeadTimeRule);
+        if (ruleError) {
+          return NextResponse.json(
+            { error: `Trường "${f.name}" — ràng buộc ngày cần cấp: ${ruleError}` },
+            { status: 400 },
+          );
+        }
+      }
       const seen = new Set<string>();
       for (const f of normalized) {
         if (!f.code) continue;

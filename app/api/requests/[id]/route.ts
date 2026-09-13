@@ -22,6 +22,7 @@ import {
 import { requireSession } from "@/lib/session";
 import type { RequestInstance, TaggedUser } from "@/lib/types";
 import { retryThuMuaSyncNeuLoi } from "@/lib/thumua-sync";
+import { dateLeadTimeBlockedMessage, resolveDateLeadTimeNumbers } from "@/lib/date-lead-time";
 
 export async function GET(
   _request: Request,
@@ -164,7 +165,9 @@ export async function PATCH(
       if (blockedDates.length > 0) {
         return NextResponse.json(
           {
-            error: "Ngày cần cấp quá gấp — phải cách hôm làm đề nghị ít nhất 3 ngày làm việc.",
+            error: dateLeadTimeBlockedMessage(
+              resolveDateLeadTimeNumbers(blockedDates[0].dateLeadTimeRule).blockDays,
+            ),
             blockedFields: blockedDates.map((f) => ({ id: f.id, name: f.name })),
           },
           { status: 400 },

@@ -102,19 +102,29 @@ export interface ApprovalTimeField {
 
 /**
  * Ràng buộc "ngày cần cấp" cho 1 field kiểu date/datetime — Sếp chốt
- * 20/08/2026. Khi bật (`enabled: true`), lúc gửi đề xuất, ngày người dùng
- * chọn ở field này được phân loại theo số ngày làm việc (Thứ 2→Thứ 7, trừ
- * Chủ Nhật — cùng quy ước lib/business-hours.ts) cách hôm làm đề nghị:
- *   - ≤ 2 ngày làm việc  → CHẶN HẲN không cho gửi (mốc cứng, không đổi được).
- *   - 3 ngày tới TRƯỚC `standardDays` → coi là "gấp", phải hỏi lại người gửi
- *     có thật cần thiết không, xác nhận rồi mới đánh dấu màu lên ô ngày.
- *   - >= `standardDays` → bình thường, không cảnh báo.
- * `standardDays` do Admin tự chọn khi tạo/sửa field này (5/7/15 ngày làm
- * việc) — xem lib/date-lead-time.ts (classifyDateLeadTime).
+ * 20/08/2026, mở cho Admin tự đặt cả 2 mốc 13/09/2026 ("phương án C").
+ *
+ * Hai con số cắt trục thời gian phía trước thành 3 vùng, tính theo NGÀY LÀM
+ * VIỆC (Thứ 2→Thứ 7, trừ Chủ Nhật — cùng quy ước lib/business-hours.ts) cách
+ * ngày làm đề nghị:
+ *   - ≤ `blockDays`                     → CHẶN HẲN không cho gửi.
+ *   - `blockDays`+1 … `standardDays`-1  → "gấp", hỏi lại người gửi có thật sự
+ *     gấp không, xác nhận rồi mới đánh dấu màu lên ô ngày. Đặt
+ *     `standardDays` = `blockDays`+1 thì vùng này RỖNG (không bao giờ hỏi).
+ *   - ≥ `standardDays`                  → bình thường, không cảnh báo.
+ * Ngày TRƯỚC ngày đề nghị luôn bị chặn, không phụ thuộc 2 số này.
+ *
+ * 🔴 `blockDays` là field THÊM SAU: trường ngày lưu trước 13/09/2026 không có
+ * nó → đọc ra phải hiểu là 2 (giữ nguyên hành vi cũ), xem
+ * `resolveDateLeadTimeNumbers()` ở lib/date-lead-time.ts. Đừng tự đọc
+ * `rule.blockDays` trần ở nơi khác.
  */
 export interface DateLeadTimeRule {
   enabled: boolean;
-  standardDays: 5 | 7 | 15;
+  /** Từ mốc này trở lên: hợp lệ, không cảnh báo. Phải LỚN HƠN `blockDays`. */
+  standardDays: number;
+  /** Cách ≤ mốc này thì chặn gửi. Thiếu = 2 (mặc định cũ). 0 = không chặn. */
+  blockDays?: number;
 }
 
 /**
