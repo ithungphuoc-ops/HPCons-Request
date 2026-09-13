@@ -16,9 +16,15 @@ import {
   fieldDataTypeLabels,
   type ComputedTemplateBranch,
   type ConditionGroup,
-  type DateLeadTimeRule,
   type FieldDataType,
 } from "@/lib/types";
+import {
+  DATE_LEAD_TIME_DEFAULT_BLOCK_DAYS,
+  DATE_LEAD_TIME_DEFAULT_STANDARD_DAYS,
+  DATE_LEAD_TIME_MAX_DAYS,
+  resolveDateLeadTimeNumbers,
+  validateDateLeadTimeNumbers,
+} from "@/lib/date-lead-time";
 import { slugifyFieldName } from "@/lib/print-template";
 import { validateFieldName, validateFieldOptions } from "@/lib/validation";
 
@@ -29,7 +35,7 @@ const tableTypes: FieldDataType[] = ["table", "base_table"];
 const computedEligibleTypes: FieldDataType[] = ["short_text", "paragraph"];
 /** Chỉ field ngày mới cấu hình được ràng buộc "ngày cần cấp" (dateLeadTimeRule). */
 const dateLeadTimeEligibleTypes: FieldDataType[] = ["date", "datetime"];
-const DATE_LEAD_TIME_STANDARD_OPTIONS: DateLeadTimeRule["standardDays"][] = [3, 5, 7, 15];
+/** Admin tự gõ 2 mốc (Sếp chốt "phương án C" 13/09/2026) — không còn danh sách cứng. */
 
 export default function AddFieldModal() {
   const { addFieldModalGroupId, editingField, closeAddFieldModal, getGroupById, addField, updateField } =
@@ -52,8 +58,18 @@ export default function AddFieldModal() {
   // tử là 1 nhánh { điều kiện tuỳ chọn + mẫu chuỗi ${ma_truong} }.
   const [computedBranches, setComputedBranches] = useState<ComputedTemplateBranch[] | null>(null);
   const [dateLeadTimeEnabled, setDateLeadTimeEnabled] = useState(false);
-  const [dateLeadTimeStandardDays, setDateLeadTimeStandardDays] = useState<DateLeadTimeRule["standardDays"]>(5);
-  const [errors, setErrors] = useState<{ name?: string; options?: string; code?: string; computed?: string }>({});
+  // Giữ dạng chuỗi để người dùng xoá trắng ô mà không bị nhảy về 0; validate lúc lưu.
+  const [dateLeadTimeBlockDays, setDateLeadTimeBlockDays] = useState(String(DATE_LEAD_TIME_DEFAULT_BLOCK_DAYS));
+  const [dateLeadTimeStandardDays, setDateLeadTimeStandardDays] = useState(
+    String(DATE_LEAD_TIME_DEFAULT_STANDARD_DAYS),
+  );
+  const [errors, setErrors] = useState<{
+    name?: string;
+    options?: string;
+    code?: string;
+    computed?: string;
+    dateLeadTime?: string;
+  }>({});
 
   const conditionFields = useMemo(
     () =>
@@ -91,7 +107,8 @@ export default function AddFieldModal() {
     setVisibleWhen(undefined);
     setComputedBranches(null);
     setDateLeadTimeEnabled(false);
-    setDateLeadTimeStandardDays(5);
+    setDateLeadTimeBlockDays(String(DATE_LEAD_TIME_DEFAULT_BLOCK_DAYS));
+    setDateLeadTimeStandardDays(String(DATE_LEAD_TIME_DEFAULT_STANDARD_DAYS));
     setErrors({});
   };
 
@@ -109,7 +126,10 @@ export default function AddFieldModal() {
       setVisibleWhen(editingField.visibleWhen);
       setComputedBranches(editingField.computedFrom?.branches ?? null);
       setDateLeadTimeEnabled(editingField.dateLeadTimeRule?.enabled ?? false);
-      setDateLeadTimeStandardDays(editingField.dateLeadTimeRule?.standardDays ?? 5);
+      // Trường ngày lưu trước 13/09/2026 chưa có blockDays -> điền mặc định 2.
+      const leadTimeNums = resolveDateLeadTimeNumbers(editingField.dateLeadTimeRule);
+      setDateLeadTimeBlockDays(String(leadTimeNums.blockDays));
+      setDateLeadTimeStandardDays(String(leadTimeNums.standardDays));
       setErrors({});
     } else {
       resetForm();
@@ -165,6 +185,18 @@ export default function AddFieldModal() {
       return;
     }
 
+    const leadTimeNumbers = {
+      blockDays: Number(dateLeadTimeBlockDays),
+      standardDays: Number(dateLeadTimeStandardDays),
+    };
+    if (dateLeadTimeEligibleTypes.includes(dataType) && dateLeadTimeEnabled) {
+      const leadTimeError = validateDateLeadTimeNumbers(leadTimeNumbers);
+      if (leadTimeError) {
+        setErrors({ dateLeadTime: leadTimeError });
+        return;
+      }
+    }
+
     setErrors({});
     const fieldData = {
       name: name.trim(),
@@ -181,7 +213,7 @@ export default function AddFieldModal() {
       computedFrom: cleanedBranches && cleanedBranches.length > 0 ? { branches: cleanedBranches } : undefined,
       dateLeadTimeRule:
         dateLeadTimeEligibleTypes.includes(dataType) && dateLeadTimeEnabled
-          ? { enabled: true, standardDays: dateLeadTimeStandardDays }
+          ? { enabled: true as const, ...leadTimeNumbers }
           : undefined,
     };
 
@@ -487,45 +519,78 @@ export default function AddFieldModal() {
                   checked={dateLeadTimeEnabled}
                   onChange={(e) => setDateLeadTimeEnabled(e.target.checked)}
                 />
-                Bật — bắt buộc chọn ngày cách hôm làm đề nghị ít nhất 3 ngày làm việc
+                Bật — ràng buộc ngày cần cấp theo 2 mốc bên dưới
               </label>
 
               {dateLeadTimeEnabled && (
                 <>
-                  <div>
-                    <p className="mb-1 text-[12px] text-gray-500">
-                      Ngưỡng chuẩn (đủ thời gian chuẩn bị — từ mốc này trở lên không cảnh báo gì):
-                    </p>
-                    <select
-                      className={selectClass}
-                      value={dateLeadTimeStandardDays}
-                      onChange={(e) =>
-                        setDateLeadTimeStandardDays(
-                          Number(e.target.value) as DateLeadTimeRule["standardDays"],
-                        )
-                      }
-                    >
-                      {DATE_LEAD_TIME_STANDARD_OPTIONS.map((d) => (
-                        <option key={d} value={d}>
-                          {d} ngày làm việc
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="rounded-md bg-amber-50 p-2 text-[12px] leading-relaxed text-amber-700">
-                    Chọn ngày cách hôm gửi ≤ 2 ngày làm việc: chặn hẳn, không cho gửi.
-                    {dateLeadTimeStandardDays === 3 ? (
-                      <>
-                        {" "}Ngưỡng chuẩn 3 ngày: từ 3 ngày làm việc trở lên là hợp lệ, không hỏi gì thêm
-                        (không có khoảng &quot;gấp&quot;).
-                      </>
-                    ) : (
-                      <>
-                        {" "}Chọn từ 3 ngày tới trước ngưỡng chuẩn ở trên: hỏi lại người gửi có thật cần
-                        thiết không — nếu xác nhận cần thiết, ô ngày được đánh dấu màu kèm ghi chú
-                        &quot;chưa có kế hoạch đề nghị rõ ràng&quot;.
-                      </>
+                  <div className="flex flex-col gap-3">
+                    <div>
+                      <p className="mb-1 text-[12px] text-gray-500">
+                        Mốc chặn — cách dưới hoặc bằng số này thì không cho gửi:
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min={0}
+                          max={DATE_LEAD_TIME_MAX_DAYS}
+                          className={`${inputClass} w-24 text-center`}
+                          value={dateLeadTimeBlockDays}
+                          onChange={(e) => setDateLeadTimeBlockDays(e.target.value)}
+                        />
+                        <span className="text-[12px] text-gray-500">
+                          ngày làm việc — đặt 0 nghĩa là không chặn ai
+                        </span>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="mb-1 text-[12px] text-gray-500">
+                        Ngưỡng chuẩn (đủ thời gian chuẩn bị — từ mốc này trở lên không cảnh báo gì):
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min={1}
+                          max={DATE_LEAD_TIME_MAX_DAYS}
+                          className={`${inputClass} w-24 text-center`}
+                          value={dateLeadTimeStandardDays}
+                          onChange={(e) => setDateLeadTimeStandardDays(e.target.value)}
+                        />
+                        <span className="text-[12px] text-gray-500">ngày làm việc — phải lớn hơn mốc chặn</span>
+                      </div>
+                    </div>
+                    {errors.dateLeadTime && (
+                      <p className="text-[12px] text-[var(--color-danger-red)]">{errors.dateLeadTime}</p>
                     )}
+                  </div>
+                  {/* Khung giải thích TỰ VIẾT LẠI theo 2 số Admin vừa gõ — không còn câu cứng. */}
+                  <div className="rounded-md bg-amber-50 p-2 text-[12px] leading-relaxed text-amber-700">
+                    {(() => {
+                      const b = Number(dateLeadTimeBlockDays);
+                      const st = Number(dateLeadTimeStandardDays);
+                      if (!Number.isInteger(b) || !Number.isInteger(st) || st <= b) {
+                        return "Nhập đủ 2 mốc hợp lệ để xem luật sẽ chạy thế nào.";
+                      }
+                      return (
+                        <>
+                          Chọn ngày cách ngày đề nghị <b>≤ {b} ngày làm việc</b>: chặn hẳn, không cho gửi.
+                          {st === b + 1 ? (
+                            <>
+                              {" "}
+                              Từ <b>{b + 1} ngày làm việc</b> trở lên là hợp lệ — không có khoảng hỏi gấp.
+                            </>
+                          ) : (
+                            <>
+                              {" "}
+                              Từ <b>{b + 1}</b> tới <b>{st - 1} ngày làm việc</b>: hỏi lại người gửi có thật sự
+                              gấp không — nếu xác nhận, ô ngày được đánh dấu màu kèm ghi chú &quot;chưa có kế
+                              hoạch đề nghị rõ ràng&quot;. Từ <b>{st} ngày</b> trở lên: không cảnh báo gì.
+                            </>
+                          )}{" "}
+                          Ngày trước ngày đề nghị luôn bị chặn, không phụ thuộc 2 số này.
+                        </>
+                      );
+                    })()}
                   </div>
                 </>
               )}

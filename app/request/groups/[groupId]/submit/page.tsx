@@ -21,10 +21,11 @@ import { isSubmitterEditableStep } from "@/lib/approval-logic";
 import {
   classifyDateLeadTimeByDate,
   countBusinessDaysBetween,
-  DATE_LEAD_TIME_BLOCKED_MESSAGE,
+  dateLeadTimeBlockedMessage,
   DATE_LEAD_TIME_PAST_MESSAGE,
   DATE_LEAD_TIME_URGENT_NOTE,
   parseFieldDateOnly,
+  resolveDateLeadTimeNumbers,
   type DateLeadTimeStatus,
 } from "@/lib/date-lead-time";
 import TagUserInput from "@/components/shared/TagUserInput";
@@ -266,7 +267,7 @@ export default function SubmitRequestPage() {
     if (!target) return;
     const now = new Date();
     const days = countBusinessDaysBetween(now, target);
-    const status = classifyDateLeadTimeByDate(target, rule.standardDays, now);
+    const status = classifyDateLeadTimeByDate(target, rule, now);
 
     setDateLeadTimeStatus((prev) => ({ ...prev, [field.id]: status }));
     setUrgentConfirmed((prev) => {
@@ -277,7 +278,10 @@ export default function SubmitRequestPage() {
     });
 
     if (status === "past" || status === "blocked") {
-      const message = status === "past" ? DATE_LEAD_TIME_PAST_MESSAGE : DATE_LEAD_TIME_BLOCKED_MESSAGE;
+      const message =
+        status === "past"
+          ? DATE_LEAD_TIME_PAST_MESSAGE
+          : dateLeadTimeBlockedMessage(resolveDateLeadTimeNumbers(rule).blockDays);
       setErrors((prev) => ({ ...prev, [field.id]: message }));
       setUrgentPrompt((prev) => (prev?.field.id === field.id ? null : prev));
     } else {
@@ -351,7 +355,10 @@ export default function SubmitRequestPage() {
         if (field.dateLeadTimeRule?.enabled) {
           const dateStatus = dateLeadTimeStatus[field.id];
           if (dateStatus === "past") nextErrors[field.id] = DATE_LEAD_TIME_PAST_MESSAGE;
-          else if (dateStatus === "blocked") nextErrors[field.id] = DATE_LEAD_TIME_BLOCKED_MESSAGE;
+          else if (dateStatus === "blocked")
+            nextErrors[field.id] = dateLeadTimeBlockedMessage(
+              resolveDateLeadTimeNumbers(field.dateLeadTimeRule).blockDays,
+            );
         }
         // Cột "then chốt" (Tên hàng/Quy cách/ĐVT/Mục đích sử dụng/Số lượng) ở
         // field kiểu bảng — chặn sớm phía trình duyệt, máy chủ vẫn kiểm lại

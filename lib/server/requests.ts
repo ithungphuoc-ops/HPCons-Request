@@ -11,6 +11,7 @@ import {
   classifyDateLeadTime,
   countBusinessDaysBetween,
   parseFieldDateOnly,
+  resolveDateLeadTimeNumbers,
 } from "@/lib/date-lead-time";
 import { adminDb } from "@/lib/firebase/admin";
 import { evaluateConditionGroup, filterApplicableSteps } from "@/lib/server/conditions";
@@ -172,7 +173,8 @@ export function findBlockedDateLeadTimeFields(
     const target = parseFieldDateOnly(raw);
     if (!target) return false;
     const days = countBusinessDaysBetween(now, target);
-    return classifyDateLeadTime(days, f.dateLeadTimeRule.standardDays) === "blocked";
+    const { blockDays, standardDays } = resolveDateLeadTimeNumbers(f.dateLeadTimeRule);
+    return classifyDateLeadTime(days, standardDays, blockDays) === "blocked";
   });
 }
 

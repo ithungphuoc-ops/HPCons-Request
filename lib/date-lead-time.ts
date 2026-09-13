@@ -3,13 +3,14 @@
  * lib/business-hours.ts, "SLA theo lịch làm việc") và phân loại mức gấp của
  * 1 ngày cần cấp so với hôm làm đề nghị — dùng cho luật
  * ProposalField.dateLeadTimeRule (Sếp chốt 20/08/2026):
- *   - ≤ 2 ngày làm việc (kể cả ngày hôm nay/quá khứ) → "blocked", CHẶN HẲN
- *     không cho gửi đề xuất — mốc cứng, không phụ thuộc `standardDays`.
- *   - 3 ngày tới TRƯỚC ngưỡng chuẩn Admin chọn riêng cho field (standardDays:
- *     3/5/7/15) → "urgent", phải hỏi lại người gửi có thật cần thiết rồi mới
- *     cho đánh dấu. Chọn standardDays = 3 thì khoảng này RỖNG — mọi ngày hợp lệ
- *     (>= 3 ngày làm việc) đều "ok", không hỏi gấp (Sếp thêm mốc 3 ngày 13/09/2026).
- *   - >= standardDays → "ok", không cảnh báo gì.
+ *   - ≤ `blockDays` (kể cả hôm nay) → "blocked", CHẶN HẲN không cho gửi.
+ *   - `blockDays`+1 tới TRƯỚC `standardDays` → "urgent", phải hỏi lại người gửi
+ *     có thật sự gấp không rồi mới cho đánh dấu. Đặt `standardDays` =
+ *     `blockDays`+1 thì khoảng này RỖNG — không bao giờ hỏi.
+ *   - >= `standardDays` → "ok", không cảnh báo gì.
+ *
+ * Cả 2 mốc do Admin tự đặt cho TỪNG field của TỪNG nhóm (Sếp chốt "phương án
+ * C" 13/09/2026). Field lưu trước ngày đó không có `blockDays` → mặc định 2.
  *
  * Thuần tính toán ngày giờ, không đụng Firestore/credential — test được
  * trực tiếp bằng vitest (xem date-lead-time.test.ts), không cần "server-only".
@@ -65,10 +66,55 @@ export function countBusinessDaysBetween(from: Date, to: Date): number {
  */
 export type DateLeadTimeStatus = "past" | "blocked" | "urgent" | "ok";
 
-export function classifyDateLeadTime(businessDays: number, standardDays: number): DateLeadTimeStatus {
-  if (businessDays <= 2) return "blocked";
+/** Mặc định khi field chưa có cấu hình — đúng bằng hành vi trước 13/09/2026. */
+export const DATE_LEAD_TIME_DEFAULT_BLOCK_DAYS = 2;
+export const DATE_LEAD_TIME_DEFAULT_STANDARD_DAYS = 5;
+/** Chặn số vô lý (gõ nhầm 999) ở cả trình duyệt lẫn máy chủ. */
+export const DATE_LEAD_TIME_MAX_DAYS = 60;
+
+export type DateLeadTimeNumbers = { blockDays: number; standardDays: number };
+
+/**
+ * NƠI DUY NHẤT điền mặc định cho field cũ (chưa có `blockDays`) — mọi chỗ cần
+ * 2 con số đều phải đi qua đây, đừng đọc `rule.blockDays` trần.
+ */
+export function resolveDateLeadTimeNumbers(
+  rule?: { blockDays?: number; standardDays?: number } | null,
+): DateLeadTimeNumbers {
+  return {
+    blockDays: Number.isInteger(rule?.blockDays) ? (rule?.blockDays as number) : DATE_LEAD_TIME_DEFAULT_BLOCK_DAYS,
+    standardDays: Number.isInteger(rule?.standardDays)
+      ? (rule?.standardDays as number)
+      : DATE_LEAD_TIME_DEFAULT_STANDARD_DAYS,
+  };
+}
+
+export function classifyDateLeadTime(
+  businessDays: number,
+  standardDays: number,
+  blockDays: number = DATE_LEAD_TIME_DEFAULT_BLOCK_DAYS,
+): DateLeadTimeStatus {
+  if (businessDays <= blockDays) return "blocked";
   if (businessDays < standardDays) return "urgent";
   return "ok";
+}
+
+/**
+ * Kiểm tra 2 con số Admin đặt. Trả câu lỗi tiếng Việt, `null` = hợp lệ. Dùng
+ * CHUNG cho hộp thoại sửa trường (chặn sớm) và máy chủ lúc lưu nhóm (phòng
+ * người gọi thẳng API) — không được lệch luật giữa 2 nơi.
+ */
+export function validateDateLeadTimeNumbers({ blockDays, standardDays }: DateLeadTimeNumbers): string | null {
+  if (!Number.isInteger(blockDays) || blockDays < 0 || blockDays > DATE_LEAD_TIME_MAX_DAYS) {
+    return `Mốc chặn phải là số nguyên từ 0 đến ${DATE_LEAD_TIME_MAX_DAYS}.`;
+  }
+  if (!Number.isInteger(standardDays) || standardDays < 1 || standardDays > DATE_LEAD_TIME_MAX_DAYS) {
+    return `Ngưỡng chuẩn phải là số nguyên từ 1 đến ${DATE_LEAD_TIME_MAX_DAYS}.`;
+  }
+  if (standardDays <= blockDays) {
+    return `Ngưỡng chuẩn (${standardDays}) phải lớn hơn mốc chặn (${blockDays}) — nếu không, vùng "hợp lệ" và vùng "chặn" chồng lên nhau.`;
+  }
+  return null;
 }
 
 /**
@@ -77,15 +123,18 @@ export function classifyDateLeadTime(businessDays: number, standardDays: number)
  */
 export function classifyDateLeadTimeByDate(
   target: Date,
-  standardDays: number,
+  rule?: { blockDays?: number; standardDays?: number } | null,
   now: Date = new Date(),
 ): DateLeadTimeStatus {
   if (startOfDay(target) < startOfDay(now)) return "past";
-  return classifyDateLeadTime(countBusinessDaysBetween(now, target), standardDays);
+  const { blockDays, standardDays } = resolveDateLeadTimeNumbers(rule);
+  return classifyDateLeadTime(countBusinessDaysBetween(now, target), standardDays, blockDays);
 }
 
-export const DATE_LEAD_TIME_BLOCKED_MESSAGE =
-  "Ngày cần cấp phải cách ngày đề nghị ÍT NHẤT 3 ngày làm việc (Không bao gồm Chủ Nhật) — vui lòng chọn ngày khác.";
+/** Câu chặn đổi theo mốc Admin đặt: chặn ≤ blockDays nghĩa là phải cách ÍT NHẤT blockDays+1 ngày. */
+export function dateLeadTimeBlockedMessage(blockDays: number = DATE_LEAD_TIME_DEFAULT_BLOCK_DAYS): string {
+  return `Ngày cần cấp phải cách ngày đề nghị ÍT NHẤT ${blockDays + 1} ngày làm việc (Không bao gồm Chủ Nhật) — vui lòng chọn ngày khác.`;
+}
 
 /** Riêng cho ngày quá khứ — không nhắc mốc 3 ngày, báo thẳng cho người dùng chọn lại. */
 export const DATE_LEAD_TIME_PAST_MESSAGE =
