@@ -604,11 +604,21 @@ export default function SubmitRequestPage() {
               // chức danh/tên người được gán (tra qua users/{uid}.title lúc
               // gửi, xem withTitle() ở lib/server/requests.ts).
               const managerFlowNumber = managerFlowNumberByStepIndex.get(step.index);
+              // "submitter_manager" giờ CŨNG ưu tiên `rawStep.name` (Admin tự đặt
+              // ở "Cấu hình luồng duyệt" của nhóm, ô "Tên bước" — field này vốn
+              // đã tồn tại sẵn cho "fixed"/"flexible_approver", chỉ là trang gửi
+              // đề xuất trước đây không đọc nó cho kind này) — Sếp yêu cầu
+              // 13/09/2026 muốn tự đổi chữ "Luồng duyệt 1" thành "Quản lý trực
+              // tiếp" (hoặc bất kỳ chữ nào) mà không cần sửa code mỗi lần. Không
+              // đặt tên thì rơi về "Luồng duyệt N" (mẫu có ≥2 bước cùng loại,
+              // xem lib/manager-flow-numbering.ts) hoặc "Quản lý trực tiếp" như cũ.
               const rowLabel =
                 step.kind === "submitter_manager"
-                  ? managerFlowNumber
-                    ? `Luồng duyệt ${managerFlowNumber}`
-                    : "Quản lý trực tiếp" // lưới an toàn — không nên xảy ra, nhưng tránh nhãn rỗng nếu có
+                  ? rawStep?.name?.trim()
+                    ? rawStep.name
+                    : managerFlowNumber
+                      ? `Luồng duyệt ${managerFlowNumber}`
+                      : "Quản lý trực tiếp" // lưới an toàn — không nên xảy ra, nhưng tránh nhãn rỗng nếu có
                   : isFlexibleSubmitterAssign
                     ? (step.name ?? "Người duyệt")
                     : (step.name ?? displayUser?.title ?? displayUser?.name ?? "Người duyệt");
