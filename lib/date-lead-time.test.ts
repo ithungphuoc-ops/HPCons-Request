@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { classifyDateLeadTime, countBusinessDaysBetween, parseFieldDateOnly } from "./date-lead-time";
+import {
+  classifyDateLeadTime,
+  classifyDateLeadTimeByDate,
+  countBusinessDaysBetween,
+  parseFieldDateOnly,
+} from "./date-lead-time";
 
 /** Tìm ngày trong tuần (0=CN..6=T7) gần nhất >= from — test không phụ thuộc
  * vào việc nhớ đúng thứ của 1 ngày cụ thể theo lịch thật (cùng kỹ thuật
@@ -73,6 +78,24 @@ describe("classifyDateLeadTime", () => {
     expect(classifyDateLeadTime(2, 3)).toBe("blocked");
     expect(classifyDateLeadTime(3, 3)).toBe("ok");
     expect(classifyDateLeadTime(10, 3)).toBe("ok");
+  });
+});
+
+describe("classifyDateLeadTimeByDate", () => {
+  // MONDAY là mốc "hôm làm đề nghị" trong bộ test này.
+  it("ngày trước hôm làm đề nghị -> past (không phải blocked)", () => {
+    expect(classifyDateLeadTimeByDate(addDays(MONDAY, -1), 5, MONDAY)).toBe("past");
+    expect(classifyDateLeadTimeByDate(addDays(MONDAY, -30), 3, MONDAY)).toBe("past");
+  });
+
+  it("đúng hôm nay hoặc 1-2 ngày làm việc -> blocked", () => {
+    expect(classifyDateLeadTimeByDate(MONDAY, 5, MONDAY)).toBe("blocked");
+    expect(classifyDateLeadTimeByDate(addDays(MONDAY, 2), 5, MONDAY)).toBe("blocked");
+  });
+
+  it("đủ xa -> urgent/ok theo ngưỡng chuẩn", () => {
+    expect(classifyDateLeadTimeByDate(addDays(MONDAY, 3), 5, MONDAY)).toBe("urgent");
+    expect(classifyDateLeadTimeByDate(addDays(MONDAY, 3), 3, MONDAY)).toBe("ok");
   });
 });
 

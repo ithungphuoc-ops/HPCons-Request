@@ -58,7 +58,12 @@ export function countBusinessDaysBetween(from: Date, to: Date): number {
   return count;
 }
 
-export type DateLeadTimeStatus = "blocked" | "urgent" | "ok";
+/**
+ * "past" = chọn ngày TRƯỚC ngày làm đề nghị — tách riêng khỏi "blocked" để báo
+ * đúng câu lỗi (Sếp yêu cầu 13/09/2026: ngày quá khứ báo thẳng "chọn lại ngày",
+ * không nói về mốc 3 ngày làm việc).
+ */
+export type DateLeadTimeStatus = "past" | "blocked" | "urgent" | "ok";
 
 export function classifyDateLeadTime(businessDays: number, standardDays: number): DateLeadTimeStatus {
   if (businessDays <= 2) return "blocked";
@@ -66,8 +71,25 @@ export function classifyDateLeadTime(businessDays: number, standardDays: number)
   return "ok";
 }
 
+/**
+ * Phân loại theo 2 mốc NGÀY thật (thay vì chỉ số ngày làm việc) để phân biệt
+ * được ngày quá khứ với ngày quá gấp. `now` mặc định là bây giờ.
+ */
+export function classifyDateLeadTimeByDate(
+  target: Date,
+  standardDays: number,
+  now: Date = new Date(),
+): DateLeadTimeStatus {
+  if (startOfDay(target) < startOfDay(now)) return "past";
+  return classifyDateLeadTime(countBusinessDaysBetween(now, target), standardDays);
+}
+
 export const DATE_LEAD_TIME_BLOCKED_MESSAGE =
-  "Ngày cần cấp phải cách hôm làm đề nghị ÍT NHẤT 3 ngày làm việc (Thứ 2–Thứ 7, trừ Chủ Nhật) — vui lòng chọn ngày khác.";
+  "Ngày cần cấp phải cách ngày đề nghị ÍT NHẤT 3 ngày làm việc (Không bao gồm Chủ Nhật) — vui lòng chọn ngày khác.";
+
+/** Riêng cho ngày quá khứ — không nhắc mốc 3 ngày, báo thẳng cho người dùng chọn lại. */
+export const DATE_LEAD_TIME_PAST_MESSAGE =
+  "Ngày cần cấp không được trước ngày đề nghị — vui lòng chọn lại ngày.";
 
 export const DATE_LEAD_TIME_URGENT_NOTE =
   "Yêu cầu gấp — chưa có kế hoạch đề nghị rõ ràng.";

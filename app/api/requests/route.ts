@@ -326,7 +326,7 @@ export async function POST(request: Request) {
         if (blockedDates.length > 0) {
           return NextResponse.json(
             {
-              error: "Ngày cần cấp quá gấp — phải cách hôm làm đề nghị ít nhất 3 ngày làm việc.",
+              error: "Ngày cần cấp phải cách ngày đề nghị ít nhất 3 ngày làm việc (không bao gồm Chủ Nhật).",
               blockedFields: blockedDates.map((f) => ({ id: f.id, name: f.name })),
             },
             { status: 400 },

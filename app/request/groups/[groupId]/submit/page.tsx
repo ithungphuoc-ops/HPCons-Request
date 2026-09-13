@@ -19,9 +19,10 @@ import { resolveComputedValue } from "@/lib/server/computed-fields";
 import { computeManagerFlowNumbers } from "@/lib/manager-flow-numbering";
 import { isSubmitterEditableStep } from "@/lib/approval-logic";
 import {
-  classifyDateLeadTime,
+  classifyDateLeadTimeByDate,
   countBusinessDaysBetween,
   DATE_LEAD_TIME_BLOCKED_MESSAGE,
+  DATE_LEAD_TIME_PAST_MESSAGE,
   DATE_LEAD_TIME_URGENT_NOTE,
   parseFieldDateOnly,
   type DateLeadTimeStatus,
@@ -263,8 +264,9 @@ export default function SubmitRequestPage() {
     }
     const target = parseFieldDateOnly(value as string);
     if (!target) return;
-    const days = countBusinessDaysBetween(new Date(), target);
-    const status = classifyDateLeadTime(days, rule.standardDays);
+    const now = new Date();
+    const days = countBusinessDaysBetween(now, target);
+    const status = classifyDateLeadTimeByDate(target, rule.standardDays, now);
 
     setDateLeadTimeStatus((prev) => ({ ...prev, [field.id]: status }));
     setUrgentConfirmed((prev) => {
@@ -274,8 +276,9 @@ export default function SubmitRequestPage() {
       return next;
     });
 
-    if (status === "blocked") {
-      setErrors((prev) => ({ ...prev, [field.id]: DATE_LEAD_TIME_BLOCKED_MESSAGE }));
+    if (status === "past" || status === "blocked") {
+      const message = status === "past" ? DATE_LEAD_TIME_PAST_MESSAGE : DATE_LEAD_TIME_BLOCKED_MESSAGE;
+      setErrors((prev) => ({ ...prev, [field.id]: message }));
       setUrgentPrompt((prev) => (prev?.field.id === field.id ? null : prev));
     } else {
       setErrors((prev) => {
@@ -345,8 +348,10 @@ export default function SubmitRequestPage() {
         // Mốc cứng ≤2 ngày làm việc — kiểm lại ở đây (không chỉ tin state đã
         // set lúc onChange) để phòng field bị ẩn/hiện lại qua visibleWhen mà
         // không đi lại qua handleDateFieldChange.
-        if (field.dateLeadTimeRule?.enabled && dateLeadTimeStatus[field.id] === "blocked") {
-          nextErrors[field.id] = DATE_LEAD_TIME_BLOCKED_MESSAGE;
+        if (field.dateLeadTimeRule?.enabled) {
+          const dateStatus = dateLeadTimeStatus[field.id];
+          if (dateStatus === "past") nextErrors[field.id] = DATE_LEAD_TIME_PAST_MESSAGE;
+          else if (dateStatus === "blocked") nextErrors[field.id] = DATE_LEAD_TIME_BLOCKED_MESSAGE;
         }
         // Cột "then chốt" (Tên hàng/Quy cách/ĐVT/Mục đích sử dụng/Số lượng) ở
         // field kiểu bảng — chặn sớm phía trình duyệt, máy chủ vẫn kiểm lại
@@ -545,8 +550,7 @@ export default function SubmitRequestPage() {
             >
               <p className="text-[13px] leading-relaxed text-gray-700">
                 Trường &quot;<strong>{urgentPrompt.field.name}</strong>&quot; chỉ còn{" "}
-                <strong>{urgentPrompt.days} ngày làm việc</strong> — việc này có thật sự gấp/cần thiết
-                không?
+                <strong>{urgentPrompt.days} ngày làm việc</strong> — việc này có thật sự gấp không?
               </p>
             </Modal>
           )}
