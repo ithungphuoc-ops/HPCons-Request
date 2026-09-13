@@ -59,6 +59,7 @@ import type {
   TaggedUser,
 } from "@/lib/types";
 import { deserializeTableRows } from "@/lib/table-field";
+import { uploadAttachments } from "@/lib/upload-client";
 import { canSupplementAfterApproval as canSupplementAfterApprovalCheck } from "@/lib/permissions";
 import {
   ATTACHMENT_SUPPLEMENT_HISTORY_PREFIX,
@@ -380,15 +381,9 @@ export default function RequestDetailView({
     setUploadingAttachment(true);
     setActionError(null);
     try {
-      const formData = new FormData();
-      formData.append("files", file);
-      const uploadRes = await fetch("/api/uploads", { method: "POST", body: formData });
-      if (!uploadRes.ok) {
-        const body = await uploadRes.json().catch(() => ({}) as { error?: string });
-        throw new Error(body.error ?? "Không thể tải tệp lên.");
-      }
-      const uploadData = (await uploadRes.json()) as { attachments: RequestAttachment[] };
-      const attachment = uploadData.attachments[0];
+      // Tải thẳng lên R2 (không qua Vercel) — xem lib/upload-client.ts.
+      const uploaded = await uploadAttachments([file]);
+      const attachment = uploaded[0];
       if (!attachment) throw new Error("Không thể tải tệp lên.");
 
       const res = await fetch(`/api/requests/${request.id}/attachments`, {

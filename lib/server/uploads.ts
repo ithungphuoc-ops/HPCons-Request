@@ -17,3 +17,14 @@
 export function isOwnUploadPath(path: string, uid: string): boolean {
   return path.startsWith(`requests/${uid}/`);
 }
+
+/**
+ * Dựng path chuẩn cho 1 tệp người dùng tải lên — DÙNG CHUNG cho cả 2 đường
+ * (multipart qua `/api/uploads` và link ký sẵn `/api/uploads/sign`) để
+ * `isOwnUploadPath()` ở trên luôn đúng với mọi tệp, không lệ thuộc route nào
+ * sinh ra nó.
+ */
+export function buildUploadPath(uid: string, fileName: string): string {
+  const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+  return `requests/${uid}/${Date.now()}-${safeName}`;
+}

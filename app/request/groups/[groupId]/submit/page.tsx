@@ -6,9 +6,10 @@ import { FileDown, Loader2, Paperclip, Plus, Trash2, Upload, X } from "lucide-re
 import { useRequestContext } from "@/context/RequestContext";
 import {
   HPCORE_MEMBER_GROUPS_API,
-  MAX_UPLOAD_FILE_SIZE,
-  MAX_UPLOAD_FILE_SIZE_LABEL,
+  MAX_DIRECT_UPLOAD_FILE_SIZE,
+  MAX_DIRECT_UPLOAD_FILE_SIZE_LABEL,
 } from "@/lib/constants";
+import { uploadAttachments } from "@/lib/upload-client";
 import {
   deserializeTableRows,
   isQuantityColumn,
@@ -47,8 +48,8 @@ import {
 import type { ProposalField, RequestAttachment, RequestInstance, TaggedUser } from "@/lib/types";
 
 const MAX_ATTACHMENTS = 6;
-// Trần thật do hạ tầng Vercel (~4.5MB), không phải lựa chọn của app — xem lib/constants.ts.
-const MAX_ATTACHMENT_SIZE = MAX_UPLOAD_FILE_SIZE;
+// Tải thẳng lên R2 nên trần do CHÍNH mình chọn, không còn là 4,5MB của Vercel.
+const MAX_ATTACHMENT_SIZE = MAX_DIRECT_UPLOAD_FILE_SIZE;
 
 type FieldValues = Record<string, unknown>;
 
@@ -1258,7 +1259,7 @@ function FileFieldControl({
     const tooBig = files.find((f) => f.size > MAX_ATTACHMENT_SIZE);
     if (tooBig) {
       setError(
-        `Tệp "${tooBig.name}" vượt quá ${MAX_UPLOAD_FILE_SIZE_LABEL} — tách bớt hoặc nén lại rồi gửi.`,
+        `Tệp "${tooBig.name}" vượt quá ${MAX_DIRECT_UPLOAD_FILE_SIZE_LABEL} — tách bớt hoặc nén lại rồi gửi.`,
       );
       return;
     }
@@ -1266,15 +1267,10 @@ function FileFieldControl({
     setUploading(true);
     setError(null);
     try {
-      const formData = new FormData();
-      files.forEach((f) => formData.append("files", f));
-      const res = await fetch("/api/uploads", { method: "POST", body: formData });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}) as { error?: string });
-        throw new Error(body.error ?? "Không thể tải tệp lên.");
-      }
-      const data = (await res.json()) as { attachments: RequestAttachment[] };
-      onChange([...attachments, ...data.attachments]);
+      // Tải THẲNG lên R2 bằng link ký sẵn (không qua Vercel nên không dính
+      // trần 4,5MB) — xem lib/upload-client.ts.
+      const uploaded = await uploadAttachments(files);
+      onChange([...attachments, ...uploaded]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Có lỗi xảy ra.");
     } finally {
@@ -1330,7 +1326,7 @@ function FileFieldControl({
         </label>
       )}
       <p className="text-[11px] text-gray-400">
-        Tối đa {MAX_ATTACHMENTS} tệp, mỗi tệp không quá {MAX_UPLOAD_FILE_SIZE_LABEL}.
+        Tối đa {MAX_ATTACHMENTS} tệp, mỗi tệp không quá {MAX_DIRECT_UPLOAD_FILE_SIZE_LABEL}.
       </p>
       {error && <p className="text-[12px] text-[var(--color-danger-red)]">{error}</p>}
     </div>

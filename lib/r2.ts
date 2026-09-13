@@ -5,6 +5,7 @@ import {
   GetObjectCommand,
   DeleteObjectCommand,
   CopyObjectCommand,
+  HeadObjectCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
@@ -36,6 +37,53 @@ function getBucketName(): string {
   const bucket = process.env.R2_BUCKET_NAME;
   if (!bucket) throw new Error("Thiếu R2_BUCKET_NAME.");
   return bucket;
+}
+
+/**
+ * Link ký sẵn cho trình duyệt PUT THẲNG file lên R2 — dùng cho tệp lớn hơn
+ * trần 4,5MB của serverless function Vercel (13/09/2026). Link chỉ ghi được
+ * ĐÚNG 1 key, hết hạn sau `expiresIn` giây.
+ *
+ * 🔴 Bucket phải bật CORS cho đúng origin của app (PUT + header content-type),
+ * nếu không trình duyệt chặn ngay trước khi gọi. Khoá R2 của app KHÔNG có
+ * quyền đặt CORS — phải bật tay trên Cloudflare.
+ */
+export async function createSignedUploadUrl(
+  path: string,
+  contentType: string,
+  contentLength: number,
+  expiresIn = 300,
+): Promise<string> {
+  const command = new PutObjectCommand({
+    Bucket: getBucketName(),
+    Key: path,
+    ContentType: contentType,
+    // 🔴 KÝ LUÔN DUNG LƯỢNG — chốt chặn quan trọng nhất của đường tải thẳng
+    // (CodeRabbit bắt 2 lỗi trên PR #15, 13/09/2026):
+    //   - Chống phình kho: không thể khai "1MB" rồi đẩy 500MB. R2 đối chiếu
+    //     content-length với chữ ký, lệch là trả 403 SignatureDoesNotMatch
+    //     (đã thử thật trên bucket production trước khi viết).
+    //   - Chống ghi đè sau khi máy chủ đã đo (TOCTOU): link chỉ ghi được ĐÚNG
+    //     số byte đã ký, nên kích thước đo lúc đính tệp không thể bị đổi.
+    ContentLength: contentLength,
+  });
+  return getSignedUrl(getR2Client(), command, { expiresIn });
+}
+
+/**
+ * Kích thước THẬT của object trên R2 — `null` nếu không tồn tại. Dùng để kiểm
+ * lại sau khi trình duyệt tải thẳng: con số client khai lúc xin link ký sẵn có
+ * thể bịa, không được tin.
+ */
+export async function headObjectSize(path: string): Promise<number | null> {
+  try {
+    const res = await getR2Client().send(
+      new HeadObjectCommand({ Bucket: getBucketName(), Key: path }),
+    );
+    return typeof res.ContentLength === "number" ? res.ContentLength : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Ghi file trực tiếp từ server (route nhận multipart/form-data upload thẳng). */

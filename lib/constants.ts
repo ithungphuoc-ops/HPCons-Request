@@ -35,3 +35,11 @@ export const COMPANY_NAME = "CÔNG TY CỔ PHẦN XÂY DỰNG CÔNG NGHIỆP HƯ
 export const MAX_UPLOAD_FILE_SIZE = 4 * 1024 * 1024; // 4MB (trần thật của Vercel ~4.5MB)
 /** Dùng cho câu thông báo, để sửa 1 chỗ là đổi khắp nơi. */
 export const MAX_UPLOAD_FILE_SIZE_LABEL = "4MB";
+
+// Đường TẢI THẲNG lên R2 bằng link ký sẵn (`/api/uploads/sign`) — trình duyệt
+// đẩy file lên R2, KHÔNG đi qua Vercel nên không dính trần 4,5MB. Con số dưới
+// đây là do CHÍNH mình chọn (giữ dung lượng kho ở mức hợp lý), không phải giới
+// hạn kỹ thuật. Máy chủ đo lại kích thước THẬT trên R2 sau khi tải xong
+// (`verifyUploadedAttachments`), không tin con số client khai.
+export const MAX_DIRECT_UPLOAD_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+export const MAX_DIRECT_UPLOAD_FILE_SIZE_LABEL = "50MB";
