@@ -2,10 +2,10 @@ import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebase/admin";
 import { createSignedReadUrl } from "@/lib/r2";
 import { apiErrorResponse } from "@/lib/http";
-import { MAX_UPLOAD_FILE_SIZE } from "@/lib/constants";
+import { MAX_DIRECT_UPLOAD_FILE_SIZE } from "@/lib/constants";
 import { canManageGroupsAtAppScope, canSupplementAfterApproval } from "@/lib/permissions";
 import { canView, loadRequest } from "@/lib/server/requests";
-import { isOwnUploadPath } from "@/lib/server/uploads";
+import { verifyUploadedAttachment } from "@/lib/server/uploads";
 import { requireSession } from "@/lib/session";
 import { ATTACHMENT_SUPPLEMENT_HISTORY_PREFIX } from "@/lib/request-history-labels";
 import type { RequestAttachment, RequestHistoryEntry, RequestInstance } from "@/lib/types";
@@ -124,15 +124,20 @@ export async function POST(
     ) {
       return NextResponse.json({ error: "Thiếu tệp cần thêm." }, { status: 400 });
     }
-    if (!isOwnUploadPath(attachment.path, session.uid)) {
-      return NextResponse.json(
-        { error: "Tệp không hợp lệ — chỉ chấp nhận tệp bạn vừa tải lên." },
-        { status: 400 },
-      );
+    // Gộp luôn kiểm tra "path có đúng của chính người gọi không" vào
+    // verifyUploadedAttachment() — 1 luật, 1 chỗ.
+    // Đo kích thước THẬT trên R2 thay vì tin con số client gửi — từ 13/09/2026
+    // trình duyệt tải thẳng lên R2 bằng link ký sẵn, người dùng có thể xin link
+    // cho "1MB" rồi đẩy file 500MB.
+    const verified = await verifyUploadedAttachment(
+      attachment,
+      session.uid,
+      MAX_DIRECT_UPLOAD_FILE_SIZE,
+    );
+    if (!verified.ok) {
+      return NextResponse.json({ error: verified.error }, { status: 400 });
     }
-    if (typeof attachment.size !== "number" || attachment.size < 0 || attachment.size > MAX_UPLOAD_FILE_SIZE) {
-      return NextResponse.json({ error: "Kích thước tệp không hợp lệ." }, { status: 400 });
-    }
+    attachment.size = verified.size;
 
     const attachments = [...(found.attachments ?? []), attachment];
 

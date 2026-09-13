@@ -7,14 +7,18 @@ import { Check, Paperclip, Pencil, Send, Trash2, X } from "lucide-react";
 import { getFirebaseAuth, getFirebaseFirestore } from "@/lib/firebase/client";
 import FilePreviewModal from "@/components/request/FilePreviewModal";
 import type { RequestAttachment, RequestComment, TaggedUser } from "@/lib/types";
-import { MAX_UPLOAD_FILE_SIZE, MAX_UPLOAD_FILE_SIZE_LABEL } from "@/lib/constants";
+import {
+  MAX_DIRECT_UPLOAD_FILE_SIZE,
+  MAX_DIRECT_UPLOAD_FILE_SIZE_LABEL,
+} from "@/lib/constants";
+import { uploadAttachments } from "@/lib/upload-client";
 
 /** Hạn sửa/xóa của tác giả — PHẢI khớp `AUTHOR_EDIT_WINDOW_MS` phía server
  * (app/api/requests/[id]/comments/[commentId]/route.ts). Đây chỉ để ẩn/hiện
  * nút cho gọn UI — server luôn tự kiểm tra lại, không tin giá trị này. */
 const AUTHOR_EDIT_WINDOW_MS = 10 * 60 * 1000;
-// Khớp /api/uploads — trần thật là hạ tầng Vercel (~4.5MB), xem lib/constants.ts.
-const MAX_ATTACHMENT_SIZE = MAX_UPLOAD_FILE_SIZE;
+// Tải thẳng lên R2 nên trần do CHÍNH mình chọn, không còn là 4,5MB của Vercel.
+const MAX_ATTACHMENT_SIZE = MAX_DIRECT_UPLOAD_FILE_SIZE;
 
 /** Tìm "@" đang gõ dở ngay trước con trỏ (không tính @ dính liền chữ trước đó). */
 function findActiveMention(textUpToCursor: string): { start: number; query: string } | null {
@@ -227,7 +231,7 @@ export default function CommentSection({
     const file = e.target.files?.[0] ?? null;
     if (!file) return;
     if (file.size > MAX_ATTACHMENT_SIZE) {
-      setPostError(`Tệp "${file.name}" vượt quá ${MAX_UPLOAD_FILE_SIZE_LABEL}.`);
+      setPostError(`Tệp "${file.name}" vượt quá ${MAX_DIRECT_UPLOAD_FILE_SIZE_LABEL}.`);
       e.target.value = "";
       return;
     }
@@ -243,15 +247,9 @@ export default function CommentSection({
     try {
       let attachment: RequestAttachment | null = null;
       if (composerAttachment) {
-        const formData = new FormData();
-        formData.append("files", composerAttachment);
-        const uploadRes = await fetch("/api/uploads", { method: "POST", body: formData });
-        if (!uploadRes.ok) {
-          const body = await uploadRes.json().catch(() => ({}) as { error?: string });
-          throw new Error(body.error ?? "Không thể tải tệp đính kèm lên.");
-        }
-        const uploadData = (await uploadRes.json()) as { attachments: RequestAttachment[] };
-        attachment = uploadData.attachments[0] ?? null;
+        // Tải thẳng lên R2 (không qua Vercel) — xem lib/upload-client.ts.
+        const uploaded = await uploadAttachments([composerAttachment]);
+        attachment = uploaded[0] ?? null;
       }
 
       const res = await fetch(`/api/requests/${requestId}/comments`, {
