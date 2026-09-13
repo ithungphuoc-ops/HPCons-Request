@@ -5,7 +5,7 @@ import { apiErrorResponse } from "@/lib/http";
 import { MAX_DIRECT_UPLOAD_FILE_SIZE } from "@/lib/constants";
 import { canManageGroupsAtAppScope, canSupplementAfterApproval } from "@/lib/permissions";
 import { canView, loadRequest } from "@/lib/server/requests";
-import { verifyUploadedAttachment } from "@/lib/server/uploads";
+import { verifyUploadedAttachment } from "@/lib/server/verify-upload";
 import { requireSession } from "@/lib/session";
 import { ATTACHMENT_SUPPLEMENT_HISTORY_PREFIX } from "@/lib/request-history-labels";
 import type { RequestAttachment, RequestHistoryEntry, RequestInstance } from "@/lib/types";
