@@ -48,6 +48,7 @@ import { fieldDataTypeLabels } from "@/lib/types";
 import { DEFAULT_GROUP_PERMISSION_RULES, DEFAULT_GROUP_PRINT_OPTIONS } from "@/lib/types";
 import type {
   ApprovalTimeField,
+  FieldDataType,
   GroupPermissionRules,
   GroupPrintOptions,
   PrintTemplate,
@@ -97,6 +98,26 @@ function formatValue(value: unknown): string {
   if (value === undefined || value === null || value === "") return "—";
   if (Array.isArray(value)) return value.length ? value.join(", ") : "—";
   return String(value);
+}
+
+/**
+ * Giống `formatValue` nhưng BIẾT kiểu field: field ngày/ngày giờ lưu dạng ISO
+ * ("2026-09-14") — hiện nguyên si ra màn hình thì lệch hẳn với ngày tạo/cập
+ * nhật ở ngay phía trên (đang dd/MM/yyyy). Sếp yêu cầu thống nhất 13/09/2026.
+ *
+ * Cắt chuỗi bằng regex thay vì `new Date(...)` — chuỗi "YYYY-MM-DD" trần được
+ * JS hiểu là mốc UTC, đổi qua giờ địa phương ở múi giờ âm sẽ LÙI 1 ngày.
+ */
+function formatFieldValue(value: unknown, dataType?: FieldDataType): string {
+  if (dataType === "date" || dataType === "datetime") {
+    if (value === undefined || value === null || value === "") return "—";
+    const matched = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/.exec(String(value).trim());
+    if (matched) {
+      const [, y, m, d, hh, mm] = matched;
+      return hh ? `${d}/${m}/${y} ${hh}:${mm}` : `${d}/${m}/${y}`;
+    }
+  }
+  return formatValue(value);
 }
 
 function isOverdue(request: RequestInstance): boolean {
@@ -853,7 +874,7 @@ export default function RequestDetailView({
                         <UserValueView user={request.values[field.id] as TaggedUser | null} />
                       ) : (
                         <dd className="font-medium text-gray-800">
-                          {formatValue(request.values[field.id])}
+                          {formatFieldValue(request.values[field.id], field.dataType)}
                         </dd>
                       )}
                     </div>

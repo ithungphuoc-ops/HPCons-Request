@@ -7,12 +7,14 @@ import { Check, Paperclip, Pencil, Send, Trash2, X } from "lucide-react";
 import { getFirebaseAuth, getFirebaseFirestore } from "@/lib/firebase/client";
 import FilePreviewModal from "@/components/request/FilePreviewModal";
 import type { RequestAttachment, RequestComment, TaggedUser } from "@/lib/types";
+import { MAX_UPLOAD_FILE_SIZE, MAX_UPLOAD_FILE_SIZE_LABEL } from "@/lib/constants";
 
 /** Hạn sửa/xóa của tác giả — PHẢI khớp `AUTHOR_EDIT_WINDOW_MS` phía server
  * (app/api/requests/[id]/comments/[commentId]/route.ts). Đây chỉ để ẩn/hiện
  * nút cho gọn UI — server luôn tự kiểm tra lại, không tin giá trị này. */
 const AUTHOR_EDIT_WINDOW_MS = 10 * 60 * 1000;
-const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024; // khớp /api/uploads
+// Khớp /api/uploads — trần thật là hạ tầng Vercel (~4.5MB), xem lib/constants.ts.
+const MAX_ATTACHMENT_SIZE = MAX_UPLOAD_FILE_SIZE;
 
 /** Tìm "@" đang gõ dở ngay trước con trỏ (không tính @ dính liền chữ trước đó). */
 function findActiveMention(textUpToCursor: string): { start: number; query: string } | null {
@@ -225,7 +227,7 @@ export default function CommentSection({
     const file = e.target.files?.[0] ?? null;
     if (!file) return;
     if (file.size > MAX_ATTACHMENT_SIZE) {
-      setPostError(`Tệp "${file.name}" vượt quá 10MB.`);
+      setPostError(`Tệp "${file.name}" vượt quá ${MAX_UPLOAD_FILE_SIZE_LABEL}.`);
       e.target.value = "";
       return;
     }

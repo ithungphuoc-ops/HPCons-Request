@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { putObject } from "@/lib/r2";
 import { apiErrorResponse } from "@/lib/http";
-import { MAX_UPLOAD_FILE_SIZE } from "@/lib/constants";
+import { MAX_UPLOAD_FILE_SIZE, MAX_UPLOAD_FILE_SIZE_LABEL } from "@/lib/constants";
 import { requireSession } from "@/lib/session";
 import type { RequestAttachment } from "@/lib/types";
 
@@ -32,7 +32,7 @@ export async function POST(request: Request) {
     for (const file of files) {
       if (file.size > MAX_FILE_SIZE) {
         return NextResponse.json(
-          { error: `Tệp "${file.name}" vượt quá 10MB.` },
+          { error: `Tệp "${file.name}" vượt quá ${MAX_UPLOAD_FILE_SIZE_LABEL}.` },
           { status: 400 },
         );
       }
