@@ -16,6 +16,13 @@ import { adminDb } from "@/lib/firebase/admin";
 import { evaluateConditionGroup, filterApplicableSteps } from "@/lib/server/conditions";
 import { getHpcoreDb } from "@/lib/hpcore";
 import { canManageGroupsAtAppScope, type Role } from "@/lib/permissions";
+import {
+  deserializeTableRows,
+  isValidQuantityCellValue,
+  normalizeColumnName,
+  QUANTITY_COLUMN_NAME,
+  REQUIRED_TABLE_COLUMN_NAMES,
+} from "@/lib/table-field";
 import { nextCounterCode } from "@/lib/validation";
 import type {
   ApprovalFlowType,
@@ -70,6 +77,71 @@ export function findMissingRequiredFields(
       isEmptyValue(values?.[f.id]) &&
       (!f.visibleWhen || evaluateConditionGroup(f.visibleWhen, values ?? {}, fields)),
   );
+}
+
+/**
+ * Field không có đủ cột "then chốt" này (dùng bảng khác mục đích) thì bỏ
+ * qua, không áp luật. Xem yêu cầu Sếp 13/09/2026 — dòng "Số lượng: file đính
+ * kèm" lọt được vào hệ thống vì trước đó không có luật này. Danh sách tên
+ * cột dùng chung với hiển thị dấu * ở submit/page.tsx — xem lib/table-field.ts.
+ */
+export interface InvalidTableRowIssue {
+  field: ProposalField;
+  rowIndex: number;
+  message: string;
+}
+
+/**
+ * Dòng ĐÃ có ít nhất 1 ô điền dữ liệu (dòng trống hẳn thì bỏ qua, không phải
+ * lỗi) nhưng thiếu 1 trong 4 cột bắt buộc, hoặc "Số lượng" không phải số —
+ * dùng khi gửi chính thức (không dùng khi lưu nháp), cùng cách với
+ * `findMissingRequiredFields`.
+ */
+export function findInvalidTableRows(
+  fields: ProposalField[],
+  values: Record<string, unknown>,
+): InvalidTableRowIssue[] {
+  const issues: InvalidTableRowIssue[] = [];
+  for (const field of fields) {
+    if (field.dataType !== "table" && field.dataType !== "base_table") continue;
+    if (field.visibleWhen && !evaluateConditionGroup(field.visibleWhen, values ?? {}, fields)) continue;
+
+    const columns = field.tableColumns ?? [];
+    const normalizedColumns = columns.map(normalizeColumnName);
+    const requiredIndexes = REQUIRED_TABLE_COLUMN_NAMES.map((name) => ({
+      name,
+      index: normalizedColumns.indexOf(normalizeColumnName(name)),
+    })).filter((c) => c.index >= 0);
+    const qtyIndex = normalizedColumns.indexOf(normalizeColumnName(QUANTITY_COLUMN_NAME));
+    if (requiredIndexes.length === 0 && qtyIndex < 0) continue;
+
+    const rows = deserializeTableRows(values?.[field.id]);
+    rows.forEach((row, rowIndex) => {
+      if (!row.some((cell) => cell?.trim())) return;
+      for (const { name, index } of requiredIndexes) {
+        if (!row[index]?.trim()) {
+          issues.push({ field, rowIndex, message: `Dòng ${rowIndex + 1} của "${field.name}": "${name}" chưa nhập.` });
+        }
+      }
+      if (qtyIndex >= 0) {
+        const raw = row[qtyIndex]?.trim() ?? "";
+        if (!raw) {
+          issues.push({
+            field,
+            rowIndex,
+            message: `Dòng ${rowIndex + 1} của "${field.name}": "${QUANTITY_COLUMN_NAME}" chưa nhập.`,
+          });
+        } else if (!isValidQuantityCellValue(raw)) {
+          issues.push({
+            field,
+            rowIndex,
+            message: `Dòng ${rowIndex + 1} của "${field.name}": "${QUANTITY_COLUMN_NAME}" phải là số (đang nhập "${raw}").`,
+          });
+        }
+      }
+    });
+  }
+  return issues;
 }
 
 /**

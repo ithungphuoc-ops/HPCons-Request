@@ -37,6 +37,36 @@ export function normalizeColumnName(name: string): string {
 }
 
 /**
+ * Tên cột "then chốt" theo đúng quy ước công ty đang dùng chung cho mọi mẫu
+ * "Chi tiết" — bắt buộc (dấu *) + validate riêng cho "Số lượng" (phải là
+ * số) lúc gửi chính thức. Export dùng chung giữa hiển thị (submit/page.tsx)
+ * và validate server (lib/server/requests.ts findInvalidTableRows) để không
+ * lệch nhau. Xem yêu cầu Sếp 13/09/2026.
+ */
+export const REQUIRED_TABLE_COLUMN_NAMES = ["Tên hàng", "Quy cách/chủng loại", "ĐVT", "Mục đích sử dụng"];
+export const QUANTITY_COLUMN_NAME = "Số lượng";
+
+export function isRequiredTableColumn(name: string): boolean {
+  const normalized = normalizeColumnName(name);
+  return (
+    REQUIRED_TABLE_COLUMN_NAMES.some((n) => normalizeColumnName(n) === normalized) ||
+    normalizeColumnName(QUANTITY_COLUMN_NAME) === normalized
+  );
+}
+
+export function isQuantityColumn(name: string): boolean {
+  return normalizeColumnName(name) === normalizeColumnName(QUANTITY_COLUMN_NAME);
+}
+
+const QUANTITY_CELL_RE = /^\d+([.,]\d+)?$/;
+
+/** "Số lượng" chỉ nhận số nguyên/thập phân — ô trống không tính là hợp lệ ở
+ * đây (kiểm tra "bắt buộc" là việc riêng, xem findInvalidTableRows). */
+export function isValidQuantityCellValue(value: string): boolean {
+  return QUANTITY_CELL_RE.test(value.trim());
+}
+
+/**
  * Sinh file Excel mẫu (.xlsx) chỉ có dòng tiêu đề đúng các cột hiện có, để
  * điền offline — thuần thao tác trình duyệt, không có state. Tách ra từ
  * `app/request/groups/[groupId]/submit/page.tsx` (28/07/2026) để dùng lại y

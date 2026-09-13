@@ -10,6 +10,7 @@ import {
   canView,
   computeDeadline,
   findBlockedDateLeadTimeFields,
+  findInvalidTableRows,
   findMissingRequiredFields,
   generateGroupRequestCode,
   generateRequestCode,
@@ -145,6 +146,16 @@ export async function PATCH(
           },
           { status: 400 },
         );
+      }
+
+      if (group.requiresSubmissionForm !== false) {
+        const invalidRows = findInvalidTableRows(group.fields, values);
+        if (invalidRows.length > 0) {
+          return NextResponse.json(
+            { error: invalidRows.map((i) => i.message).join(" ") },
+            { status: 400 },
+          );
+        }
       }
 
       // Luật "ngày cần cấp" (dateLeadTimeRule) — cùng chặn ở gửi từ nháp,

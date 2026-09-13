@@ -7,6 +7,9 @@ import { useRequestContext } from "@/context/RequestContext";
 import { HPCORE_MEMBER_GROUPS_API } from "@/lib/constants";
 import {
   deserializeTableRows,
+  isQuantityColumn,
+  isRequiredTableColumn,
+  isValidQuantityCellValue,
   toWireTableRows,
   downloadTableTemplateFile,
   parseTableImportFile,
@@ -344,6 +347,27 @@ export default function SubmitRequestPage() {
         // không đi lại qua handleDateFieldChange.
         if (field.dateLeadTimeRule?.enabled && dateLeadTimeStatus[field.id] === "blocked") {
           nextErrors[field.id] = DATE_LEAD_TIME_BLOCKED_MESSAGE;
+        }
+        // Cột "then chốt" (Tên hàng/Quy cách/ĐVT/Mục đích sử dụng/Số lượng) ở
+        // field kiểu bảng — chặn sớm phía trình duyệt, máy chủ vẫn kiểm lại
+        // (lib/server/requests.ts findInvalidTableRows) phòng ai gọi thẳng
+        // API né qua chỗ này. Chỉ 2 hàm không phải "server-only" dùng lại
+        // được ở đây — logic không tách chung 100% với server được vì
+        // findInvalidTableRows nằm trong file "server-only".
+        if (field.dataType === "table" || field.dataType === "base_table") {
+          const columns = field.tableColumns ?? [];
+          const rows = deserializeTableRows(values[field.id]);
+          for (const row of rows) {
+            if (!row.some((cell) => cell?.trim())) continue;
+            columns.forEach((col, ci) => {
+              const cell = row[ci] ?? "";
+              if (isRequiredTableColumn(col) && !cell.trim()) {
+                nextErrors[field.id] = `Bảng "${field.name}" còn dòng thiếu "${col}".`;
+              } else if (isQuantityColumn(col) && cell.trim() && !isValidQuantityCellValue(cell)) {
+                nextErrors[field.id] = `Bảng "${field.name}": "${col}" phải là số.`;
+              }
+            });
+          }
         }
       }
     }
@@ -1105,6 +1129,9 @@ function FieldControl({
                         className="min-w-[96px] max-w-[220px] truncate px-2 py-1.5 text-left font-medium text-gray-600"
                       >
                         {col}
+                        {isRequiredTableColumn(col) && (
+                          <span className="text-[var(--color-danger-red)]"> *</span>
+                        )}
                       </th>
                     ))}
                     <th className="w-8" />
@@ -1114,15 +1141,26 @@ function FieldControl({
                   {rows.map((row, rowIndex) => (
                     <tr key={rowIndex} className="border-t border-gray-100">
                       <td className="px-2 py-1 text-gray-400">{rowIndex + 1}</td>
-                      {columns.map((_, colIndex) => (
-                        <td key={colIndex} className="px-1 py-1">
-                          <input
-                            value={row[colIndex] ?? ""}
-                            onChange={(e) => updateCell(rowIndex, colIndex, e.target.value)}
-                            className="h-8 w-full rounded border border-transparent px-2 text-[12px] outline-none hover:border-[var(--color-border)] focus:border-[var(--color-action-blue)]"
-                          />
-                        </td>
-                      ))}
+                      {columns.map((colName, colIndex) => {
+                        const cellValue = row[colIndex] ?? "";
+                        const qtyInvalid =
+                          isQuantityColumn(colName) && cellValue.trim() !== "" && !isValidQuantityCellValue(cellValue);
+                        return (
+                          <td key={colIndex} className="px-1 py-1">
+                            <input
+                              value={cellValue}
+                              onChange={(e) => updateCell(rowIndex, colIndex, e.target.value)}
+                              inputMode={isQuantityColumn(colName) ? "decimal" : undefined}
+                              title={qtyInvalid ? `"${colName}" phải là số` : undefined}
+                              className={`h-8 w-full rounded border px-2 text-[12px] outline-none focus:border-[var(--color-action-blue)] ${
+                                qtyInvalid
+                                  ? "border-[var(--color-danger-red)] bg-red-50"
+                                  : "border-transparent hover:border-[var(--color-border)]"
+                              }`}
+                            />
+                          </td>
+                        );
+                      })}
                       <td className="px-1 py-1 text-center">
                         {rows.length > 1 && (
                           <button

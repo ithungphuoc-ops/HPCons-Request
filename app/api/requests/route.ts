@@ -12,6 +12,7 @@ import {
   canView,
   computeDeadline,
   findBlockedDateLeadTimeFields,
+  findInvalidTableRows,
   findMissingRequiredFields,
   generateGroupRequestCode,
   generateRequestCode,
@@ -304,6 +305,14 @@ export async function POST(request: Request) {
               error: "Còn thiếu trường bắt buộc.",
               missingFields: missing.map((f) => ({ id: f.id, name: f.name })),
             },
+            { status: 400 },
+          );
+        }
+
+        const invalidRows = findInvalidTableRows(group.fields, body.values ?? {});
+        if (invalidRows.length > 0) {
+          return NextResponse.json(
+            { error: invalidRows.map((i) => i.message).join(" ") },
             { status: 400 },
           );
         }
