@@ -4,7 +4,11 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FileDown, Loader2, Paperclip, Plus, Trash2, Upload, X } from "lucide-react";
 import { useRequestContext } from "@/context/RequestContext";
-import { HPCORE_MEMBER_GROUPS_API } from "@/lib/constants";
+import {
+  HPCORE_MEMBER_GROUPS_API,
+  MAX_UPLOAD_FILE_SIZE,
+  MAX_UPLOAD_FILE_SIZE_LABEL,
+} from "@/lib/constants";
 import {
   deserializeTableRows,
   isQuantityColumn,
@@ -42,7 +46,8 @@ import {
 import type { ProposalField, RequestAttachment, RequestInstance, TaggedUser } from "@/lib/types";
 
 const MAX_ATTACHMENTS = 6;
-const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024; // 10MB
+// Trần thật do hạ tầng Vercel (~4.5MB), không phải lựa chọn của app — xem lib/constants.ts.
+const MAX_ATTACHMENT_SIZE = MAX_UPLOAD_FILE_SIZE;
 
 type FieldValues = Record<string, unknown>;
 
@@ -1070,8 +1075,13 @@ function FieldControl({
         }
         const { newHeaders, finalColumns, newRows } = result;
         if (newHeaders.length > 0) onTableColumnsChange?.(finalColumns);
+        // Bảng mới mở luôn có sẵn 1 dòng trống để người dùng gõ tay — nhập file
+        // vào mà giữ nguyên dòng đó thì bảng dư 1 dòng trống ở đầu (Sếp báo
+        // 13/09/2026). Bỏ MỌI dòng trống hoàn toàn đang có trước khi ghép dữ
+        // liệu từ file; dòng đã gõ dở vẫn giữ nguyên.
+        const keptOldRows = rows.filter((r) => r.some((cell) => String(cell ?? "").trim() !== ""));
         // Dòng cũ cần bù thêm ô trống cho (các) cột mới vừa thêm để số cột khớp.
-        const paddedOldRows = rows.map((r) => finalColumns.map((_, i) => r[i] ?? ""));
+        const paddedOldRows = keptOldRows.map((r) => finalColumns.map((_, i) => r[i] ?? ""));
         onChange([...paddedOldRows, ...newRows]);
         setTableImportStatus(
           newHeaders.length > 0
@@ -1128,15 +1138,15 @@ function FieldControl({
           {importButtons}
           <div className="overflow-hidden rounded border border-[var(--color-border)]">
             <div className="overflow-x-auto">
-              <table className="w-full text-[12px]">
-                <thead className="bg-gray-50">
+              <table className="w-full text-[13px]">
+                <thead className="border-b border-[var(--color-border)] bg-gray-100/80">
                   <tr>
-                    <th className="w-8 px-2 py-1.5 text-left text-gray-400">#</th>
+                    <th className="w-9 px-2 py-2 text-left text-[12px] font-semibold text-gray-500">#</th>
                     {columns.map((col, i) => (
                       <th
                         key={i}
                         title={col}
-                        className="min-w-[96px] max-w-[220px] truncate px-2 py-1.5 text-left font-medium text-gray-600"
+                        className="min-w-[110px] max-w-[240px] truncate border-l border-[var(--color-border)] px-2.5 py-2 text-left text-[12px] font-semibold uppercase tracking-wide text-gray-600"
                       >
                         {col}
                         {isRequiredTableColumn(col) && (
@@ -1149,24 +1159,29 @@ function FieldControl({
                 </thead>
                 <tbody>
                   {rows.map((row, rowIndex) => (
-                    <tr key={rowIndex} className="border-t border-gray-100">
-                      <td className="px-2 py-1 text-gray-400">{rowIndex + 1}</td>
+                    <tr
+                      key={rowIndex}
+                      className="border-t border-[var(--color-border)] transition-colors hover:bg-blue-50/40"
+                    >
+                      <td className="px-2 py-1.5 text-center text-[12px] tabular-nums text-gray-500">
+                        {rowIndex + 1}
+                      </td>
                       {columns.map((colName, colIndex) => {
                         const cellValue = row[colIndex] ?? "";
                         const qtyInvalid =
                           isQuantityColumn(colName) && cellValue.trim() !== "" && !isValidQuantityCellValue(cellValue);
                         return (
-                          <td key={colIndex} className="px-1 py-1">
+                          <td key={colIndex} className="border-l border-gray-100 px-1 py-1">
                             <input
                               value={cellValue}
                               onChange={(e) => updateCell(rowIndex, colIndex, e.target.value)}
                               inputMode={isQuantityColumn(colName) ? "decimal" : undefined}
                               title={qtyInvalid ? `"${colName}" phải là số` : undefined}
-                              className={`h-8 w-full rounded border px-2 text-[12px] outline-none focus:border-[var(--color-action-blue)] ${
+                              className={`h-9 w-full rounded border bg-transparent px-2 text-[13px] text-gray-900 outline-none placeholder:text-gray-400 focus:border-[var(--color-action-blue)] focus:bg-white ${
                                 qtyInvalid
                                   ? "border-[var(--color-danger-red)] bg-red-50"
-                                  : "border-transparent hover:border-[var(--color-border)]"
-                              }`}
+                                  : "border-transparent hover:border-[var(--color-border)] hover:bg-white"
+                              } ${isQuantityColumn(colName) ? "text-right tabular-nums" : ""}`}
                             />
                           </td>
                         );
@@ -1177,7 +1192,7 @@ function FieldControl({
                             type="button"
                             onClick={() => removeRow(rowIndex)}
                             aria-label="Xóa dòng"
-                            className="text-gray-300 hover:text-[var(--color-danger-red)]"
+                            className="text-gray-400 transition-colors hover:text-[var(--color-danger-red)]"
                           >
                             <Trash2 size={14} />
                           </button>
@@ -1191,7 +1206,7 @@ function FieldControl({
             <button
               type="button"
               onClick={addRow}
-              className="flex w-full items-center justify-center gap-1 border-t border-gray-100 py-2 text-[12px] text-[var(--color-action-blue)] hover:bg-blue-50"
+              className="flex w-full items-center justify-center gap-1 border-t border-[var(--color-border)] bg-gray-50/60 py-2 text-[12.5px] font-medium text-[var(--color-action-blue)] transition-colors hover:bg-blue-50"
             >
               <Plus size={13} /> Thêm dòng
             </button>
@@ -1231,7 +1246,9 @@ function FileFieldControl({
     }
     const tooBig = files.find((f) => f.size > MAX_ATTACHMENT_SIZE);
     if (tooBig) {
-      setError(`Tệp "${tooBig.name}" vượt quá 10MB.`);
+      setError(
+        `Tệp "${tooBig.name}" vượt quá ${MAX_UPLOAD_FILE_SIZE_LABEL} — tách bớt hoặc nén lại rồi gửi.`,
+      );
       return;
     }
 
@@ -1302,7 +1319,7 @@ function FileFieldControl({
         </label>
       )}
       <p className="text-[11px] text-gray-400">
-        Tối đa {MAX_ATTACHMENTS} tệp, mỗi tệp không quá 10MB.
+        Tối đa {MAX_ATTACHMENTS} tệp, mỗi tệp không quá {MAX_UPLOAD_FILE_SIZE_LABEL}.
       </p>
       {error && <p className="text-[12px] text-[var(--color-danger-red)]">{error}</p>}
     </div>

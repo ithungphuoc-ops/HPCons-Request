@@ -23,4 +23,15 @@ export const COMPANY_NAME = "CÔNG TY CỔ PHẦN XÂY DỰNG CÔNG NGHIỆP HƯ
 // nguyên giá trị client gửi) để 2 nơi không lệch số. KHÔNG đặt hằng số này
 // ngay trong `app/api/uploads/route.ts` — Next.js chặn route.ts export thêm
 // bất cứ gì ngoài GET/POST/config đã biết (build type-check báo lỗi "Diff").
-export const MAX_UPLOAD_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+//
+// 🔴 4MB, KHÔNG phải 10MB như trước (sửa 13/09/2026 sau khi Sếp báo "file hơn
+// 6MB không thêm được"): tệp đi QUA serverless function của Vercel, mà Vercel
+// chặn cứng body request ở ~4.5MB — đo thật trên production: 4MB lên được,
+// 4.4MB trở lên trả 413 FUNCTION_PAYLOAD_TOO_LARGE ngay ở tầng hạ tầng, code
+// trong route KHÔNG hề chạy nên người dùng chỉ thấy lỗi chung chung. Để 10MB
+// ở đây là nói dối người dùng. Muốn nhận tệp lớn hơn thì phải đổi kiến trúc:
+// xin link ký sẵn rồi tải THẲNG lên R2, không đi qua Vercel (cần bật CORS cho
+// bucket) — xem báo cáo 13/09/2026.
+export const MAX_UPLOAD_FILE_SIZE = 4 * 1024 * 1024; // 4MB (trần thật của Vercel ~4.5MB)
+/** Dùng cho câu thông báo, để sửa 1 chỗ là đổi khắp nơi. */
+export const MAX_UPLOAD_FILE_SIZE_LABEL = "4MB";
