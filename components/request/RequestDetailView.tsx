@@ -56,9 +56,16 @@ import type {
   RequestAttachment,
   RequestHistoryEntry,
   RequestInstance,
+  TableColumnType,
   TaggedUser,
 } from "@/lib/types";
-import { deserializeTableRows } from "@/lib/table-field";
+import {
+  deserializeTableRows,
+  formatCellForDisplay,
+  isNumericColumnType,
+  resolveTableColumnTypes,
+  sumColumn,
+} from "@/lib/table-field";
 import { uploadAttachments } from "@/lib/upload-client";
 import { canSupplementAfterApproval as canSupplementAfterApprovalCheck } from "@/lib/permissions";
 import {
@@ -858,6 +865,7 @@ export default function RequestDetailView({
                       {isTable ? (
                         <TableValueView
                           columns={field.tableColumns ?? []}
+                          columnTypes={field.tableColumnTypes}
                           rows={deserializeTableRows(request.values[field.id])}
                         />
                       ) : isFile ? (
@@ -1436,7 +1444,15 @@ function TableSupplementControl({
   );
 }
 
-function TableValueView({ columns, rows }: { columns: string[]; rows: string[][] }) {
+function TableValueView({
+  columns,
+  columnTypes,
+  rows,
+}: {
+  columns: string[];
+  columnTypes?: TableColumnType[];
+  rows: string[][];
+}) {
   if (columns.length === 0) {
     return <p className="font-medium text-gray-800">—</p>;
   }
@@ -1444,6 +1460,9 @@ function TableValueView({ columns, rows }: { columns: string[]; rows: string[][]
   if (filledRows.length === 0) {
     return <p className="font-medium text-gray-800">—</p>;
   }
+  // Ô lưu số thô, chỉ chấm phẩy lúc hiện ra — xem lib/table-field.ts.
+  const types = resolveTableColumnTypes(columns, columnTypes);
+  const hasMoneyColumn = types.includes("money");
 
   return (
     <div className="mt-1 overflow-x-auto rounded border border-[var(--color-border)]">
@@ -1452,7 +1471,12 @@ function TableValueView({ columns, rows }: { columns: string[]; rows: string[][]
           <tr>
             <th className="w-8 px-2 py-1.5 text-left text-gray-400">#</th>
             {columns.map((col, i) => (
-              <th key={i} className="px-2 py-1.5 text-left font-medium text-gray-600">
+              <th
+                key={i}
+                className={`px-2 py-1.5 font-medium text-gray-600 ${
+                  isNumericColumnType(types[i]) ? "text-right" : "text-left"
+                }`}
+              >
                 {col}
               </th>
             ))}
@@ -1463,12 +1487,39 @@ function TableValueView({ columns, rows }: { columns: string[]; rows: string[][]
             <tr key={rowIndex} className="border-t border-gray-100">
               <td className="px-2 py-1.5 text-gray-400">{rowIndex + 1}</td>
               {columns.map((_, colIndex) => (
-                <td key={colIndex} className="px-2 py-1.5 text-gray-800">
-                  {row[colIndex] || "—"}
+                <td
+                  key={colIndex}
+                  className={`px-2 py-1.5 text-gray-800 ${
+                    isNumericColumnType(types[colIndex]) ? "text-right tabular-nums" : ""
+                  }`}
+                >
+                  {formatCellForDisplay(row[colIndex] ?? "", types[colIndex]) || "—"}
                 </td>
               ))}
             </tr>
           ))}
+          {hasMoneyColumn && (
+            <tr className="border-t border-[var(--color-border)] bg-gray-50 font-semibold">
+              <td className="px-2 py-1.5" />
+              {columns.map((_, colIndex) => {
+                const total = types[colIndex] === "money" ? sumColumn(filledRows, colIndex) : null;
+                return (
+                  <td
+                    key={colIndex}
+                    className={`px-2 py-1.5 ${
+                      total === null ? "text-gray-500" : "text-right tabular-nums text-gray-900"
+                    }`}
+                  >
+                    {total === null
+                      ? colIndex === 0
+                        ? "Tổng cộng"
+                        : ""
+                      : formatCellForDisplay(String(total), "money")}
+                  </td>
+                );
+              })}
+            </tr>
+          )}
         </tbody>
       </table>
     </div>

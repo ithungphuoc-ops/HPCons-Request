@@ -19,10 +19,12 @@ import { getHpcoreDb } from "@/lib/hpcore";
 import { canManageGroupsAtAppScope, type Role } from "@/lib/permissions";
 import {
   deserializeTableRows,
-  isValidQuantityCellValue,
+  isNumericColumnType,
+  isQuantityColumn,
+  isValidCellValue,
   normalizeColumnName,
-  QUANTITY_COLUMN_NAME,
   REQUIRED_TABLE_COLUMN_NAMES,
+  resolveTableColumnTypes,
 } from "@/lib/table-field";
 import { nextCounterCode } from "@/lib/validation";
 import type {
@@ -113,8 +115,14 @@ export function findInvalidTableRows(
       name,
       index: normalizedColumns.indexOf(normalizeColumnName(name)),
     })).filter((c) => c.index >= 0);
-    const qtyIndex = normalizedColumns.indexOf(normalizeColumnName(QUANTITY_COLUMN_NAME));
-    if (requiredIndexes.length === 0 && qtyIndex < 0) continue;
+    // Từ 13/09/2026 kiểm theo KIỂU cột admin khai, không còn chỉ soi mỗi cột
+    // tên "Số lượng". Nhóm cũ chưa khai kiểu → resolveTableColumnTypes trả về
+    // đúng 1 cột số là "Số lượng", y hệt hành vi trước đây.
+    const columnTypes = resolveTableColumnTypes(columns, field.tableColumnTypes);
+    const numericIndexes = columnTypes
+      .map((type, index) => ({ type, index, name: columns[index] }))
+      .filter((c) => isNumericColumnType(c.type));
+    if (requiredIndexes.length === 0 && numericIndexes.length === 0) continue;
 
     const rows = deserializeTableRows(values?.[field.id]);
     rows.forEach((row, rowIndex) => {
@@ -124,19 +132,27 @@ export function findInvalidTableRows(
           issues.push({ field, rowIndex, message: `Dòng ${rowIndex + 1} của "${field.name}": "${name}" chưa nhập.` });
         }
       }
-      if (qtyIndex >= 0) {
-        const raw = row[qtyIndex]?.trim() ?? "";
+      for (const { index, name, type } of numericIndexes) {
+        const raw = row[index]?.trim() ?? "";
+        // Cột "Số lượng" vốn là cột BẮT BUỘC theo quy ước công ty — giữ nguyên
+        // luật đó; các cột số khác (đơn giá, thành tiền...) chỉ cần đúng định
+        // dạng, bỏ trống vẫn được.
         if (!raw) {
+          if (isQuantityColumn(name)) {
+            issues.push({
+              field,
+              rowIndex,
+              message: `Dòng ${rowIndex + 1} của "${field.name}": "${name}" chưa nhập.`,
+            });
+          }
+          continue;
+        }
+        if (!isValidCellValue(raw, type)) {
+          const wanted = type === "int" ? "số nguyên" : "số";
           issues.push({
             field,
             rowIndex,
-            message: `Dòng ${rowIndex + 1} của "${field.name}": "${QUANTITY_COLUMN_NAME}" chưa nhập.`,
-          });
-        } else if (!isValidQuantityCellValue(raw)) {
-          issues.push({
-            field,
-            rowIndex,
-            message: `Dòng ${rowIndex + 1} của "${field.name}": "${QUANTITY_COLUMN_NAME}" phải là số (đang nhập "${raw}").`,
+            message: `Dòng ${rowIndex + 1} của "${field.name}": "${name}" phải là ${wanted} (đang nhập "${raw}").`,
           });
         }
       }

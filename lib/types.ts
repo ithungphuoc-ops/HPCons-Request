@@ -48,6 +48,16 @@ export interface ProposalField {
   placeholder?: string;
   options?: string[];
   tableColumns?: string[];
+  /**
+   * Kiểu dữ liệu của TỪNG cột, SONG SONG theo index với `tableColumns` (Sếp
+   * chốt 13/09/2026). Cố ý tách thành mảng riêng thay vì đổi `tableColumns`
+   * thành mảng object: 13 file đang đọc `tableColumns` như `string[]` (mẫu in
+   * tham chiếu cột theo số thứ tự, nhập Excel khớp theo TÊN cột...), đổi kiểu
+   * ở đó là vỡ hết. Thiếu/lệch độ dài → suy ra bằng
+   * `resolveTableColumnTypes()` ở lib/table-field.ts (cột cũ = văn bản, riêng
+   * cột tên "Số lượng" = số thập phân, đúng y hành vi trước đây).
+   */
+  tableColumnTypes?: TableColumnType[];
   formula?: string;
   /** Chỉ hiển thị field này trên form Gửi đề xuất khi nhóm điều kiện thoả mãn
    * (dựa trên giá trị (các) field khác của CÙNG đề xuất, kết hợp AND/OR) —
@@ -119,6 +129,21 @@ export interface ApprovalTimeField {
  * `resolveDateLeadTimeNumbers()` ở lib/date-lead-time.ts. Đừng tự đọc
  * `rule.blockDays` trần ở nơi khác.
  */
+/**
+ * Kiểu dữ liệu 1 cột của trường Bảng (Sếp chốt 13/09/2026).
+ *   - text     : văn bản ngắn, gõ gì cũng nhận, canh trái.
+ *   - int      : số nguyên.
+ *   - decimal  : số thập phân (tối đa 3 chữ số sau dấu chấm).
+ *   - money    : tiền tệ VNĐ, không hiện số lẻ.
+ *   - percent  : phần trăm.
+ *
+ * 🔴 Ô luôn LƯU SỐ THÔ ("1234567"), dấu phẩy ngăn nghìn + đuôi "VNĐ" CHỈ là
+ * cách hiển thị. Lưu luôn chuỗi đã định dạng sẽ làm `Number(ô)` ở
+ * lib/thumua-sync.ts / lib/qlkctr-sync.ts ra NaN, dòng bị loại và đề nghị
+ * không sang được app Thu mua — đúng sự cố đề nghị 000000072/073/074.
+ */
+export type TableColumnType = "text" | "int" | "decimal" | "money" | "percent";
+
 export interface DateLeadTimeRule {
   enabled: boolean;
   /** Từ mốc này trở lên: hợp lệ, không cảnh báo. Phải LỚN HƠN `blockDays`. */

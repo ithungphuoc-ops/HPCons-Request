@@ -17,6 +17,7 @@ import {
   type ComputedTemplateBranch,
   type ConditionGroup,
   type FieldDataType,
+  type TableColumnType,
 } from "@/lib/types";
 import {
   DATE_LEAD_TIME_DEFAULT_BLOCK_DAYS,
@@ -25,6 +26,11 @@ import {
   resolveDateLeadTimeNumbers,
   validateDateLeadTimeNumbers,
 } from "@/lib/date-lead-time";
+import {
+  resolveTableColumnTypes,
+  TABLE_COLUMN_TYPE_LABELS,
+  TABLE_COLUMN_TYPES,
+} from "@/lib/table-field";
 import { slugifyFieldName } from "@/lib/print-template";
 import { validateFieldName, validateFieldOptions } from "@/lib/validation";
 
@@ -52,6 +58,8 @@ export default function AddFieldModal() {
   const [afterFieldId, setAfterFieldId] = useState<string>("");
   const [options, setOptions] = useState<string[]>([""]);
   const [tableColumns, setTableColumns] = useState<string[]>([""]);
+  // Kiểu của từng cột, SONG SONG index với tableColumns (Sếp chốt 13/09/2026).
+  const [tableColumnTypes, setTableColumnTypes] = useState<TableColumnType[]>(["text"]);
   const [formula, setFormula] = useState("");
   const [visibleWhen, setVisibleWhen] = useState<ConditionGroup | undefined>(undefined);
   // null = tắt "tự động ghép giá trị"; mảng (kể cả rỗng) = đang bật, mỗi phần
@@ -103,6 +111,7 @@ export default function AddFieldModal() {
     setAfterFieldId("");
     setOptions([""]);
     setTableColumns([""]);
+    setTableColumnTypes(["text"]);
     setFormula("");
     setVisibleWhen(undefined);
     setComputedBranches(null);
@@ -121,7 +130,10 @@ export default function AddFieldModal() {
       setRequired(editingField.required);
       setHelpText(editingField.helpText ?? "");
       setOptions(editingField.options?.length ? editingField.options : [""]);
-      setTableColumns(editingField.tableColumns?.length ? editingField.tableColumns : [""]);
+      const editingColumns = editingField.tableColumns?.length ? editingField.tableColumns : [""];
+      setTableColumns(editingColumns);
+      // Cột cũ chưa khai kiểu -> suy ra (văn bản, riêng "Số lượng" là số thập phân).
+      setTableColumnTypes(resolveTableColumnTypes(editingColumns, editingField.tableColumnTypes));
       setFormula(editingField.formula ?? "");
       setVisibleWhen(editingField.visibleWhen);
       setComputedBranches(editingField.computedFrom?.branches ?? null);
@@ -196,6 +208,10 @@ export default function AddFieldModal() {
         return;
       }
     }
+    // Bỏ cột không tên, GIỮ ĐÚNG cặp tên–kiểu theo index (lọc rời 2 mảng là lệch).
+    const cleanedColumns = tableColumns
+      .map((name, i) => ({ name: name.trim(), type: tableColumnTypes[i] ?? "text" }))
+      .filter((c) => c.name);
 
     setErrors({});
     const fieldData = {
@@ -205,9 +221,8 @@ export default function AddFieldModal() {
       required,
       helpText: helpText.trim() || undefined,
       options: choiceTypes.includes(dataType) ? cleanedOptions : undefined,
-      tableColumns: tableTypes.includes(dataType)
-        ? tableColumns.map((c) => c.trim()).filter(Boolean)
-        : undefined,
+      tableColumns: tableTypes.includes(dataType) ? cleanedColumns.map((c) => c.name) : undefined,
+      tableColumnTypes: tableTypes.includes(dataType) ? cleanedColumns.map((c) => c.type) : undefined,
       formula: dataType === "formula" ? formula : undefined,
       visibleWhen,
       computedFrom: cleanedBranches && cleanedBranches.length > 0 ? { branches: cleanedBranches } : undefined,
@@ -379,10 +394,31 @@ export default function AddFieldModal() {
                     }
                     placeholder={`Tên cột ${index + 1}`}
                   />
+                  <select
+                    className={`${selectClass} w-[170px] shrink-0`}
+                    value={tableColumnTypes[index] ?? "text"}
+                    aria-label={`Kiểu dữ liệu cột ${index + 1}`}
+                    onChange={(e) =>
+                      setTableColumnTypes((prev) => {
+                        const next = [...prev];
+                        next[index] = e.target.value as TableColumnType;
+                        return next;
+                      })
+                    }
+                  >
+                    {TABLE_COLUMN_TYPES.map((t) => (
+                      <option key={t} value={t}>
+                        {TABLE_COLUMN_TYPE_LABELS[t]}
+                      </option>
+                    ))}
+                  </select>
                   <button
                     type="button"
                     aria-label="Xóa cột"
-                    onClick={() => setTableColumns((prev) => prev.filter((_, i) => i !== index))}
+                    onClick={() => {
+                      setTableColumns((prev) => prev.filter((_, i) => i !== index));
+                      setTableColumnTypes((prev) => prev.filter((_, i) => i !== index));
+                    }}
                     className="text-gray-400 hover:text-[var(--color-danger-red)]"
                   >
                     <X size={14} />
@@ -391,11 +427,18 @@ export default function AddFieldModal() {
               ))}
               <button
                 type="button"
-                onClick={() => setTableColumns((prev) => [...prev, ""])}
+                onClick={() => {
+                  setTableColumns((prev) => [...prev, ""]);
+                  setTableColumnTypes((prev) => [...prev, "text"]);
+                }}
                 className="flex items-center gap-1 self-start text-[12px] text-[var(--color-action-blue)]"
               >
                 <Plus size={13} /> Thêm cột
               </button>
+              <p className="text-[11.5px] leading-relaxed text-gray-500">
+                Cột số và tiền tệ: app tự chấm phẩy sau mỗi 3 chữ số khi hiển thị, tiền tệ thêm đuôi
+                &quot;VNĐ&quot;. Dữ liệu vẫn lưu số thô để cộng được và đồng bộ được sang app Thu mua.
+              </p>
             </div>
           </Row>
         )}
