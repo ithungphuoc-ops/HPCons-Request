@@ -908,6 +908,7 @@ export default function RequestDetailView({
                     key={field.id}
                     requestId={request.id}
                     field={field}
+                    rows={deserializeTableRows(request.values[field.id])}
                     history={history}
                     onSupplemented={onActed}
                   />
@@ -1246,11 +1247,15 @@ function FileValueView({
 function TableSupplementControl({
   requestId,
   field,
+  rows: allRows,
   history,
   onSupplemented,
 }: {
   requestId: string;
   field: ProposalField;
+  /** Toàn bộ dòng HIỆN CÓ của field (đã bao gồm mọi lần bổ sung trước) —
+   * `deserializeTableRows(request.values[field.id])` truyền từ nơi gọi. */
+  rows: string[][];
   history: RequestHistoryEntry[];
   onSupplemented: () => void;
 }) {
@@ -1260,10 +1265,34 @@ function TableSupplementControl({
   const [status, setStatus] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const supplementEntries = history.filter((h) => h.action.startsWith(TABLE_SUPPLEMENT_HISTORY_PREFIX));
-  const lastEntry = supplementEntries[supplementEntries.length - 1];
-
   if (columns.length === 0) return null;
+
+  // Suy ra các dòng ĐÃ bổ sung sau duyệt (khoá lại, hiện phía trên ô đang
+  // gõ) + giờ của từng lần, hoàn toàn từ dữ liệu server — không lưu state
+  // cục bộ riêng nên tải lại trang vẫn đúng. Bổ sung CHỈ NỐI VÀO CUỐI (không
+  // chèn/sửa/xoá dòng cũ, xem route table-supplement), nên đếm tổng số dòng
+  // đã bổ sung qua `history` rồi cắt đúng số đó ở cuối bảng hiện tại là khớp
+  // đúng thứ tự.
+  const batchRe = /\(lần \d+\): thêm (\d+) dòng vào "(.+)"$/;
+  const batches: { count: number; at: string }[] = [];
+  for (const h of history) {
+    if (!h.action.startsWith(TABLE_SUPPLEMENT_HISTORY_PREFIX)) continue;
+    const m = h.action.match(batchRe);
+    if (!m || m[2] !== field.name) continue;
+    const count = Number(m[1]);
+    if (Number.isFinite(count) && count > 0) batches.push({ count, at: h.at });
+  }
+  const totalSupplementRows = batches.reduce((sum, b) => sum + b.count, 0);
+  const splitIndex = Math.max(0, allRows.length - totalSupplementRows);
+  const supplementTailRows = allRows.slice(splitIndex);
+  const loggedRows: { row: string[]; at: string }[] = [];
+  let cursor = 0;
+  for (const b of batches) {
+    for (let i = 0; i < b.count; i++) {
+      loggedRows.push({ row: supplementTailRows[cursor] ?? emptyRow(), at: b.at });
+      cursor++;
+    }
+  }
 
   const updateCell = (rowIndex: number, colIndex: number, value: string) => {
     setRows((prev) =>
@@ -1304,15 +1333,7 @@ function TableSupplementControl({
 
   return (
     <div className="mb-3 border-b border-[var(--color-border)] pb-3">
-      <p className="mb-1.5 text-[12px] font-medium text-gray-600">
-        {field.name}
-        {lastEntry && (
-          <span className="ml-2 text-[10.5px] font-medium text-amber-600">
-            🕘 Bổ sung sau duyệt · lần {supplementEntries.length} ·{" "}
-            {new Date(lastEntry.at).toLocaleString("vi-VN")}
-          </span>
-        )}
-      </p>
+      <p className="mb-1.5 text-[12px] font-medium text-gray-600">{field.name}</p>
       <div className="overflow-x-auto rounded border border-[var(--color-border)]">
         <table className="w-full text-[12px]">
           <thead className="bg-gray-50">
@@ -1327,9 +1348,29 @@ function TableSupplementControl({
             </tr>
           </thead>
           <tbody>
+            {loggedRows.map((entry, li) => (
+              <tr key={`logged-${li}`} className="border-t border-[var(--color-border)] bg-gray-50">
+                <td className="px-2 py-1 text-gray-400">{li + 1}</td>
+                {entry.row.map((cell, ci) => (
+                  <td key={ci} className="px-2 py-1.5 align-top text-gray-700">
+                    {ci === entry.row.length - 1 ? (
+                      <>
+                        <div>{cell || "—"}</div>
+                        <div className="text-[10px] font-medium text-amber-600">
+                          🕘 Cập nhật lúc {new Date(entry.at).toLocaleString("vi-VN")}
+                        </div>
+                      </>
+                    ) : (
+                      cell || "—"
+                    )}
+                  </td>
+                ))}
+                <td />
+              </tr>
+            ))}
             {rows.map((row, ri) => (
-              <tr key={ri} className="border-t border-[var(--color-border)]">
-                <td className="px-2 py-1 text-gray-400">{ri + 1}</td>
+              <tr key={`new-${ri}`} className="border-t border-[var(--color-border)]">
+                <td className="px-2 py-1 text-gray-400">{loggedRows.length + ri + 1}</td>
                 {row.map((cell, ci) => (
                   <td key={ci} className="px-1 py-1">
                     <input
