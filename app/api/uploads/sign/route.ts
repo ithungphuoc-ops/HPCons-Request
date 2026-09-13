@@ -16,8 +16,10 @@ type SignItem = { name?: unknown; size?: unknown; type?: unknown };
  * đây, nên không dính trần body 4,5MB của serverless function Vercel (nguyên
  * nhân thật của lỗi "file hơn 6MB không thêm được", đo ngày 13/09/2026).
  *
- * Kích thước client khai ở đây chỉ để chặn sớm cho đỡ tốn công tải; con số
- * THẬT được đo lại bằng `verifyUploadedAttachment()` lúc đính tệp vào đề xuất.
+ * Dung lượng client khai được KÝ THẲNG vào link (`ContentLength`), nên đó cũng
+ * là dung lượng tối đa ghi được — khai 1MB thì không đẩy 500MB lên được. Máy
+ * chủ vẫn đo lại bằng `verifyUploadedAttachment()` lúc đính tệp vào đề xuất
+ * (phòng thủ 2 lớp).
  */
 export async function POST(request: Request) {
   try {
@@ -48,9 +50,20 @@ export async function POST(request: Request) {
           { status: 400 },
         );
       }
+      if (!Number.isInteger(size)) {
+        return NextResponse.json({ error: "Dung lượng tệp không hợp lệ." }, { status: 400 });
+      }
       const contentType = typeof file.type === "string" && file.type ? file.type : "application/octet-stream";
       const path = buildUploadPath(session.uid, name);
-      items.push({ name, path, contentType, url: await createSignedUploadUrl(path, contentType) });
+      // Ký kèm ĐÚNG dung lượng client khai: khai bao nhiêu chỉ ghi được bấy
+      // nhiêu byte, khai xong đẩy tệp to hơn là R2 từ chối (403).
+      items.push({
+        name,
+        path,
+        contentType,
+        size,
+        url: await createSignedUploadUrl(path, contentType, size),
+      });
     }
 
     return NextResponse.json({ items });

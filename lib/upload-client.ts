@@ -27,22 +27,36 @@ export async function uploadAttachments(files: File[]): Promise<RequestAttachmen
   }
   const { items } = (await signRes.json()) as { items: SignedItem[] };
 
-  try {
-    await Promise.all(
-      files.map(async (file, i) => {
-        const res = await fetch(items[i].url, {
-          method: "PUT",
-          headers: { "Content-Type": items[i].contentType },
-          body: file,
-        });
-        if (!res.ok) throw new Error(`R2 trả ${res.status}`);
-      }),
-    );
-  } catch {
-    return uploadThroughServer(files);
-  }
+  const results = await Promise.allSettled(
+    files.map(async (file, i) => {
+      const res = await fetch(items[i].url, {
+        method: "PUT",
+        headers: { "Content-Type": items[i].contentType },
+        body: file,
+      });
+      if (!res.ok) throw new Error(`R2 trả ${res.status}`);
+    }),
+  );
 
-  return files.map((file, i) => ({ name: file.name, path: items[i].path, size: file.size }));
+  const failedIndexes = results
+    .map((r, i) => (r.status === "rejected" ? i : -1))
+    .filter((i) => i >= 0);
+
+  // Tệp nào lên thẳng được thì GIỮ NGUYÊN, chỉ tệp hỏng mới đi đường lui —
+  // trước đây 1 tệp hỏng là tải lại TẤT CẢ qua máy chủ, mấy tệp đã lên thẳng
+  // thành rác không ai tham chiếu trong R2 (CodeRabbit bắt trên PR #15).
+  const attachments: RequestAttachment[] = files.map((file, i) => ({
+    name: file.name,
+    path: items[i].path,
+    size: file.size,
+  }));
+  if (failedIndexes.length === 0) return attachments;
+
+  const retried = await uploadThroughServer(failedIndexes.map((i) => files[i]));
+  failedIndexes.forEach((fileIndex, order) => {
+    attachments[fileIndex] = retried[order];
+  });
+  return attachments;
 }
 
 /** Đường cũ: đẩy file qua serverless function. Chỉ còn dùng làm đường lui. */

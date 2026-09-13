@@ -51,12 +51,21 @@ function getBucketName(): string {
 export async function createSignedUploadUrl(
   path: string,
   contentType: string,
-  expiresIn = 600,
+  contentLength: number,
+  expiresIn = 300,
 ): Promise<string> {
   const command = new PutObjectCommand({
     Bucket: getBucketName(),
     Key: path,
     ContentType: contentType,
+    // 🔴 KÝ LUÔN DUNG LƯỢNG — chốt chặn quan trọng nhất của đường tải thẳng
+    // (CodeRabbit bắt 2 lỗi trên PR #15, 13/09/2026):
+    //   - Chống phình kho: không thể khai "1MB" rồi đẩy 500MB. R2 đối chiếu
+    //     content-length với chữ ký, lệch là trả 403 SignatureDoesNotMatch
+    //     (đã thử thật trên bucket production trước khi viết).
+    //   - Chống ghi đè sau khi máy chủ đã đo (TOCTOU): link chỉ ghi được ĐÚNG
+    //     số byte đã ký, nên kích thước đo lúc đính tệp không thể bị đổi.
+    ContentLength: contentLength,
   });
   return getSignedUrl(getR2Client(), command, { expiresIn });
 }
