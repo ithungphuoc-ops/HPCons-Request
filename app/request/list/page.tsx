@@ -276,10 +276,12 @@ function RequestListPageInner() {
       if (filterStatus !== "all" && r.status !== filterStatus) return false;
       if (filterGroup !== "all" && r.groupNameSnapshot !== filterGroup) return false;
       if (q) {
-        // Tìm trên: tên đề xuất + GIÁ TRỊ các field nổi bật (gồm phòng ban)
-        // + tên người gửi (Sếp chốt 17/08/2026) — đều không phụ thuộc dấu.
+        // Tìm trên: MÃ đề nghị (Sếp thêm 13/09/2026) + tên đề xuất + GIÁ TRỊ các
+        // field nổi bật (gồm phòng ban) + tên người gửi (Sếp chốt 17/08/2026) — đều
+        // không phụ thuộc dấu.
         const haystack = chuanHoaTimKiem(
           [
+            r.code ?? "",
             resolveRequestTitle(r),
             ...notableFields(r).map((x) => x.value),
             r.submittedBy.name,
@@ -391,8 +393,8 @@ function RequestListPageInner() {
               <input
                 value={searchText}
                 onChange={(e) => setSearchText(e.target.value)}
-                placeholder="Tìm theo tên, phòng ban, người gửi..."
-                aria-label="Tìm theo tên đề xuất, phòng ban, hoặc người gửi"
+                placeholder="Tìm theo mã, tên, phòng ban, người gửi..."
+                aria-label="Tìm theo mã đề nghị, tên đề xuất, phòng ban, hoặc người gửi"
                 className="h-8 w-[220px] rounded border border-[var(--color-border)] pl-8 pr-2.5 text-[13px] text-gray-800 outline-none transition-colors duration-150 focus:border-[var(--color-action-blue)]"
               />
             </label>
@@ -588,8 +590,10 @@ function RequestListPageInner() {
                           <RequestStatusBadge status={r.status} />
                         </span>
                       </div>
+                      {/* Mã đề nghị thay tên nhóm (Sếp chốt 13/09/2026) — đề xuất cũ chưa có mã
+                          thì vẫn hiện tên nhóm để dòng không trống. */}
                       <span className="mt-0.5 block truncate text-[11px] text-gray-500">
-                        {r.groupNameSnapshot} · {new Date(r.updatedAt ?? r.submittedAt).toLocaleDateString("vi-VN")}
+                        {r.code ?? r.groupNameSnapshot} · {new Date(r.updatedAt ?? r.submittedAt).toLocaleDateString("vi-VN")}
                       </span>
                     </div>
                   </Link>
@@ -630,8 +634,10 @@ function RequestListPageInner() {
                         <RequestStatusBadge status={r.status} />
                       </span>
                     </div>
+                    {/* Mã đề nghị thay tên nhóm (Sếp chốt 13/09/2026) — fallback tên nhóm khi chưa có mã. */}
                     <span className="mt-0.5 block truncate text-[11px] text-gray-500">
-                      {r.groupNameSnapshot} · {new Date(r.submittedAt).toLocaleDateString("vi-VN")}
+                      <HighlightMatch text={r.code ?? r.groupNameSnapshot} query={searchText} /> ·{" "}
+                      {new Date(r.submittedAt).toLocaleDateString("vi-VN")}
                     </span>
                   </div>
                 </button>
