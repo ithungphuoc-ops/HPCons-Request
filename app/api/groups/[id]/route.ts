@@ -12,6 +12,7 @@ import {
 } from "@/lib/server/groups";
 import { sanitizeHelpText } from "@/lib/validation";
 import { resolveDateLeadTimeNumbers, validateDateLeadTimeNumbers } from "@/lib/date-lead-time";
+import { resolveTableColumnTypes } from "@/lib/table-field";
 import { validateConditionGroupFieldCodes } from "@/lib/server/conditions";
 import { findReferencedComputedFieldCode } from "@/lib/server/computed-fields";
 import { requireWriteAccess } from "@/lib/session";
@@ -58,6 +59,12 @@ export async function PATCH(
         dateLeadTimeRule: f.dateLeadTimeRule?.enabled
           ? { enabled: true as const, ...resolveDateLeadTimeNumbers(f.dateLeadTimeRule) }
           : undefined,
+        // Kiểu cột phải đi ĐÚNG CẶP với tableColumns theo index — client gửi
+        // thiếu/thừa/sai giá trị thì chuẩn hoá lại, không lưu rác (13/09/2026).
+        tableColumnTypes:
+          f.dataType === "table" || f.dataType === "base_table"
+            ? resolveTableColumnTypes(f.tableColumns ?? [], f.tableColumnTypes)
+            : undefined,
       }));
 
       // Máy chủ kiểm lại 2 mốc — dùng CHUNG hàm với hộp thoại sửa trường, phòng

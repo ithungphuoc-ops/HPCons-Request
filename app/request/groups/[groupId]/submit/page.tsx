@@ -10,11 +10,16 @@ import {
   MAX_DIRECT_UPLOAD_FILE_SIZE_LABEL,
 } from "@/lib/constants";
 import { uploadAttachments } from "@/lib/upload-client";
+import type { TableColumnType } from "@/lib/types";
 import {
   deserializeTableRows,
-  isQuantityColumn,
+  formatCellForDisplay,
+  isNumericColumnType,
   isRequiredTableColumn,
-  isValidQuantityCellValue,
+  isValidCellValue,
+  parseCellToRaw,
+  resolveTableColumnTypes,
+  sumColumn,
   toWireTableRows,
   downloadTableTemplateFile,
   parseTableImportFile,
@@ -375,14 +380,18 @@ export default function SubmitRequestPage() {
         if (field.dataType === "table" || field.dataType === "base_table") {
           const columns = field.tableColumns ?? [];
           const rows = deserializeTableRows(values[field.id]);
+          // Kiểm theo KIỂU cột admin khai (13/09/2026) — trước đây chỉ soi cột
+          // tên "Số lượng". Nhóm chưa khai kiểu vẫn ra đúng như cũ.
+          const cellTypes = resolveTableColumnTypes(columns, field.tableColumnTypes);
           for (const row of rows) {
             if (!row.some((cell) => cell?.trim())) continue;
             columns.forEach((col, ci) => {
               const cell = row[ci] ?? "";
               if (isRequiredTableColumn(col) && !cell.trim()) {
                 nextErrors[field.id] = `Bảng "${field.name}" còn dòng thiếu "${col}".`;
-              } else if (isQuantityColumn(col) && cell.trim() && !isValidQuantityCellValue(cell)) {
-                nextErrors[field.id] = `Bảng "${field.name}": "${col}" phải là số.`;
+              } else if (cell.trim() && !isValidCellValue(cell, cellTypes[ci])) {
+                const wanted = cellTypes[ci] === "int" ? "số nguyên" : "số";
+                nextErrors[field.id] = `Bảng "${field.name}": "${col}" phải là ${wanted}.`;
               }
             });
           }
@@ -1075,7 +1084,7 @@ function FieldControl({
       // add-post-approval-supplement Decision 3).
       const importTableFile = async (file: File) => {
         setTableImportStatus("Đang đọc file...");
-        const result = await parseTableImportFile(file, columns);
+        const result = await parseTableImportFile(file, columns, field.tableColumnTypes);
         if (tableFileInputRef.current) tableFileInputRef.current.value = "";
         if (!result.ok) {
           // Giữ đúng hành vi gốc: cột mới phát hiện được vẫn thêm vào cấu
@@ -1145,6 +1154,10 @@ function FieldControl({
         );
       }
 
+      const columnTypes = resolveTableColumnTypes(columns, field.tableColumnTypes);
+      // Dòng TỔNG chỉ hiện khi có ít nhất 1 cột tiền tệ (Sếp chốt 13/09/2026).
+      const hasMoneyColumn = columnTypes.includes("money");
+
       return (
         <div>
           {importButtons}
@@ -1158,7 +1171,9 @@ function FieldControl({
                       <th
                         key={i}
                         title={col}
-                        className="min-w-[110px] max-w-[240px] truncate border-l border-[var(--color-border)] px-2.5 py-2 text-left text-[12px] font-semibold uppercase tracking-wide text-gray-600"
+                        className={`min-w-[110px] max-w-[240px] truncate border-l border-[var(--color-border)] px-2.5 py-2 text-[12px] font-semibold uppercase tracking-wide text-gray-600 ${
+                          isNumericColumnType(columnTypes[i]) ? "text-right" : "text-left"
+                        }`}
                       >
                         {col}
                         {isRequiredTableColumn(col) && (
@@ -1179,21 +1194,17 @@ function FieldControl({
                         {rowIndex + 1}
                       </td>
                       {columns.map((colName, colIndex) => {
+                        const columnType = columnTypes[colIndex];
                         const cellValue = row[colIndex] ?? "";
-                        const qtyInvalid =
-                          isQuantityColumn(colName) && cellValue.trim() !== "" && !isValidQuantityCellValue(cellValue);
+                        const invalid = cellValue.trim() !== "" && !isValidCellValue(cellValue, columnType);
                         return (
                           <td key={colIndex} className="border-l border-gray-100 px-1 py-1">
-                            <input
+                            <TableCellInput
                               value={cellValue}
-                              onChange={(e) => updateCell(rowIndex, colIndex, e.target.value)}
-                              inputMode={isQuantityColumn(colName) ? "decimal" : undefined}
-                              title={qtyInvalid ? `"${colName}" phải là số` : undefined}
-                              className={`h-9 w-full rounded border bg-transparent px-2 text-[13px] text-gray-900 outline-none placeholder:text-gray-400 focus:border-[var(--color-action-blue)] focus:bg-white ${
-                                qtyInvalid
-                                  ? "border-[var(--color-danger-red)] bg-red-50"
-                                  : "border-transparent hover:border-[var(--color-border)] hover:bg-white"
-                              } ${isQuantityColumn(colName) ? "text-right tabular-nums" : ""}`}
+                              columnType={columnType}
+                              columnName={colName}
+                              invalid={invalid}
+                              onCommit={(next) => updateCell(rowIndex, colIndex, next)}
                             />
                           </td>
                         );
@@ -1212,6 +1223,29 @@ function FieldControl({
                       </td>
                     </tr>
                   ))}
+                  {hasMoneyColumn && (
+                    <tr className="border-t border-[var(--color-border)] bg-gray-50/70 font-semibold">
+                      <td className="px-2 py-2 text-center text-[12px] text-gray-500" />
+                      {columns.map((_, colIndex) => {
+                        const total = columnTypes[colIndex] === "money" ? sumColumn(rows, colIndex) : null;
+                        return (
+                          <td
+                            key={colIndex}
+                            className={`border-l border-gray-100 px-2.5 py-2 text-[13px] ${
+                              total === null ? "text-gray-500" : "text-right tabular-nums text-gray-900"
+                            }`}
+                          >
+                            {total === null
+                              ? colIndex === 0
+                                ? "Tổng cộng"
+                                : ""
+                              : formatCellForDisplay(String(total), "money")}
+                          </td>
+                        );
+                      })}
+                      <td />
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -1235,6 +1269,55 @@ function FieldControl({
     default:
       return null;
   }
+}
+
+/**
+ * 1 ô của trường Bảng. Cột SỐ: đang gõ thì hiện SỐ THÔ cho dễ sửa (không chấm
+ * phẩy giữa chừng làm nhảy con trỏ), rời ô mới định dạng lại; giá trị đẩy lên
+ * cha LUÔN là số thô. Cột văn bản: y như ô thường.
+ *
+ * Tách thành component riêng vì cần state "đang gõ" — không đặt useState
+ * trong thân `switch` của FieldControl được (vi phạm luật hook).
+ */
+function TableCellInput({
+  value,
+  columnType,
+  columnName,
+  invalid,
+  onCommit,
+}: {
+  value: string;
+  columnType: TableColumnType;
+  columnName: string;
+  invalid: boolean;
+  onCommit: (next: string) => void;
+}) {
+  const numeric = isNumericColumnType(columnType);
+  // null = không focus -> hiện bản đã định dạng.
+  const [draft, setDraft] = useState<string | null>(null);
+  const shown = draft ?? (numeric ? formatCellForDisplay(value, columnType) : value);
+
+  return (
+    <input
+      value={shown}
+      onFocus={() => setDraft(value)}
+      onChange={(e) => {
+        setDraft(e.target.value);
+        if (!numeric) onCommit(e.target.value);
+      }}
+      onBlur={(e) => {
+        if (numeric) onCommit(parseCellToRaw(e.target.value, columnType));
+        setDraft(null);
+      }}
+      inputMode={columnType === "int" ? "numeric" : numeric ? "decimal" : undefined}
+      title={invalid ? `"${columnName}" phải là ${columnType === "int" ? "số nguyên" : "số"}` : undefined}
+      className={`h-9 w-full rounded border bg-transparent px-2 text-[13px] text-gray-900 outline-none placeholder:text-gray-400 focus:border-[var(--color-action-blue)] focus:bg-white ${
+        invalid
+          ? "border-[var(--color-danger-red)] bg-red-50"
+          : "border-transparent hover:border-[var(--color-border)] hover:bg-white"
+      } ${numeric ? "text-right tabular-nums" : ""}`}
+    />
+  );
 }
 
 function FileFieldControl({

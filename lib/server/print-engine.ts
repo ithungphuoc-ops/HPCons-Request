@@ -4,7 +4,11 @@
 import Docxtemplater from "docxtemplater";
 import PizZip from "pizzip";
 import { buildPrintTemplateData, isKnownSystemKey } from "@/lib/print-template";
-import { deserializeTableRows } from "@/lib/table-field";
+import {
+  deserializeTableRows,
+  formatCellForDisplay,
+  resolveTableColumnTypes,
+} from "@/lib/table-field";
 import type { ProposalGroup, RequestInstance } from "@/lib/types";
 
 const TAG_REGEX = /\$\{([^}]*)\}/g;
@@ -322,13 +326,17 @@ export function duplicateTableRows(
     const rawRows = deserializeTableRows(request.values[field.id]);
     const rows = rawRows.length > 0 ? rawRows : [[]];
 
+    // Ô lưu SỐ THÔ, in ra giấy thì phải là bản đã chấm phẩy + đuôi VNĐ, đúng
+    // như người dùng thấy trên màn hình (Sếp chốt 13/09/2026).
+    const columnTypes = resolveTableColumnTypes(field.tableColumns ?? [], field.tableColumnTypes);
     const columnTagRe = /\$\{column\.([^.]+)\.(\d+)\}/g;
     const renderedRows = rows.map((row, rowIndex) =>
       templateRow.replace(columnTagRe, (full: string, tagCode: string, idxStr: string) => {
         if (tagCode !== code) return full; // thẻ của field Bảng khác — xử lý ở vòng lặp của field đó
         const idx = Number(idxStr);
         if (idx === 0) return String(rowIndex + 1);
-        return escapeXml(row[idx - 1] ?? "");
+        const cellType = columnTypes[idx - 1] ?? "text";
+        return escapeXml(formatCellForDisplay(row[idx - 1] ?? "", cellType));
       }),
     );
 

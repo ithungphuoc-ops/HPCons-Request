@@ -1,3 +1,5 @@
+import type { TableColumnType } from "@/lib/types";
+
 /**
  * Firestore không cho phép một mảng chứa trực tiếp mảng khác bên trong
  * ("Property values contains an invalid nested entity") — trường kiểu Bảng
@@ -66,6 +68,117 @@ export function isValidQuantityCellValue(value: string): boolean {
   return QUANTITY_CELL_RE.test(value.trim());
 }
 
+// =========================================================================
+// KIỂU DỮ LIỆU CỘT BẢNG (Sếp chốt 13/09/2026)
+// -------------------------------------------------------------------------
+// Nguyên tắc xuyên suốt: ô LƯU SỐ THÔ, chỉ ĐỊNH DẠNG lúc hiển thị.
+//   người dùng thấy  1,234,567 VNĐ
+//   Firestore lưu    1234567
+//   Thu mua đọc      Number("1234567") = 1234567 ✓
+// Lưu chuỗi đã định dạng là tái hiện đúng sự cố đề nghị 000000072/073/074.
+// =========================================================================
+
+export const TABLE_COLUMN_TYPE_LABELS: Record<TableColumnType, string> = {
+  text: "Văn bản ngắn",
+  int: "Số nguyên",
+  decimal: "Số thập phân",
+  money: "Tiền tệ (VNĐ)",
+  percent: "Phần trăm",
+};
+
+export const TABLE_COLUMN_TYPES = Object.keys(TABLE_COLUMN_TYPE_LABELS) as TableColumnType[];
+
+export function isNumericColumnType(type: TableColumnType): boolean {
+  return type !== "text";
+}
+
+/**
+ * Suy ra kiểu cho TỪNG cột. Nhóm tạo trước 13/09/2026 không có
+ * `tableColumnTypes` → cột = văn bản, riêng cột tên "Số lượng" = số thập phân
+ * để GIỮ NGUYÊN hành vi cũ (trước đây chỉ cột này bị bắt phải là số).
+ * Cũng dùng khi 2 mảng lệch độ dài (admin vừa thêm cột).
+ */
+export function resolveTableColumnTypes(
+  columns: string[],
+  types?: TableColumnType[],
+): TableColumnType[] {
+  return columns.map((name, i) => {
+    const declared = types?.[i];
+    if (declared && declared in TABLE_COLUMN_TYPE_LABELS) return declared;
+    return isQuantityColumn(name) ? "decimal" : "text";
+  });
+}
+
+/**
+ * Bóc mọi thứ người dùng gõ/dán về SỐ THÔ: bỏ khoảng trắng, bỏ đuôi VNĐ/₫/%,
+ * bỏ dấu phẩy ngăn nghìn. Cột văn bản trả nguyên si.
+ *
+ * 🔴 Dấu phẩy có 2 nghĩa tuỳ ngữ cảnh: "1,234,567" là ngăn nghìn (bỏ đi),
+ * nhưng "2,5" trong DỮ LIỆU CŨ là 2.5 kiểu Việt (đổi thành dấu chấm) — quy
+ * tắc cũ `isValidQuantityCellValue` vốn nhận cả 2 dấu. Không tách 2 trường
+ * hợp này là làm hỏng số liệu cũ (2,5 tấn thành 25 tấn).
+ */
+export function parseCellToRaw(input: string, type: TableColumnType): string {
+  if (!isNumericColumnType(type)) return input;
+  const cleaned = String(input ?? "")
+    .trim()
+    .replace(/\s/g, "")
+    .replace(/(vnđ|vnd|₫|đ|%)$/i, "");
+  if (/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(cleaned)) return cleaned.replace(/,/g, "");
+  if (/^\d+,\d+$/.test(cleaned)) return cleaned.replace(",", ".");
+  return cleaned.replace(/,/g, "");
+}
+
+/** Ô rỗng là hợp lệ ở đây — "bắt buộc" là luật riêng (findInvalidTableRows). */
+export function isValidCellValue(raw: string, type: TableColumnType): boolean {
+  if (!isNumericColumnType(type)) return true;
+  const value = raw.trim();
+  if (value === "") return true;
+  if (!/^\d+(\.\d+)?$/.test(value)) return false;
+  if (type === "int" && value.includes(".")) return false;
+  return true;
+}
+
+const MAX_FRACTION_DIGITS: Record<TableColumnType, number> = {
+  text: 0,
+  int: 0,
+  decimal: 3,
+  money: 0,
+  percent: 2,
+};
+
+/**
+ * Số thô → chuỗi cho người đọc: dấu phẩy sau mỗi 3 chữ số, dấu chấm ngăn phần
+ * thập phân (đúng quy ước Sếp chốt), tiền tệ thêm đuôi " VNĐ".
+ * Giá trị không phải số (dữ liệu cũ gõ tay, vd "file đính kèm") trả nguyên si
+ * để không nuốt mất thông tin.
+ */
+export function formatCellForDisplay(raw: string, type: TableColumnType): string {
+  if (!isNumericColumnType(type)) return raw;
+  const value = String(raw ?? "").trim();
+  if (value === "") return "";
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return value;
+  const text = parsed.toLocaleString("en-US", { maximumFractionDigits: MAX_FRACTION_DIGITS[type] });
+  if (type === "money") return `${text} VNĐ`;
+  if (type === "percent") return `${text}%`;
+  return text;
+}
+
+/** Tổng 1 cột số — bỏ qua ô rỗng/không phải số. `null` = không có ô nào cộng được. */
+export function sumColumn(rows: string[][], columnIndex: number): number | null {
+  let total = 0;
+  let counted = 0;
+  for (const row of rows) {
+    const value = Number(String(row[columnIndex] ?? "").trim());
+    if (Number.isFinite(value) && String(row[columnIndex] ?? "").trim() !== "") {
+      total += value;
+      counted += 1;
+    }
+  }
+  return counted > 0 ? total : null;
+}
+
 /**
  * Sinh file Excel mẫu (.xlsx) chỉ có dòng tiêu đề đúng các cột hiện có, để
  * điền offline — thuần thao tác trình duyệt, không có state. Tách ra từ
@@ -104,6 +217,7 @@ export type TableImportResult =
 export async function parseTableImportFile(
   file: File,
   existingColumns: string[],
+  existingColumnTypes?: TableColumnType[],
 ): Promise<TableImportResult> {
   try {
     const XLSX = await import("xlsx");
@@ -126,10 +240,15 @@ export async function parseTableImportFile(
       return { ok: false, error: "File không có dòng dữ liệu nào để nhập.", newHeaders, finalColumns };
     }
 
+    // Cột SỐ: bóc "1,234,567 VNĐ" trong file Excel về số thô trước khi ghi vào
+    // đề xuất — người dùng hay định dạng sẵn trong Excel, lưu nguyên chuỗi đó
+    // là làm `Number(ô)` bên Thu mua ra NaN (Sếp chốt 13/09/2026).
+    const finalTypes = resolveTableColumnTypes(finalColumns, existingColumnTypes);
     const newRows = filledDataRows.map((r) =>
-      finalColumns.map((col) => {
+      finalColumns.map((col, colIndex) => {
         const fileColIndex = fileHeaders.findIndex((h) => normalizeColumnName(h) === normalizeColumnName(col));
-        return fileColIndex >= 0 ? String(r[fileColIndex] ?? "") : "";
+        const cell = fileColIndex >= 0 ? String(r[fileColIndex] ?? "") : "";
+        return parseCellToRaw(cell, finalTypes[colIndex]);
       }),
     );
 
