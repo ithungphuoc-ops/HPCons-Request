@@ -66,6 +66,14 @@ describe("classifyDateLeadTime", () => {
     expect(classifyDateLeadTime(5, 5)).toBe("ok");
     expect(classifyDateLeadTime(20, 15)).toBe("ok");
   });
+
+  // Mốc 3 ngày (Sếp thêm 13/09/2026): khoảng "gấp" rỗng — 2 ngày vẫn chặn,
+  // từ 3 ngày trở lên là "ok", không bao giờ rơi vào "urgent".
+  it("standardDays = 3 -> không có khoảng urgent", () => {
+    expect(classifyDateLeadTime(2, 3)).toBe("blocked");
+    expect(classifyDateLeadTime(3, 3)).toBe("ok");
+    expect(classifyDateLeadTime(10, 3)).toBe("ok");
+  });
 });
 
 describe("parseFieldDateOnly", () => {

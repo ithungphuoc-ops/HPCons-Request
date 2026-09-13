@@ -6,8 +6,9 @@
  *   - ≤ 2 ngày làm việc (kể cả ngày hôm nay/quá khứ) → "blocked", CHẶN HẲN
  *     không cho gửi đề xuất — mốc cứng, không phụ thuộc `standardDays`.
  *   - 3 ngày tới TRƯỚC ngưỡng chuẩn Admin chọn riêng cho field (standardDays:
- *     5/7/15) → "urgent", phải hỏi lại người gửi có thật cần thiết rồi mới
- *     cho đánh dấu.
+ *     3/5/7/15) → "urgent", phải hỏi lại người gửi có thật cần thiết rồi mới
+ *     cho đánh dấu. Chọn standardDays = 3 thì khoảng này RỖNG — mọi ngày hợp lệ
+ *     (>= 3 ngày làm việc) đều "ok", không hỏi gấp (Sếp thêm mốc 3 ngày 13/09/2026).
  *   - >= standardDays → "ok", không cảnh báo gì.
  *
  * Thuần tính toán ngày giờ, không đụng Firestore/credential — test được

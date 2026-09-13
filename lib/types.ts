@@ -109,12 +109,12 @@ export interface ApprovalTimeField {
  *   - 3 ngày tới TRƯỚC `standardDays` → coi là "gấp", phải hỏi lại người gửi
  *     có thật cần thiết không, xác nhận rồi mới đánh dấu màu lên ô ngày.
  *   - >= `standardDays` → bình thường, không cảnh báo.
- * `standardDays` do Admin tự chọn khi tạo/sửa field này (5/7/15 ngày làm
+ * `standardDays` do Admin tự chọn khi tạo/sửa field này (3/5/7/15 ngày làm
  * việc) — xem lib/date-lead-time.ts (classifyDateLeadTime).
  */
 export interface DateLeadTimeRule {
   enabled: boolean;
-  standardDays: 5 | 7 | 15;
+  standardDays: 3 | 5 | 7 | 15;
 }
 
 /**

@@ -29,7 +29,7 @@ const tableTypes: FieldDataType[] = ["table", "base_table"];
 const computedEligibleTypes: FieldDataType[] = ["short_text", "paragraph"];
 /** Chỉ field ngày mới cấu hình được ràng buộc "ngày cần cấp" (dateLeadTimeRule). */
 const dateLeadTimeEligibleTypes: FieldDataType[] = ["date", "datetime"];
-const DATE_LEAD_TIME_STANDARD_OPTIONS: DateLeadTimeRule["standardDays"][] = [5, 7, 15];
+const DATE_LEAD_TIME_STANDARD_OPTIONS: DateLeadTimeRule["standardDays"][] = [3, 5, 7, 15];
 
 export default function AddFieldModal() {
   const { addFieldModalGroupId, editingField, closeAddFieldModal, getGroupById, addField, updateField } =
@@ -513,10 +513,19 @@ export default function AddFieldModal() {
                     </select>
                   </div>
                   <div className="rounded-md bg-amber-50 p-2 text-[12px] leading-relaxed text-amber-700">
-                    Chọn ngày cách hôm gửi ≤ 2 ngày làm việc: chặn hẳn, không cho gửi. Chọn từ 3 ngày tới
-                    trước ngưỡng chuẩn ở trên: hỏi lại người gửi có thật cần thiết không — nếu xác nhận
-                    cần thiết, ô ngày được đánh dấu màu kèm ghi chú &quot;chưa có kế hoạch đề nghị rõ
-                    ràng&quot;.
+                    Chọn ngày cách hôm gửi ≤ 2 ngày làm việc: chặn hẳn, không cho gửi.
+                    {dateLeadTimeStandardDays === 3 ? (
+                      <>
+                        {" "}Ngưỡng chuẩn 3 ngày: từ 3 ngày làm việc trở lên là hợp lệ, không hỏi gì thêm
+                        (không có khoảng &quot;gấp&quot;).
+                      </>
+                    ) : (
+                      <>
+                        {" "}Chọn từ 3 ngày tới trước ngưỡng chuẩn ở trên: hỏi lại người gửi có thật cần
+                        thiết không — nếu xác nhận cần thiết, ô ngày được đánh dấu màu kèm ghi chú
+                        &quot;chưa có kế hoạch đề nghị rõ ràng&quot;.
+                      </>
+                    )}
                   </div>
                 </>
               )}
