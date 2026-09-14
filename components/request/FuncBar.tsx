@@ -5,7 +5,6 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   BarChart3,
-  ChevronLeft,
   Eye,
   FileClock,
   History,
@@ -79,13 +78,13 @@ export default function FuncBar() {
           mobileNavOpen ? "fixed inset-y-0 left-20 flex" : "hidden"
         }`}
       >
-      <Link
-        href="/"
-        className="mx-2 mb-2 flex items-center gap-2 rounded px-2 py-2 text-[12px] text-[var(--color-text-secondary)] hover:bg-[var(--color-funcbar-active-bg)]"
-      >
-        <ChevronLeft size={14} />
-        Trang chủ
-      </Link>
+      {/* ĐÃ BỎ mục "Trang chủ" ở đây (14/09/2026, Sếp chốt). Nó trỏ về "/" →
+          redirect "/request", tức TRÙNG ĐÍCH với nút hình ngôi nhà trên AppBar.
+          Tệ hơn, nó mang icon ChevronLeft (mũi tên quay lui) nên đọc như nút
+          "thoát app", khiến người dùng tưởng là đường về App Tổng — mà đường
+          về App Tổng thật sự nằm trong AppLauncher ("Về App Tổng").
+          Nếu sau này cần lối tắt về App Tổng thì dùng HPCORE_DASHBOARD_URL
+          (lib/constants.ts), ĐỪNG trỏ lại href="/". */}
 
       {session && (
         <div className="mx-2 mb-2 flex items-center gap-2 rounded px-2 py-2">
