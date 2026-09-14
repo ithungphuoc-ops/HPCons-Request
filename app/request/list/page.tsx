@@ -12,6 +12,13 @@ import HighlightMatch from "@/components/shared/HighlightMatch";
 import { resolveRequestTitle, TITLE_FIELD_CODES } from "@/lib/request-title";
 import { useCurrentSession } from "@/lib/useCurrentSession";
 import { DEFAULT_GROUP_PERMISSION_RULES } from "@/lib/types";
+import {
+  matchesRequestView,
+  REQUEST_VIEW_EMPTY,
+  REQUEST_VIEW_LABEL,
+  REQUEST_VIEW_ORDER,
+  type RequestListView,
+} from "@/lib/request-views";
 import type { ListLoadStatus, ProposalField, RequestInstance, RequestListScope } from "@/lib/types";
 
 const scopeLabels: Record<RequestListScope, string> = {
@@ -201,6 +208,14 @@ function RequestListPageInner() {
   const [searchText, setSearchText] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterGroup, setFilterGroup] = useState<string>("all");
+  // Góc nhìn (tab) — bộ lọc SUY RA lúc đọc, không phải trạng thái của đề xuất.
+  // Xem lib/request-views.ts để biết vì sao 3 thứ này không nằm trong RequestStatus.
+  const [view, setView] = useState<RequestListView>("all");
+  // Mốc thời gian để tính "Quá hạn". Giữ trong state thay vì gọi Date.now()
+  // thẳng trong useMemo: nếu gọi thẳng thì mỗi lần render lại cho số khác
+  // nhau, React không coi memo là ổn định và số đếm trên tab nhấp nháy.
+  // Làm mới mỗi phút là đủ — hạn xử lý tính theo giờ.
+  const [now, setNow] = useState(() => Date.now());
 
   const load = () => {
     setStatus("loading");
@@ -224,7 +239,13 @@ function RequestListPageInner() {
     setSearchText("");
     setFilterStatus("all");
     setFilterGroup("all");
+    setView("all");
   }, [scope, groupId]);
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
 
   useEffect(() => {
     fetch("/api/session")
@@ -270,7 +291,15 @@ function RequestListPageInner() {
     [requests],
   );
 
-  const filteredRequests = useMemo(() => {
+  /**
+   * Lọc theo ô tìm kiếm + 2 select, CHƯA áp góc nhìn (tab).
+   *
+   * Tách riêng là có chủ ý: số đếm trên mỗi tab phải đếm trên đúng tập này,
+   * nhờ vậy con số trên tab LUÔN khớp với số dòng thấy sau khi bấm vào. Nếu
+   * đếm trên `requests` thô thì tab ghi "5" mà bấm vào ra 0 dòng khi đang bật
+   * một bộ lọc khác — kiểu sai số khó chịu nhất với người dùng.
+   */
+  const preViewRequests = useMemo(() => {
     const q = chuanHoaTimKiem(searchText);
     return requests.filter((r) => {
       if (filterStatus !== "all" && r.status !== filterStatus) return false;
@@ -292,6 +321,19 @@ function RequestListPageInner() {
       return true;
     });
   }, [requests, searchText, filterStatus, filterGroup]);
+
+  const viewCounts = useMemo(() => {
+    const counts = {} as Record<RequestListView, number>;
+    for (const v of REQUEST_VIEW_ORDER) {
+      counts[v] = preViewRequests.filter((r) => matchesRequestView(v, r, currentUid, now)).length;
+    }
+    return counts;
+  }, [preViewRequests, currentUid, now]);
+
+  const filteredRequests = useMemo(
+    () => preViewRequests.filter((r) => matchesRequestView(view, r, currentUid, now)),
+    [preViewRequests, view, currentUid, now],
+  );
 
   // `permissionRules.defaultFollowersCanExportData`/`defaultApproversCanExportData`
   // — CHỈ áp dụng khi đang xem đúng 1 nhóm cụ thể (scope=group, có group config
@@ -380,6 +422,50 @@ function RequestListPageInner() {
             </Link>
           )}
         </div>
+
+        {/* Dải tab "góc nhìn" (Sếp chốt 14/09/2026) — Đến lượt duyệt / Quá hạn /
+            Đã đánh dấu. KHÁC với select "Trạng thái" ngay bên dưới: select lọc
+            theo trạng thái THẬT của đề xuất, còn dải tab này lọc theo quan hệ
+            giữa đề xuất và NGƯỜI ĐANG XEM tại THỜI ĐIỂM XEM. Hai thứ chồng
+            nhau được (vd: tab "Quá hạn" + trạng thái "Chờ xử lý").
+
+            Hiện ở CẢ 2 chế độ (bảng toàn màn hình và cột thu gọn) — khác thanh
+            công cụ bên dưới vốn chỉ hiện ở chế độ bảng — vì khi đang mở một đề
+            xuất thì vẫn cần đổi tab để nhảy sang việc khác. */}
+        {status === "loaded" && (
+          <div
+            role="tablist"
+            aria-label="Lọc nhanh danh sách đề xuất"
+            className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-[var(--color-border)] px-2"
+          >
+            {REQUEST_VIEW_ORDER.map((v) => {
+              const isActive = view === v;
+              return (
+                <button
+                  key={v}
+                  type="button"
+                  role="tab"
+                  aria-selected={isActive}
+                  onClick={() => setView(v)}
+                  className={`relative shrink-0 cursor-pointer whitespace-nowrap border-b-2 px-3 py-2.5 text-[13px] transition-colors duration-150 ${
+                    isActive
+                      ? "border-[var(--color-action-blue)] font-semibold text-[var(--color-action-blue)]"
+                      : "border-transparent font-medium text-gray-500 hover:text-gray-800"
+                  }`}
+                >
+                  {REQUEST_VIEW_LABEL[v]}
+                  <span
+                    className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[12px] font-semibold ${
+                      isActive ? "bg-[var(--color-action-blue)] text-white" : "bg-gray-100 text-gray-500"
+                    }`}
+                  >
+                    {viewCounts[v]}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* Thanh công cụ: tìm kiếm (không dấu) + lọc trạng thái/nhóm + Xuất
             Excel — chỉ hiện ở chế độ bảng toàn màn hình (Sếp yêu cầu 17/08/2026). */}
@@ -472,7 +558,11 @@ function RequestListPageInner() {
                     {filteredRequests.length === 0 && (
                       <tr>
                         <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
-                          Không có đề xuất nào khớp bộ lọc hiện tại.
+                          {/* Nói rõ đang rỗng VÌ tab nào, thay vì câu chung chung
+                              "không khớp bộ lọc" khiến người dùng không biết gỡ đâu. */}
+                          {view === "all"
+                            ? "Không có đề xuất nào khớp bộ lọc hiện tại."
+                            : REQUEST_VIEW_EMPTY[view]}
                         </td>
                       </tr>
                     )}
@@ -565,6 +655,11 @@ function RequestListPageInner() {
 
           {/* ĐANG mở box nội dung (cột trái 320px): dòng rút gọn 2 tầng —
               bảng 7 cột không nhét vừa cột hẹp. Giữ hover/active như cũ. */}
+          {status === "loaded" && selectedRequest && filteredRequests.length === 0 && (
+            <p className="px-3 py-6 text-[13px] text-gray-500">
+              {view === "all" ? "Không có đề xuất nào khớp bộ lọc hiện tại." : REQUEST_VIEW_EMPTY[view]}
+            </p>
+          )}
           {status === "loaded" &&
             selectedRequest &&
             filteredRequests.map((r) => {
