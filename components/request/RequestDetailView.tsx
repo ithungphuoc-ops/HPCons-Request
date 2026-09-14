@@ -355,6 +355,11 @@ export default function RequestDetailView({
       if (!res.ok) throw new Error();
       const data = (await res.json()) as { bookmarkedByUids: string[] };
       setBookmarked(data.bookmarkedByUids.includes(currentUid));
+      // PHẢI nạp lại danh sách: tab "Đã đánh dấu" (thêm 14/09/2026) lọc theo
+      // `bookmarkedByUids` của mảng `requests` ở trang danh sách. Nếu chỉ đổi
+      // state cục bộ thì bấm sao xong, bấm sang tab đó vẫn thấy trống và số
+      // đếm vẫn 0 cho tới khi F5 — tính năng mới trông như hỏng ngay lần đầu.
+      onActed();
     } catch {
       setBookmarked((v) => !v); // rollback
       setActionError("Không thể đánh dấu đề xuất — thử lại.");
@@ -1045,12 +1050,20 @@ export default function RequestDetailView({
               const isCurrentTurn =
                 request.status === "pending" &&
                 canApproverAct(request.approvalFlow, request.approvers, approver.id);
-              // `deadlineAt` đã LÀ hạn của riêng bước đang chờ — server tính
-              // lại mỗi lần chuyển bước (recomputeDeadlineForNextStep), nên
-              // gắn đồng hồ này vào đúng người đang tới lượt là chính xác.
+              // `deadlineAt` là hạn xử lý HIỆN HÀNH của đề xuất. Nó chỉ thật
+              // sự là "hạn của riêng bước này" khi nhóm bật `approverSlaEnabled`
+              // VÀ luồng là "Lần lượt" — chỉ khi đó server mới tính lại mỗi lần
+              // chuyển bước (xem điều kiện đầu recomputeDeadlineForNextStep,
+              // lib/server/requests.ts). Ngoài 2 điều kiện đó, nó vẫn là hạn
+              // chung tính từ lúc gửi. Vì đề xuất chỉ có đúng MỘT người đang
+              // tới lượt, gắn đồng hồ vào người đó vẫn đúng trong cả hai
+              // trường hợp — nhưng nhãn KHÔNG được nói "bước này".
               const showCountdown = isCurrentTurn && !!request.deadlineAt;
+              // Dùng `<=` cho khớp `formatCountdown` (trả "Đã quá hạn" khi
+              // diff <= 0). Nếu để `<` thì đúng giây tròn hạn sẽ hiện ra chuỗi
+              // vô nghĩa "Còn Đã quá hạn".
               const lateForThisStep =
-                showCountdown && new Date(request.deadlineAt!).getTime() < now;
+                showCountdown && new Date(request.deadlineAt!).getTime() <= now;
               const StatusIcon =
                 state?.decision === "approved"
                   ? CheckCircle2
@@ -1085,7 +1098,7 @@ export default function RequestDetailView({
                         }`}
                       >
                         {lateForThisStep
-                          ? "Đã quá hạn bước này"
+                          ? "Đã quá hạn"
                           : `Còn ${formatCountdown(request.deadlineAt!, now)}`}
                       </span>
                     )}
@@ -1105,8 +1118,15 @@ export default function RequestDetailView({
                       : state?.decision === "rejected"
                         ? "Đã từ chối"
                         : isCurrentTurn
-                          ? "Đang chờ"
-                          : "Chưa tới lượt"}
+                        ? "Đang chờ"
+                        : request.status === "pending"
+                          ? "Chưa tới lượt"
+                          // Đề xuất đã kết thúc (luồng "Một người duyệt" chỉ
+                          // cần 1 người đồng ý; hoặc bị từ chối giữa chừng ở
+                          // luồng "Lần lượt") thì những người còn lại KHÔNG
+                          // phải "chưa tới lượt" — sẽ không bao giờ tới lượt
+                          // họ nữa. Giữ chữ trung tính như trước.
+                          : "Chưa xử lý"}
                   </span>
                 </div>
               );

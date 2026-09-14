@@ -431,10 +431,13 @@ function RequestListPageInner() {
 
             Hiện ở CẢ 2 chế độ (bảng toàn màn hình và cột thu gọn) — khác thanh
             công cụ bên dưới vốn chỉ hiện ở chế độ bảng — vì khi đang mở một đề
-            xuất thì vẫn cần đổi tab để nhảy sang việc khác. */}
+            xuất thì vẫn cần đổi tab để nhảy sang việc khác. Lưu ý: dưới khổ md
+            (768px), lúc đang mở một đề xuất thì cả cột trái bị ẩn (`hidden
+            md:flex` ở trên) nên dải tab cũng không thấy — đóng đề xuất lại là
+            hiện. */}
         {status === "loaded" && (
           <div
-            role="tablist"
+            role="group"
             aria-label="Lọc nhanh danh sách đề xuất"
             className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-[var(--color-border)] px-2"
           >
@@ -444,8 +447,13 @@ function RequestListPageInner() {
                 <button
                   key={v}
                   type="button"
-                  role="tab"
-                  aria-selected={isActive}
+                  // CỐ Ý không dùng role="tab"/"tablist": mẫu ARIA Tabs đòi
+                  // phải có phần tử role="tabpanel" tương ứng + điều hướng
+                  // bằng phím mũi tên. App không có cả hai, khai role="tab"
+                  // suông thì trình đọc màn hình đọc "tab, đã chọn" rồi không
+                  // có panel nào để nhảy tới. Đây thực chất là nhóm nút bật/tắt
+                  // lọc, nên dùng aria-pressed — phím Tab gốc chạy đúng ngay.
+                  aria-pressed={isActive}
                   onClick={() => setView(v)}
                   className={`relative shrink-0 cursor-pointer whitespace-nowrap border-b-2 px-3 py-2.5 text-[14px] transition-colors duration-150 ${
                     isActive
