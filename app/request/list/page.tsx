@@ -741,8 +741,10 @@ function RequestListPageInner() {
         </div>
       </div>
 
+      {/* px-8 = 64px lề hai bên — trên điện thoại 390px thì đó là 1/5 bề ngang
+          còn lại, nên thu về px-4 và chỉ nới ra từ khổ md. */}
       {selectedRequest && (
-        <div className="min-w-0 flex-1 overflow-y-auto px-8 py-6">
+        <div className="min-w-0 flex-1 overflow-y-auto px-4 py-4 md:px-8 md:py-6">
           <button
             type="button"
             onClick={closeDetail}

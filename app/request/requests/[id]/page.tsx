@@ -35,7 +35,7 @@ export default function RequestDetailPage() {
   }, []);
 
   return (
-    <div className="px-8 py-6">
+    <div className="px-4 py-4 md:px-8 md:py-6">
       <button
         type="button"
         onClick={() => router.back()}
