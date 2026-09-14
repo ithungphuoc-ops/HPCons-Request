@@ -106,7 +106,7 @@ function ProposalFormPageInner() {
         <button
           type="button"
           onClick={() => openAddFieldModal(group.id)}
-          className="flex h-[34px] shrink-0 items-center gap-1.5 rounded bg-[var(--color-action-blue)] px-3 text-[13px] font-medium text-white hover:brightness-95"
+          className="flex h-[34px] shrink-0 items-center gap-1.5 rounded bg-[var(--color-action-blue)] px-3 text-[14px] font-medium text-white hover:brightness-95"
         >
           <Plus size={15} /> Thêm
         </button>
@@ -114,7 +114,7 @@ function ProposalFormPageInner() {
 
       <div className="overflow-hidden rounded-[3px] border border-[var(--color-border)]">
         {sortedFields.length === 0 ? (
-          <div className="flex min-h-[140px] items-center justify-center text-[13px] text-gray-400">
+          <div className="flex min-h-[140px] items-center justify-center text-[14px] text-gray-400">
             Chưa có trường dữ liệu nào. Nhấn &quot;Thêm&quot; để tạo trường đầu tiên.
           </div>
         ) : (
@@ -137,7 +137,7 @@ function ProposalFormPageInner() {
       <div className="mb-4 mt-8 flex items-start justify-between gap-4">
         <div>
           <h2 className="text-[15px] font-semibold text-gray-800">
-            Mẫu form phê duyệt <span className="ml-1 rounded-full bg-[var(--color-cat-bg)] px-2 py-0.5 text-[10px] font-bold text-[var(--color-cat-text)]">MỚI</span>
+            Mẫu form phê duyệt <span className="ml-1 rounded-full bg-[var(--color-cat-bg)] px-2 py-0.5 text-[12px] font-bold text-[var(--color-cat-text)]">MỚI</span>
           </h2>
           <p className="mt-1 text-[12px] text-gray-500">
             Field chỉ hiện cho ĐÚNG người duyệt lúc xử lý ĐÚNG hành động — không phải người gửi điền.
@@ -146,7 +146,7 @@ function ProposalFormPageInner() {
         <button
           type="button"
           onClick={() => setApprovalTimeModal({ editing: null })}
-          className="flex h-[34px] shrink-0 items-center gap-1.5 rounded border border-[var(--color-border)] px-3 text-[13px] font-medium text-gray-700 hover:bg-gray-50"
+          className="flex h-[34px] shrink-0 items-center gap-1.5 rounded border border-[var(--color-border)] px-3 text-[14px] font-medium text-gray-700 hover:bg-gray-50"
         >
           <Plus size={15} /> Thêm
         </button>
@@ -154,14 +154,14 @@ function ProposalFormPageInner() {
 
       <div className="overflow-hidden rounded-[3px] border border-[var(--color-border)]">
         {approvalTimeFields.length === 0 ? (
-          <div className="flex min-h-[100px] items-center justify-center text-[13px] text-gray-400">
+          <div className="flex min-h-[100px] items-center justify-center text-[14px] text-gray-400">
             Chưa có trường nào trong Mẫu form phê duyệt.
           </div>
         ) : (
           approvalTimeFields.map((atf) => (
             <div
               key={atf.id}
-              className="flex items-center justify-between gap-3 border-b border-gray-50 px-4 py-3 text-[13px] last:border-0"
+              className="flex items-center justify-between gap-3 border-b border-gray-50 px-4 py-3 text-[14px] last:border-0"
             >
               <div className="min-w-0">
                 <p className="font-medium text-gray-800">{atf.field.name}</p>
@@ -171,7 +171,7 @@ function ProposalFormPageInner() {
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-2">
-                <span className="rounded bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-500">
+                <span className="rounded bg-gray-100 px-2 py-0.5 text-[12px] font-medium text-gray-500">
                   {fieldDataTypeLabels[atf.field.dataType]}
                 </span>
                 <button

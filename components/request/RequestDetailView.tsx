@@ -565,13 +565,13 @@ export default function RequestDetailView({
               )}
             </div>
           </div>
-          <span className="inline-flex shrink-0 items-center gap-1.5 rounded border border-[var(--color-border)] bg-gray-50 px-2.5 py-1 text-[11px] text-gray-400">
-            Mã: <span className="font-mono font-medium text-gray-700">{request.code ?? request.id}</span>
+          <span className="inline-flex shrink-0 items-center gap-1.5 rounded border border-[var(--color-border)] bg-gray-50 px-2.5 py-1 text-[12px] text-gray-400">
+            Mã: <span className="font-mono font-bold text-gray-800">{request.code ?? request.id}</span>
           </span>
         </div>
 
         {request.deletedAt && (
-          <div className="mt-3 flex items-center justify-between gap-3 rounded border border-red-100 bg-red-50 px-3 py-2 text-[13px] text-[var(--color-danger-red)]">
+          <div className="mt-3 flex items-center justify-between gap-3 rounded border border-red-100 bg-red-50 px-3 py-2 text-[14px] text-[var(--color-danger-red)]">
             <span>Đề xuất đã bị xóa lúc {new Date(request.deletedAt).toLocaleString("vi-VN")}.</span>
             {isAdmin && (
               <button
@@ -607,7 +607,7 @@ export default function RequestDetailView({
                     >
                       <span className="truncate">{t.name}</span>
                       {t.isDefault && (
-                        <span className="shrink-0 text-[10px] text-yellow-600">Mặc định</span>
+                        <span className="shrink-0 text-[12px] text-yellow-600">Mặc định</span>
                       )}
                     </a>
                   ))}
@@ -678,7 +678,7 @@ export default function RequestDetailView({
                     className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] text-gray-400 cursor-not-allowed"
                   >
                     <FileDown size={13} /> In đề xuất theo mẫu ra file PDF
-                    <span className="ml-auto shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-[10px]">⏳</span>
+                    <span className="ml-auto shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-[12px]">⏳</span>
                   </button>
 
                   <div className="my-1 border-t border-gray-100" />
@@ -695,7 +695,7 @@ export default function RequestDetailView({
                     className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] text-gray-400 cursor-not-allowed"
                   >
                     <Webhook size={13} /> Lịch sử webhook
-                    <span className="ml-auto shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-[10px]">⏳</span>
+                    <span className="ml-auto shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-[12px]">⏳</span>
                   </button>
 
                   <div className="my-1 border-t border-gray-100" />
@@ -753,7 +753,7 @@ export default function RequestDetailView({
                 approveField ? setApproveConfirmOpen(true) : decide("approved").catch(() => {})
               }
               disabled={actingOn}
-              className="flex h-9 items-center gap-1.5 rounded bg-[var(--color-confirm-green)] px-4 text-[13px] font-medium text-white shadow-sm transition-all hover:brightness-95 active:scale-[0.98] disabled:opacity-60"
+              className="flex h-9 items-center gap-1.5 rounded bg-[var(--color-confirm-green)] px-4 text-[14px] font-medium text-white shadow-sm transition-all hover:brightness-95 active:scale-[0.98] disabled:opacity-60"
             >
               <Check size={15} /> Chấp thuận
             </button>
@@ -761,7 +761,7 @@ export default function RequestDetailView({
               type="button"
               onClick={() => setForwardOpen(true)}
               disabled={actingOn}
-              className="flex h-9 items-center gap-1.5 rounded bg-teal-500 px-4 text-[13px] font-medium text-white shadow-sm transition-all hover:brightness-95 active:scale-[0.98] disabled:opacity-60"
+              className="flex h-9 items-center gap-1.5 rounded bg-teal-500 px-4 text-[14px] font-medium text-white shadow-sm transition-all hover:brightness-95 active:scale-[0.98] disabled:opacity-60"
             >
               <Forward size={15} /> Chuyển tiếp
             </button>
@@ -769,7 +769,7 @@ export default function RequestDetailView({
               type="button"
               onClick={() => setReturnOpen(true)}
               disabled={actingOn}
-              className="flex h-9 items-center gap-1.5 rounded bg-orange-500 px-4 text-[13px] font-medium text-white shadow-sm transition-all hover:brightness-95 active:scale-[0.98] disabled:opacity-60"
+              className="flex h-9 items-center gap-1.5 rounded bg-orange-500 px-4 text-[14px] font-medium text-white shadow-sm transition-all hover:brightness-95 active:scale-[0.98] disabled:opacity-60"
             >
               <Undo2 size={15} /> Trả lại
             </button>
@@ -777,21 +777,21 @@ export default function RequestDetailView({
               type="button"
               onClick={() => setRejectOpen(true)}
               disabled={actingOn}
-              className="flex h-9 items-center gap-1.5 rounded bg-[var(--color-danger-red)] px-4 text-[13px] font-medium text-white shadow-sm transition-all hover:brightness-95 active:scale-[0.98] disabled:opacity-60"
+              className="flex h-9 items-center gap-1.5 rounded bg-[var(--color-danger-red)] px-4 text-[14px] font-medium text-white shadow-sm transition-all hover:brightness-95 active:scale-[0.98] disabled:opacity-60"
             >
               <X size={15} /> Từ chối
             </button>
           </div>
         )}
         {actionError && (
-          <p className="mt-2 text-[13px] text-[var(--color-danger-red)]">{actionError}</p>
+          <p className="mt-2 text-[14px] text-[var(--color-danger-red)]">{actionError}</p>
         )}
 
         <div className="mt-6 rounded-[3px] border border-[var(--color-border)] bg-white p-4">
-          <h2 className="mb-3 flex items-center gap-1.5 text-[13px] font-semibold uppercase tracking-wide text-gray-500">
+          <h2 className="mb-3 flex items-center gap-1.5 text-[14px] font-semibold uppercase tracking-wide text-gray-500">
             <Info size={14} /> Thông tin đề xuất
           </h2>
-          <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-[13px]">
+          <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-[14px]">
             <div>
               <dt className="text-gray-400">Người tạo</dt>
               <dd className="font-medium text-gray-800">{request.submittedBy.name}</dd>
@@ -852,10 +852,10 @@ export default function RequestDetailView({
 
         {request.fieldsSnapshot.length > 0 && (
           <div className="mt-4 rounded-[3px] border border-[var(--color-border)] bg-white p-4">
-            <h2 className="mb-3 flex items-center gap-1.5 text-[13px] font-semibold uppercase tracking-wide text-gray-500">
+            <h2 className="mb-3 flex items-center gap-1.5 text-[14px] font-semibold uppercase tracking-wide text-gray-500">
               <ListChecks size={14} /> Thông tin khác (mẫu đăng ký đề xuất)
             </h2>
-            <dl className="flex flex-col gap-3 text-[13px]">
+            <dl className="flex flex-col gap-3 text-[14px]">
               {request.fieldsSnapshot
                 .slice()
                 .sort((a, b) => a.order - b.order)
@@ -867,7 +867,7 @@ export default function RequestDetailView({
                     <div key={field.id}>
                       <dt className="text-gray-400">
                         {String(index + 1).padStart(2, "0")}. {field.name}
-                        <span className="ml-2 text-[11px] text-gray-300">
+                        <span className="ml-2 text-[12px] text-gray-300">
                           {fieldDataTypeLabels[field.dataType]}
                         </span>
                       </dt>
@@ -898,10 +898,10 @@ export default function RequestDetailView({
 
         {request.approvalTimeValues && Object.keys(request.approvalTimeValues).length > 0 && (
           <div className="mt-4 rounded-[3px] border border-[var(--color-border)] bg-white p-4">
-            <h2 className="mb-3 flex items-center gap-1.5 text-[13px] font-semibold uppercase tracking-wide text-gray-500">
+            <h2 className="mb-3 flex items-center gap-1.5 text-[14px] font-semibold uppercase tracking-wide text-gray-500">
               <ListChecks size={14} /> Thông tin phê duyệt
             </h2>
-            <dl className="flex flex-col gap-3 text-[13px]">
+            <dl className="flex flex-col gap-3 text-[14px]">
               {Object.entries(request.approvalTimeValues).map(([fieldId, value]) => {
                 const atf = approvalTimeFields.find((f) => f.id === fieldId);
                 return (
@@ -909,7 +909,7 @@ export default function RequestDetailView({
                     <dt className="text-gray-400">
                       {atf?.field.name ?? "Trường đã xoá"}
                       {atf && (
-                        <span className="ml-2 text-[11px] text-gray-300">
+                        <span className="ml-2 text-[12px] text-gray-300">
                           {fieldDataTypeLabels[atf.field.dataType]}
                         </span>
                       )}
@@ -929,7 +929,7 @@ export default function RequestDetailView({
             bảng, xem TableSupplementControl) + đính tài liệu cấp đề xuất. */}
         {request.status === "approved" && (
           <div className="mt-4 rounded-[3px] border border-[var(--color-border)] bg-white p-4">
-            <h2 className="mb-3 flex items-center gap-1.5 text-[13px] font-semibold uppercase tracking-wide text-gray-500">
+            <h2 className="mb-3 flex items-center gap-1.5 text-[14px] font-semibold uppercase tracking-wide text-gray-500">
               <Paperclip size={14} /> Cập nhật / Bổ sung đề nghị sau duyệt
             </h2>
 
@@ -970,7 +970,7 @@ export default function RequestDetailView({
               />
             </div>
             {attachments.length === 0 ? (
-              <p className="mt-1.5 text-[13px] text-gray-400">Chưa có tài liệu nào.</p>
+              <p className="mt-1.5 text-[14px] text-gray-400">Chưa có tài liệu nào.</p>
             ) : (
               <ul className="mt-1.5 flex flex-col gap-1">
                 {attachments.map((att, i) => {
@@ -987,7 +987,7 @@ export default function RequestDetailView({
                       <button
                         type="button"
                         onClick={() => setPreviewingAttachment(att)}
-                        className="flex w-full items-center gap-1.5 text-left text-[13px] text-[var(--color-action-blue)] hover:underline"
+                        className="flex w-full items-center gap-1.5 text-left text-[14px] text-[var(--color-action-blue)] hover:underline"
                       >
                         <Paperclip size={13} className="shrink-0" />
                         <span className="truncate">{att.name}</span>
@@ -1015,7 +1015,7 @@ export default function RequestDetailView({
         )}
 
         <div className={`mt-4 rounded-[3px] border border-[var(--color-border)] bg-white p-4 ${printHideDiscussion ? "print-hide" : ""}`}>
-          <h2 className="mb-3 flex items-center gap-1.5 text-[13px] font-semibold uppercase tracking-wide text-gray-500">
+          <h2 className="mb-3 flex items-center gap-1.5 text-[14px] font-semibold uppercase tracking-wide text-gray-500">
             <MessageSquare size={14} /> Thảo luận
           </h2>
           <CommentSection
@@ -1060,17 +1060,17 @@ export default function RequestDetailView({
               return (
                 <div
                   key={approver.id}
-                  className={`flex items-center gap-2 rounded text-[13px] ${
+                  className={`flex items-center gap-2 rounded text-[14px] ${
                     isCurrentTurn ? "-mx-1.5 bg-blue-50/70 px-1.5 py-1" : ""
                   }`}
                 >
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-action-blue)] text-[10px] font-semibold text-white">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-action-blue)] text-[12px] font-semibold text-white">
                     {approver.avatarInitial}
                   </span>
                   <span className="min-w-0 flex-1 text-gray-700">
                     <span className="block truncate">{approver.name}</span>
                     {(stepMeta?.name || stepMeta?.slaHours) && (
-                      <span className="block truncate text-[11px] text-gray-400">
+                      <span className="block truncate text-[12px] text-gray-400">
                         {stepMeta?.name}
                         {stepMeta?.name && stepMeta?.slaHours ? " · " : ""}
                         {stepMeta?.slaHours ? `Hạn xử lý: ${stepMeta.slaHours} giờ` : ""}
@@ -1078,7 +1078,7 @@ export default function RequestDetailView({
                     )}
                     {showCountdown && (
                       <span
-                        className={`block truncate text-[11px] font-semibold ${
+                        className={`block truncate text-[12px] font-semibold ${
                           lateForThisStep
                             ? "text-[var(--color-danger-red)]"
                             : "text-[var(--color-action-blue)]"
@@ -1091,7 +1091,7 @@ export default function RequestDetailView({
                     )}
                   </span>
                   <span
-                    className={`flex shrink-0 items-center gap-1 text-[11px] ${
+                    className={`flex shrink-0 items-center gap-1 text-[12px] ${
                       state?.decision === "approved"
                         ? "text-[var(--color-confirm-green)]"
                         : state?.decision === "rejected"
@@ -1125,7 +1125,7 @@ export default function RequestDetailView({
                 key={f.id}
                 title={f.name}
                 style={{ marginLeft: i === 0 ? 0 : -9 }}
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-white bg-gray-400 text-[10px] font-semibold text-white"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-white bg-gray-400 text-[12px] font-semibold text-white"
               >
                 {f.avatarInitial}
               </span>
@@ -1151,17 +1151,17 @@ export default function RequestDetailView({
           </h3>
           <div className="flex items-start gap-3">
             <div className="shrink-0 rounded-md bg-gray-50 px-2 py-1 text-center">
-              <div className="text-[11px] font-bold text-gray-600">
+              <div className="text-[12px] font-bold text-gray-600">
                 {new Date(request.submittedAt).toLocaleDateString("vi-VN", { day: "2-digit", month: "short" }).toUpperCase()}
               </div>
-              <div className="text-[10px] text-gray-400">
+              <div className="text-[12px] text-gray-400">
                 {new Date(request.submittedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}
               </div>
             </div>
             <div className="mt-0.5 flex h-[19px] w-[19px] shrink-0 items-center justify-center rounded-full bg-[var(--color-action-blue)] text-[12px] font-bold text-white">
               +
             </div>
-            <div className="text-[13px]">
+            <div className="text-[14px]">
               <p className="font-semibold text-gray-800">Request created</p>
               <p className="mt-0.5 text-gray-600">
                 <span className="font-medium text-[var(--color-action-blue)]">{request.submittedBy.name}</span> đã tạo đề xuất này
@@ -1192,7 +1192,7 @@ export default function RequestDetailView({
                   {entry.note && (
                     <p className="mt-0.5 italic text-gray-400">&quot;{entry.note}&quot;</p>
                   )}
-                  <p className="mt-0.5 text-[11px] text-gray-400">
+                  <p className="mt-0.5 text-[12px] text-gray-400">
                     {new Date(entry.at).toLocaleString("vi-VN")}
                   </p>
                 </div>
@@ -1256,8 +1256,8 @@ export default function RequestDetailView({
 function UserValueView({ user }: { user: TaggedUser | null }) {
   if (!user) return <p className="font-medium text-gray-800">—</p>;
   return (
-    <span className="mt-1 flex items-center gap-1.5 text-[13px] text-gray-800">
-      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--color-action-blue)] text-[10px] font-semibold text-white">
+    <span className="mt-1 flex items-center gap-1.5 text-[14px] text-gray-800">
+      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--color-action-blue)] text-[12px] font-semibold text-white">
         {user.avatarInitial}
       </span>
       {user.name}
@@ -1277,7 +1277,7 @@ function FileValueView({
   const [previewing, setPreviewing] = useState<RequestAttachment | null>(null);
 
   if (attachments.length === 0) {
-    return <p className="text-[13px] text-gray-400">Chưa có tệp nào</p>;
+    return <p className="text-[14px] text-gray-400">Chưa có tệp nào</p>;
   }
   return (
     <>
@@ -1287,7 +1287,7 @@ function FileValueView({
             <button
               type="button"
               onClick={() => setPreviewing(att)}
-              className="flex w-full items-center gap-1.5 text-left text-[13px] text-[var(--color-action-blue)] hover:underline"
+              className="flex w-full items-center gap-1.5 text-left text-[14px] text-[var(--color-action-blue)] hover:underline"
             >
               <Paperclip size={13} className="shrink-0" />
               <span className="truncate">{att.name}</span>
@@ -1424,7 +1424,7 @@ function TableSupplementControl({
                     {ci === entry.row.length - 1 ? (
                       <>
                         <div>{cell || "—"}</div>
-                        <div className="text-[10px] font-medium text-amber-600">
+                        <div className="text-[12px] font-medium text-amber-600">
                           🕘 Cập nhật lúc {new Date(entry.at).toLocaleString("vi-VN")}
                         </div>
                       </>
@@ -1482,7 +1482,7 @@ function TableSupplementControl({
         >
           {submitting ? "Đang gửi..." : "Gửi cập nhật"}
         </button>
-        {status && <span className="text-[11px] text-gray-500">{status}</span>}
+        {status && <span className="text-[12px] text-gray-500">{status}</span>}
       </div>
     </div>
   );
@@ -1534,7 +1534,12 @@ function TableValueView({
                 <td
                   key={colIndex}
                   className={`px-2 py-1.5 text-gray-800 ${
-                    isNumericColumnType(types[colIndex]) ? "text-right tabular-nums" : ""
+                    // Chuẩn V1.1 (Phần D): "số liệu quan trọng đậm 600–700".
+                    // Đây là thứ người duyệt nhìn đầu tiên; trước đây số tiền và
+                    // tên hàng cùng một độ đậm nên mắt không biết bám vào đâu.
+                    isNumericColumnType(types[colIndex])
+                      ? "text-right font-bold tabular-nums"
+                      : ""
                   }`}
                 >
                   {formatCellForDisplay(row[colIndex] ?? "", types[colIndex]) || "—"}
@@ -1543,7 +1548,7 @@ function TableValueView({
             </tr>
           ))}
           {hasMoneyColumn && (
-            <tr className="border-t border-[var(--color-border)] bg-gray-50 font-semibold">
+            <tr className="border-t border-[var(--color-border)] bg-gray-50 font-bold">
               <td className="px-2 py-1.5" />
               {columns.map((_, colIndex) => {
                 const total = types[colIndex] === "money" ? sumColumn(filledRows, colIndex) : null;

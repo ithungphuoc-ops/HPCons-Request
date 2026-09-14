@@ -191,7 +191,7 @@ function ReportsPageInner() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-[23px] font-bold text-gray-900">Báo cáo</h1>
-          <p className="mt-1 text-[13px] text-gray-500">
+          <p className="mt-1 text-[14px] text-gray-500">
             Thống kê đề xuất theo bộ lọc bên dưới — không tính nháp và đề xuất đã xóa.
           </p>
         </div>
@@ -199,7 +199,7 @@ function ReportsPageInner() {
           type="button"
           onClick={exportExcel}
           disabled={filtered.length === 0}
-          className="flex h-9 items-center gap-1.5 rounded bg-[var(--color-action-blue)] px-4 text-[13px] font-medium text-white hover:brightness-95 disabled:opacity-50"
+          className="flex h-9 items-center gap-1.5 rounded bg-[var(--color-action-blue)] px-4 text-[14px] font-medium text-white hover:brightness-95 disabled:opacity-50"
         >
           <Download size={15} /> Xuất Excel (.csv)
         </button>
@@ -207,7 +207,7 @@ function ReportsPageInner() {
 
       <div className="mt-5 grid grid-cols-2 gap-3 rounded-[3px] border border-[var(--color-border)] bg-white p-4 sm:grid-cols-3 lg:grid-cols-6">
         <div>
-          <label className="mb-1 block text-[11px] text-gray-400">Từ ngày</label>
+          <label className="mb-1 block text-[12px] text-gray-400">Từ ngày</label>
           <DatePicker
             value={dateFrom}
             onChange={setDateFrom}
@@ -215,7 +215,7 @@ function ReportsPageInner() {
           />
         </div>
         <div>
-          <label className="mb-1 block text-[11px] text-gray-400">Đến ngày</label>
+          <label className="mb-1 block text-[12px] text-gray-400">Đến ngày</label>
           <DatePicker
             value={dateTo}
             onChange={setDateTo}
@@ -223,7 +223,7 @@ function ReportsPageInner() {
           />
         </div>
         <div>
-          <label className="mb-1 block text-[11px] text-gray-400">Nhóm đề xuất</label>
+          <label className="mb-1 block text-[12px] text-gray-400">Nhóm đề xuất</label>
           <select
             value={groupFilter}
             onChange={(e) => setGroupFilter(e.target.value)}
@@ -236,7 +236,7 @@ function ReportsPageInner() {
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-[11px] text-gray-400">Người tạo</label>
+          <label className="mb-1 block text-[12px] text-gray-400">Người tạo</label>
           <input
             value={creatorFilter}
             onChange={(e) => setCreatorFilter(e.target.value)}
@@ -245,7 +245,7 @@ function ReportsPageInner() {
           />
         </div>
         <div>
-          <label className="mb-1 block text-[11px] text-gray-400">Người duyệt</label>
+          <label className="mb-1 block text-[12px] text-gray-400">Người duyệt</label>
           <select
             value={approverFilter}
             onChange={(e) => setApproverFilter(e.target.value)}
@@ -258,7 +258,7 @@ function ReportsPageInner() {
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-[11px] text-gray-400">Trạng thái</label>
+          <label className="mb-1 block text-[12px] text-gray-400">Trạng thái</label>
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
@@ -273,9 +273,9 @@ function ReportsPageInner() {
         </div>
       </div>
 
-      {status === "loading" && <p className="mt-6 text-[13px] text-gray-400">Đang tải...</p>}
+      {status === "loading" && <p className="mt-6 text-[14px] text-gray-400">Đang tải...</p>}
       {status === "error" && (
-        <p className="mt-6 text-[13px] text-[var(--color-danger-red)]">Không tải được dữ liệu báo cáo.</p>
+        <p className="mt-6 text-[14px] text-[var(--color-danger-red)]">Không tải được dữ liệu báo cáo.</p>
       )}
 
       {status === "loaded" && (
@@ -293,11 +293,11 @@ function ReportsPageInner() {
           </div>
 
           <div className="mt-6 rounded-[3px] border border-[var(--color-border)] bg-white p-4">
-            <h2 className="mb-3 text-[13px] font-semibold uppercase tracking-wide text-gray-500">
+            <h2 className="mb-3 text-[14px] font-semibold uppercase tracking-wide text-gray-500">
               Số đề xuất theo tháng
             </h2>
             {monthlyCounts.length === 0 ? (
-              <p className="text-[13px] text-gray-400">Không có dữ liệu.</p>
+              <p className="text-[14px] text-gray-400">Không có dữ liệu.</p>
             ) : (
               <div className="flex h-[140px] items-end gap-3 overflow-x-auto">
                 {monthlyCounts.map(([month, count]) => (
@@ -307,8 +307,8 @@ function ReportsPageInner() {
                       style={{ height: `${Math.max(4, (count / maxMonthly) * 100)}px` }}
                       title={`${count} đề xuất`}
                     />
-                    <span className="text-[10px] text-gray-400">{month.slice(5)}</span>
-                    <span className="text-[10px] font-medium text-gray-600">{count}</span>
+                    <span className="text-[12px] text-gray-400">{month.slice(5)}</span>
+                    <span className="text-[12px] font-medium text-gray-600">{count}</span>
                   </div>
                 ))}
               </div>
@@ -316,13 +316,13 @@ function ReportsPageInner() {
           </div>
 
           <div className="mt-6 rounded-[3px] border border-[var(--color-border)] bg-white p-4">
-            <h2 className="mb-3 text-[13px] font-semibold uppercase tracking-wide text-gray-500">
+            <h2 className="mb-3 text-[14px] font-semibold uppercase tracking-wide text-gray-500">
               Theo nhóm đề xuất
             </h2>
             {byGroup.length === 0 ? (
-              <p className="text-[13px] text-gray-400">Không có dữ liệu.</p>
+              <p className="text-[14px] text-gray-400">Không có dữ liệu.</p>
             ) : (
-              <table className="w-full text-[13px]">
+              <table className="w-full text-[14px]">
                 <thead className="text-left text-[12px] text-gray-400">
                   <tr>
                     <th className="py-1.5 font-medium">Nhóm</th>
@@ -352,16 +352,16 @@ function ReportsPageInner() {
           </div>
 
           <div className="mt-6 rounded-[3px] border border-[var(--color-border)] bg-white p-4">
-            <h2 className="mb-3 text-[13px] font-semibold uppercase tracking-wide text-gray-500">
+            <h2 className="mb-3 text-[14px] font-semibold uppercase tracking-wide text-gray-500">
               Theo người duyệt
             </h2>
-            <p className="mb-2 text-[11px] text-gray-400">
+            <p className="mb-2 text-[12px] text-gray-400">
               Đã xử lý = số lần chấp thuận/từ chối tra theo lịch sử hoạt động.
             </p>
             {byApprover.length === 0 ? (
-              <p className="text-[13px] text-gray-400">Không có dữ liệu.</p>
+              <p className="text-[14px] text-gray-400">Không có dữ liệu.</p>
             ) : (
-              <table className="w-full text-[13px]">
+              <table className="w-full text-[14px]">
                 <thead className="text-left text-[12px] text-gray-400">
                   <tr>
                     <th className="py-1.5 font-medium">Người duyệt</th>
@@ -400,7 +400,7 @@ function StatCard({
 }) {
   return (
     <div className="rounded-[3px] border border-[var(--color-border)] bg-white p-3">
-      <p className="text-[11px] text-gray-400">{label}</p>
+      <p className="text-[12px] text-gray-400">{label}</p>
       <p className={`mt-1 text-[20px] font-bold ${accent ?? "text-gray-900"}`}>{value}</p>
     </div>
   );

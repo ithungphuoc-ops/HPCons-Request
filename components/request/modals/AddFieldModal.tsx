@@ -458,7 +458,7 @@ export default function AddFieldModal() {
         {computedEligibleTypes.includes(dataType) && (
           <Row label="Tự động ghép giá trị từ trường khác">
             <div className="flex flex-col gap-3">
-              <label className="flex items-center gap-2 text-[13px] text-gray-700">
+              <label className="flex items-center gap-2 text-[14px] text-gray-700">
                 <input
                   type="checkbox"
                   checked={computedBranches !== null}
@@ -556,7 +556,7 @@ export default function AddFieldModal() {
         {dateLeadTimeEligibleTypes.includes(dataType) && (
           <Row label="Ràng buộc ngày cần cấp">
             <div className="flex flex-col gap-3">
-              <label className="flex items-center gap-2 text-[13px] text-gray-700">
+              <label className="flex items-center gap-2 text-[14px] text-gray-700">
                 <input
                   type="checkbox"
                   checked={dateLeadTimeEnabled}
@@ -661,7 +661,7 @@ function Row({
   return (
     <div className="flex gap-4">
       <div className="w-[160px] shrink-0 pt-1.5">
-        <p className="text-[13px] font-medium text-gray-700">
+        <p className="text-[14px] font-medium text-gray-700">
           {label}
           {required && <span className="ml-0.5 text-[var(--color-danger-red)]">*</span>}
         </p>

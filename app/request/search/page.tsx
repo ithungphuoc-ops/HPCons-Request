@@ -77,7 +77,7 @@ function SearchPageInner() {
 
       <div className="mt-4 flex flex-wrap items-end gap-3 rounded-[3px] border border-[var(--color-border)] bg-white p-4">
         <div>
-          <label className="mb-1 block text-[11px] text-gray-400">Trạng thái</label>
+          <label className="mb-1 block text-[12px] text-gray-400">Trạng thái</label>
           <select
             className={`${selectClass} w-[180px]`}
             value={status}
@@ -91,7 +91,7 @@ function SearchPageInner() {
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-[11px] text-gray-400">Nhóm đề xuất</label>
+          <label className="mb-1 block text-[12px] text-gray-400">Nhóm đề xuất</label>
           <select
             className={`${selectClass} w-[200px]`}
             value={groupId}
@@ -106,7 +106,7 @@ function SearchPageInner() {
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-[11px] text-gray-400">Từ ngày</label>
+          <label className="mb-1 block text-[12px] text-gray-400">Từ ngày</label>
           <DatePicker
             className={`${inputClass} w-[150px] text-left`}
             value={from}
@@ -114,7 +114,7 @@ function SearchPageInner() {
           />
         </div>
         <div>
-          <label className="mb-1 block text-[11px] text-gray-400">Đến ngày</label>
+          <label className="mb-1 block text-[12px] text-gray-400">Đến ngày</label>
           <DatePicker
             className={`${inputClass} w-[150px] text-left`}
             value={to}
@@ -124,27 +124,27 @@ function SearchPageInner() {
         <button
           type="button"
           onClick={runSearch}
-          className="h-[36px] rounded bg-[var(--color-confirm-green)] px-5 text-[13px] font-medium text-white hover:brightness-95"
+          className="h-[36px] rounded bg-[var(--color-confirm-green)] px-5 text-[14px] font-medium text-white hover:brightness-95"
         >
           Tìm kiếm
         </button>
         <button
           type="button"
           onClick={clearFilters}
-          className="h-[36px] rounded px-3 text-[13px] text-gray-500 hover:underline"
+          className="h-[36px] rounded px-3 text-[14px] text-gray-500 hover:underline"
         >
           Xóa bộ lọc
         </button>
       </div>
 
       <div className="mt-4">
-        {loadStatus === "loading" && <p className="text-[13px] text-gray-400">Đang tải...</p>}
+        {loadStatus === "loading" && <p className="text-[14px] text-gray-400">Đang tải...</p>}
         {loadStatus === "error" && (
-          <p className="text-[13px] text-[var(--color-danger-red)]">Không tải được kết quả.</p>
+          <p className="text-[14px] text-[var(--color-danger-red)]">Không tải được kết quả.</p>
         )}
         {loadStatus === "empty" && (
           <div className="flex min-h-[160px] items-center justify-center rounded-[3px] border border-dashed border-[var(--color-border)] bg-white">
-            <p className="text-[13px] text-gray-400">Không tìm thấy đề xuất phù hợp.</p>
+            <p className="text-[14px] text-gray-400">Không tìm thấy đề xuất phù hợp.</p>
           </div>
         )}
         {loadStatus === "loaded" && (
@@ -153,7 +153,7 @@ function SearchPageInner() {
               <Link
                 key={r.id}
                 href={`/request/requests/${r.id}`}
-                className="flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-[13px] last:border-0 hover:bg-gray-50"
+                className="flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-[14px] last:border-0 hover:bg-gray-50"
               >
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium text-gray-800">{r.groupNameSnapshot}</p>

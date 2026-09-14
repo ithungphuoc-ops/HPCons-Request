@@ -46,23 +46,23 @@ function SystemProposalsPageInner() {
   return (
     <div className="px-8 py-6">
       <h1 className="text-[23px] font-bold text-gray-900">Tất cả đề xuất hệ thống</h1>
-      <p className="mt-1 text-[13px] text-gray-500">
+      <p className="mt-1 text-[14px] text-gray-500">
         Toàn bộ đề xuất trong công ty, kể cả đề xuất đã bị xóa (có thể khôi phục).
       </p>
 
-      {status === "loading" && <p className="mt-6 text-[13px] text-gray-400">Đang tải...</p>}
+      {status === "loading" && <p className="mt-6 text-[14px] text-gray-400">Đang tải...</p>}
       {status === "error" && (
-        <p className="mt-6 text-[13px] text-[var(--color-danger-red)]">Không tải được danh sách.</p>
+        <p className="mt-6 text-[14px] text-[var(--color-danger-red)]">Không tải được danh sách.</p>
       )}
       {status === "empty" && (
         <div className="mt-6 flex min-h-[200px] items-center justify-center rounded-[3px] border border-dashed border-[var(--color-border)] bg-white">
-          <p className="text-[13px] text-gray-400">Chưa có đề xuất nào trong hệ thống.</p>
+          <p className="text-[14px] text-gray-400">Chưa có đề xuất nào trong hệ thống.</p>
         </div>
       )}
 
       {status === "loaded" && (
         <div className="mt-6 overflow-hidden rounded-[3px] border border-[var(--color-border)] bg-white">
-          <table className="w-full text-[13px]">
+          <table className="w-full text-[14px]">
             <thead className="bg-gray-50 text-left text-[12px] text-gray-500">
               <tr>
                 <th className="px-4 py-2 font-medium">Mã</th>
@@ -106,7 +106,7 @@ function SystemProposalsPageInner() {
                         <RotateCcw size={13} /> Khôi phục
                       </button>
                     ) : (
-                      <span className="text-[11px] text-gray-300">—</span>
+                      <span className="text-[12px] text-gray-300">—</span>
                     )}
                   </td>
                 </tr>

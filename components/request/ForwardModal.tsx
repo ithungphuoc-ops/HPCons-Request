@@ -121,14 +121,14 @@ export default function ForwardModal({
     >
       <div className="flex flex-col gap-4">
         <div>
-          <label className="mb-1.5 block text-[13px] font-medium text-gray-700">
+          <label className="mb-1.5 block text-[14px] font-medium text-gray-700">
             Hình thức chuyển tiếp
           </label>
           <div className="flex flex-col gap-2">
             {availableModes.map((m) => (
               <label
                 key={m}
-                className={`flex cursor-pointer items-start gap-2 rounded border px-3 py-2 text-[13px] ${
+                className={`flex cursor-pointer items-start gap-2 rounded border px-3 py-2 text-[14px] ${
                   mode === m
                     ? "border-[var(--color-action-blue)] bg-blue-50"
                     : "border-[var(--color-border)]"
@@ -153,7 +153,7 @@ export default function ForwardModal({
           </div>
         </div>
         <div>
-          <label className="mb-1 block text-[13px] font-medium text-gray-700">
+          <label className="mb-1 block text-[14px] font-medium text-gray-700">
             Người nhận <span className="text-[var(--color-danger-red)]">*</span>
           </label>
           <TagUserInput
@@ -164,7 +164,7 @@ export default function ForwardModal({
         </div>
         {extraField && <ApprovalTimeFieldControl field={extraField} value={fieldValue} onChange={setFieldValue} />}
         <div>
-          <label className="mb-1 block text-[13px] font-medium text-gray-700">Lý do/ghi chú</label>
+          <label className="mb-1 block text-[14px] font-medium text-gray-700">Lý do/ghi chú</label>
           <textarea
             className={textareaClass}
             rows={3}

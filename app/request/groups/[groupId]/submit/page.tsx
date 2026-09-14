@@ -493,7 +493,7 @@ export default function SubmitRequestPage() {
         />
       ) : (
         group.description && (
-          <div className="mt-3 whitespace-pre-line rounded-[6px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-[13px] leading-relaxed text-emerald-900">
+          <div className="mt-3 whitespace-pre-line rounded-[6px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-[14px] leading-relaxed text-emerald-900">
             {group.description}
           </div>
         )
@@ -502,7 +502,7 @@ export default function SubmitRequestPage() {
       <div className="mt-5 rounded-[6px] border border-[var(--color-border)] bg-white p-6 shadow-sm">
         <div className="flex flex-col gap-5">
           <div className="flex flex-col gap-2 sm:flex-row sm:gap-4">
-            <label className="shrink-0 pt-1.5 text-[13px] font-semibold text-gray-700 sm:w-[220px]">
+            <label className="shrink-0 pt-1.5 text-[14px] font-semibold text-gray-700 sm:w-[220px]">
               Nhóm đề xuất
             </label>
             <div className="min-w-0 flex-1">
@@ -511,7 +511,7 @@ export default function SubmitRequestPage() {
           </div>
 
           {group.fields.length === 0 && (
-            <p className="text-[13px] text-gray-400">Nhóm này chưa có trường dữ liệu nào.</p>
+            <p className="text-[14px] text-gray-400">Nhóm này chưa có trường dữ liệu nào.</p>
           )}
           {visibleFields
             .slice()
@@ -570,7 +570,7 @@ export default function SubmitRequestPage() {
                 </>
               }
             >
-              <p className="text-[13px] leading-relaxed text-gray-700">
+              <p className="text-[14px] leading-relaxed text-gray-700">
                 Trường &quot;<strong>{urgentPrompt.field.name}</strong>&quot; chỉ còn{" "}
                 <strong>{urgentPrompt.days} ngày làm việc</strong> — việc này có thật sự gấp không?
               </p>
@@ -579,20 +579,20 @@ export default function SubmitRequestPage() {
 
           {approverPreview.status === "loading" && (
             <div className="flex flex-col gap-2 sm:flex-row sm:gap-4">
-              <label className="shrink-0 pt-1.5 text-[13px] font-semibold text-gray-700 sm:w-[220px]">Người duyệt</label>
-              <p className="pt-1.5 text-[13px] text-gray-400">Đang xác định người duyệt...</p>
+              <label className="shrink-0 pt-1.5 text-[14px] font-semibold text-gray-700 sm:w-[220px]">Người duyệt</label>
+              <p className="pt-1.5 text-[14px] text-gray-400">Đang xác định người duyệt...</p>
             </div>
           )}
           {approverPreview.status === "error" && (
             <div className="flex flex-col gap-2 sm:flex-row sm:gap-4">
-              <label className="shrink-0 pt-1.5 text-[13px] font-semibold text-gray-700 sm:w-[220px]">Người duyệt</label>
-              <p className="pt-1.5 text-[13px] text-[var(--color-danger-red)]">{approverPreview.message}</p>
+              <label className="shrink-0 pt-1.5 text-[14px] font-semibold text-gray-700 sm:w-[220px]">Người duyệt</label>
+              <p className="pt-1.5 text-[14px] text-[var(--color-danger-red)]">{approverPreview.message}</p>
             </div>
           )}
           {approverPreview.status === "ok" && approverPreview.steps.length === 0 && (
             <div className="flex flex-col gap-2 sm:flex-row sm:gap-4">
-              <label className="shrink-0 pt-1.5 text-[13px] font-semibold text-gray-700 sm:w-[220px]">Người duyệt</label>
-              <p className="pt-1.5 text-[13px] text-gray-400">Nhóm này chưa cấu hình người duyệt.</p>
+              <label className="shrink-0 pt-1.5 text-[14px] font-semibold text-gray-700 sm:w-[220px]">Người duyệt</label>
+              <p className="pt-1.5 text-[14px] text-gray-400">Nhóm này chưa cấu hình người duyệt.</p>
             </div>
           )}
           {approverPreview.status === "ok" &&
@@ -658,7 +658,7 @@ export default function SubmitRequestPage() {
                   className="flex flex-col gap-1 sm:flex-row sm:gap-4"
                 >
                   <div className="shrink-0 sm:w-[220px]">
-                    <label className="pt-1.5 text-[13px] font-semibold text-gray-700 block">
+                    <label className="pt-1.5 text-[14px] font-semibold text-gray-700 block">
                       {rowLabel}
                       {isEditableKind && " *"}
                     </label>
@@ -764,7 +764,7 @@ export default function SubmitRequestPage() {
             })}
 
           <div className="flex flex-col gap-2 sm:flex-row sm:gap-4">
-            <label className="shrink-0 pt-1.5 text-[13px] font-semibold text-gray-700 sm:w-[220px]">
+            <label className="shrink-0 pt-1.5 text-[14px] font-semibold text-gray-700 sm:w-[220px]">
               Người theo dõi
             </label>
             <div className="min-w-0 flex-1">
@@ -801,7 +801,7 @@ export default function SubmitRequestPage() {
                 </div>
               )}
               {!followersEditable && (
-                <p className="mt-1 text-[11px] text-gray-400">
+                <p className="mt-1 text-[12px] text-gray-400">
                   Nhóm này chỉ Owner/Admin được sửa danh sách người theo dõi.
                 </p>
               )}
@@ -810,7 +810,7 @@ export default function SubmitRequestPage() {
         </div>
 
         {submitError && (
-          <p className="mt-5 text-[13px] text-[var(--color-danger-red)]">{submitError}</p>
+          <p className="mt-5 text-[14px] text-[var(--color-danger-red)]">{submitError}</p>
         )}
 
         {loadedStatus === "pending" && (
@@ -845,7 +845,7 @@ export default function SubmitRequestPage() {
           <button
             type="button"
             onClick={() => router.back()}
-            className="text-[13px] text-gray-500 hover:underline"
+            className="text-[14px] text-gray-500 hover:underline"
           >
             Hủy bỏ
           </button>
@@ -881,7 +881,7 @@ function FieldRow({
   if (field.dataType === "section_title") {
     return (
       <div className="-mx-6 mt-1 border-b border-gray-100 bg-gray-50 px-6 py-2">
-        <h2 className="text-[13px] font-semibold uppercase tracking-wide text-gray-500">
+        <h2 className="text-[14px] font-semibold uppercase tracking-wide text-gray-500">
           {field.name}
         </h2>
       </div>
@@ -896,7 +896,7 @@ function FieldRow({
   return (
     <div className={`flex flex-col gap-2 ${isTable ? "" : "sm:flex-row sm:gap-4"}`}>
       <label
-        className={`shrink-0 text-[13px] font-semibold text-gray-700 ${isTable ? "" : "pt-1.5 sm:w-[220px]"}`}
+        className={`shrink-0 text-[14px] font-semibold text-gray-700 ${isTable ? "" : "pt-1.5 sm:w-[220px]"}`}
       >
         {field.name}
         {field.required && <span className="ml-0.5 text-[var(--color-danger-red)]">*</span>}
@@ -1031,7 +1031,7 @@ function FieldControl({
       return (
         <div className="flex flex-col gap-1.5">
           {(field.options ?? []).map((opt) => (
-            <label key={opt} className="flex items-center gap-2 text-[13px] text-gray-700">
+            <label key={opt} className="flex items-center gap-2 text-[14px] text-gray-700">
               <input
                 type="checkbox"
                 checked={selected.has(opt)}
@@ -1117,14 +1117,14 @@ function FieldControl({
             type="button"
             onClick={downloadTemplateFile}
             disabled={columns.length === 0}
-            className="flex h-7 items-center gap-1 rounded border border-[var(--color-border)] px-2 text-[11px] font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+            className="flex h-7 items-center gap-1 rounded border border-[var(--color-border)] px-2 text-[12px] font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
           >
             <FileDown size={12} /> Tải file mẫu
           </button>
           <button
             type="button"
             onClick={() => tableFileInputRef.current?.click()}
-            className="flex h-7 items-center gap-1 rounded border border-[var(--color-action-blue)] px-2 text-[11px] font-medium text-[var(--color-action-blue)] hover:bg-blue-50"
+            className="flex h-7 items-center gap-1 rounded border border-[var(--color-action-blue)] px-2 text-[12px] font-medium text-[var(--color-action-blue)] hover:bg-blue-50"
           >
             <Upload size={12} /> Nhập Excel theo file mẫu
           </button>
@@ -1138,7 +1138,7 @@ function FieldControl({
               if (file) importTableFile(file);
             }}
           />
-          {tableImportStatus && <span className="text-[11px] text-gray-500">{tableImportStatus}</span>}
+          {tableImportStatus && <span className="text-[12px] text-gray-500">{tableImportStatus}</span>}
         </div>
       );
 
@@ -1163,7 +1163,7 @@ function FieldControl({
           {importButtons}
           <div className="overflow-hidden rounded border border-[var(--color-border)]">
             <div className="overflow-x-auto">
-              <table className="w-full text-[13px]">
+              <table className="w-full text-[14px]">
                 <thead className="border-b border-[var(--color-border)] bg-gray-100/80">
                   <tr>
                     <th className="w-9 px-2 py-2 text-left text-[12px] font-semibold text-gray-500">#</th>
@@ -1224,14 +1224,14 @@ function FieldControl({
                     </tr>
                   ))}
                   {hasMoneyColumn && (
-                    <tr className="border-t border-[var(--color-border)] bg-gray-50/70 font-semibold">
+                    <tr className="border-t border-[var(--color-border)] bg-gray-50/70 font-bold">
                       <td className="px-2 py-2 text-center text-[12px] text-gray-500" />
                       {columns.map((_, colIndex) => {
                         const total = columnTypes[colIndex] === "money" ? sumColumn(rows, colIndex) : null;
                         return (
                           <td
                             key={colIndex}
-                            className={`border-l border-gray-100 px-2.5 py-2 text-[13px] ${
+                            className={`border-l border-gray-100 px-2.5 py-2 text-[14px] ${
                               total === null ? "text-gray-500" : "text-right tabular-nums text-gray-900"
                             }`}
                           >
@@ -1311,7 +1311,7 @@ function TableCellInput({
       }}
       inputMode={columnType === "int" ? "numeric" : numeric ? "decimal" : undefined}
       title={invalid ? `"${columnName}" phải là ${columnType === "int" ? "số nguyên" : "số"}` : undefined}
-      className={`h-9 w-full rounded border bg-transparent px-2 text-[13px] text-gray-900 outline-none placeholder:text-gray-400 focus:border-[var(--color-action-blue)] focus:bg-white ${
+      className={`h-9 w-full rounded border bg-transparent px-2 text-[14px] text-gray-900 outline-none placeholder:text-gray-400 focus:border-[var(--color-action-blue)] focus:bg-white ${
         invalid
           ? "border-[var(--color-danger-red)] bg-red-50"
           : "border-transparent hover:border-[var(--color-border)] hover:bg-white"
@@ -1408,7 +1408,7 @@ function FileFieldControl({
           />
         </label>
       )}
-      <p className="text-[11px] text-gray-400">
+      <p className="text-[12px] text-gray-400">
         Tối đa {MAX_ATTACHMENTS} tệp, mỗi tệp không quá {MAX_DIRECT_UPLOAD_FILE_SIZE_LABEL}.
       </p>
       {error && <p className="text-[12px] text-[var(--color-danger-red)]">{error}</p>}

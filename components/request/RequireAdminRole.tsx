@@ -15,7 +15,7 @@ export default function RequireAdminRole({ children }: { children: React.ReactNo
   if (!isAdmin) {
     return (
       <div className="px-8 py-6">
-        <p className="text-[13px] text-gray-500">
+        <p className="text-[14px] text-gray-500">
           Chỉ Owner hoặc Admin mới xem được trang này.
         </p>
       </div>

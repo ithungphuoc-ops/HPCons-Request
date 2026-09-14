@@ -34,7 +34,7 @@ export default function GroupRow({
   };
 
   return (
-    <div className="flex min-h-[48px] items-center gap-3 border-b border-gray-100 px-4 py-2 text-[13px] last:border-0 hover:bg-gray-50">
+    <div className="flex min-h-[48px] items-center gap-3 border-b border-gray-100 px-4 py-2 text-[14px] last:border-0 hover:bg-gray-50">
       <input
         type="checkbox"
         checked={selected}
@@ -89,10 +89,10 @@ export default function GroupRow({
             }`}
           />
         </button>
-        <span className="text-[11px] text-gray-400">
+        <span className="text-[12px] text-gray-400">
           {group.status === "active" ? "Đang khả dụng" : "Đang tạm đóng"}
         </span>
-        {toggleError && <span className="text-[11px] text-[var(--color-danger-red)]">{toggleError}</span>}
+        {toggleError && <span className="text-[12px] text-[var(--color-danger-red)]">{toggleError}</span>}
       </div>
 
       <Link

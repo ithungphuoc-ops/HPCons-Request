@@ -39,7 +39,7 @@ export default function GroupDetailLayout({
   if (!group) {
     return (
       <div className="px-8 py-6">
-        <p className="text-[13px] text-gray-400">
+        <p className="text-[14px] text-gray-400">
           Không tìm thấy nhóm đề xuất này. Nhóm có thể đã bị xóa hoặc bạn không có quyền xem.
         </p>
       </div>
@@ -59,14 +59,14 @@ export default function GroupDetailLayout({
         </button>
         <div className="min-w-0 flex-1">
           <h1 className="text-[20px] font-semibold text-gray-900">{group.name}</h1>
-          <p className="mt-0.5 text-[13px] text-gray-500">{group.description || "Chưa có mô tả."}</p>
+          <p className="mt-0.5 text-[14px] text-gray-500">{group.description || "Chưa có mô tả."}</p>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
           <button
             type="button"
             onClick={handleDuplicate}
             disabled={duplicating}
-            className="mt-1 flex items-center gap-1.5 rounded-[3px] border border-[var(--color-border)] px-3 py-1.5 text-[13px] font-medium text-gray-700 hover:border-[var(--color-action-blue)] hover:text-[var(--color-action-blue)] disabled:opacity-50"
+            className="mt-1 flex items-center gap-1.5 rounded-[3px] border border-[var(--color-border)] px-3 py-1.5 text-[14px] font-medium text-gray-700 hover:border-[var(--color-action-blue)] hover:text-[var(--color-action-blue)] disabled:opacity-50"
           >
             <Copy size={14} />
             {duplicating ? "Đang nhân bản…" : "Nhân bản"}

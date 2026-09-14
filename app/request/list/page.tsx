@@ -150,7 +150,7 @@ function ApproverCluster({
         );
       })}
       {extra > 0 && (
-        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-100 text-[10px] font-semibold text-gray-500">
+        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-100 text-[12px] font-semibold text-gray-500">
           +{extra}
         </span>
       )}
@@ -481,13 +481,13 @@ function RequestListPageInner() {
                 onChange={(e) => setSearchText(e.target.value)}
                 placeholder="Tìm theo mã, tên, phòng ban, người gửi..."
                 aria-label="Tìm theo mã đề nghị, tên đề xuất, phòng ban, hoặc người gửi"
-                className="h-8 w-[220px] rounded border border-[var(--color-border)] pl-8 pr-2.5 text-[13px] text-gray-800 outline-none transition-colors duration-150 focus:border-[var(--color-action-blue)]"
+                className="h-8 w-[220px] rounded border border-[var(--color-border)] pl-8 pr-2.5 text-[14px] text-gray-800 outline-none transition-colors duration-150 focus:border-[var(--color-action-blue)]"
               />
             </label>
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
-              className="h-8 cursor-pointer rounded border border-[var(--color-border)] px-2 text-[13px] text-gray-700 outline-none transition-colors duration-150 focus:border-[var(--color-action-blue)]"
+              className="h-8 cursor-pointer rounded border border-[var(--color-border)] px-2 text-[14px] text-gray-700 outline-none transition-colors duration-150 focus:border-[var(--color-action-blue)]"
               aria-label="Lọc theo trạng thái"
             >
               <option value="all">Trạng thái: Tất cả</option>
@@ -500,7 +500,7 @@ function RequestListPageInner() {
             <select
               value={filterGroup}
               onChange={(e) => setFilterGroup(e.target.value)}
-              className="h-8 max-w-[240px] cursor-pointer rounded border border-[var(--color-border)] px-2 text-[13px] text-gray-700 outline-none transition-colors duration-150 focus:border-[var(--color-action-blue)]"
+              className="h-8 max-w-[240px] cursor-pointer rounded border border-[var(--color-border)] px-2 text-[14px] text-gray-700 outline-none transition-colors duration-150 focus:border-[var(--color-action-blue)]"
               aria-label="Lọc theo nhóm đề xuất"
             >
               <option value="all">Nhóm: Tất cả</option>
@@ -515,7 +515,7 @@ function RequestListPageInner() {
                 type="button"
                 onClick={exportExcel}
                 disabled={filteredRequests.length === 0}
-                className="ml-auto flex h-8 cursor-pointer items-center gap-1.5 rounded border border-[var(--color-border)] px-3 text-[13px] font-medium text-gray-700 transition-colors duration-150 hover:border-[var(--color-action-blue)] hover:text-[var(--color-action-blue)] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-[var(--color-border)] disabled:hover:text-gray-700"
+                className="ml-auto flex h-8 cursor-pointer items-center gap-1.5 rounded border border-[var(--color-border)] px-3 text-[14px] font-medium text-gray-700 transition-colors duration-150 hover:border-[var(--color-action-blue)] hover:text-[var(--color-action-blue)] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-[var(--color-border)] disabled:hover:text-gray-700"
               >
                 <Download size={14} /> Xuất Excel
               </button>
@@ -525,15 +525,15 @@ function RequestListPageInner() {
 
         <div className="flex-1 overflow-y-auto">
           {status === "loading" && (
-            <p className="px-4 py-6 text-[13px] text-gray-500">Đang tải...</p>
+            <p className="px-4 py-6 text-[14px] text-gray-500">Đang tải...</p>
           )}
           {status === "error" && (
-            <p className="px-4 py-6 text-[13px] text-[var(--color-danger-red)]">
+            <p className="px-4 py-6 text-[14px] text-[var(--color-danger-red)]">
               Không tải được danh sách đề xuất.
             </p>
           )}
           {status === "empty" && (
-            <p className="px-4 py-6 text-[13px] text-gray-500">Không có đề xuất nào ở mục này.</p>
+            <p className="px-4 py-6 text-[14px] text-gray-500">Không có đề xuất nào ở mục này.</p>
           )}
           {/* CHƯA chọn đề xuất nào (danh sách toàn màn hình): kẻ BẢNG cột cố
               định thẳng hàng — Sếp chốt 17/08/2026 sau khi chê bản chuỗi tự do
@@ -542,9 +542,9 @@ function RequestListPageInner() {
           {status === "loaded" && !selectedRequest && (
             <div className="px-4 py-4">
               <div className="overflow-x-auto rounded-lg border border-[var(--color-border)] bg-white">
-                <table className="w-full min-w-[1000px] table-fixed border-collapse text-[13px]">
+                <table className="w-full min-w-[1000px] table-fixed border-collapse text-[14px]">
                   <thead>
-                    <tr className="border-b border-[var(--color-border)] bg-gray-50 text-left text-[11px] uppercase tracking-wider text-gray-500">
+                    <tr className="border-b border-[var(--color-border)] bg-gray-50 text-left text-[12px] uppercase tracking-wider text-gray-500">
                       <th className="w-[26%] px-4 py-2.5 font-semibold">Tên đề xuất</th>
                       <th className="w-[10%] px-4 py-2.5 font-semibold">Nhóm</th>
                       <th className="px-4 py-2.5 font-semibold">Thông tin</th>
@@ -678,7 +678,7 @@ function RequestListPageInner() {
                     />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="truncate text-[13px] font-semibold text-gray-700">
+                        <span className="truncate text-[14px] font-semibold text-gray-700">
                           {resolveRequestTitle(r)}
                         </span>
                         <span className="shrink-0">
@@ -687,7 +687,7 @@ function RequestListPageInner() {
                       </div>
                       {/* Mã đề nghị thay tên nhóm (Sếp chốt 13/09/2026) — đề xuất cũ chưa có mã
                           thì vẫn hiện tên nhóm để dòng không trống. */}
-                      <span className="mt-0.5 block truncate text-[11px] text-gray-500">
+                      <span className="mt-0.5 block truncate text-[12px] text-gray-500">
                         {r.code ?? r.groupNameSnapshot} · {new Date(r.updatedAt ?? r.submittedAt).toLocaleDateString("vi-VN")}
                       </span>
                     </div>
@@ -719,7 +719,7 @@ function RequestListPageInner() {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
                       <span
-                        className={`truncate text-[13px] font-semibold ${
+                        className={`truncate text-[14px] font-semibold ${
                           isActive ? "text-[var(--color-action-blue)]" : "text-gray-800"
                         }`}
                       >
@@ -730,7 +730,7 @@ function RequestListPageInner() {
                       </span>
                     </div>
                     {/* Mã đề nghị thay tên nhóm (Sếp chốt 13/09/2026) — fallback tên nhóm khi chưa có mã. */}
-                    <span className="mt-0.5 block truncate text-[11px] text-gray-500">
+                    <span className="mt-0.5 block truncate text-[12px] text-gray-500">
                       <HighlightMatch text={r.code ?? r.groupNameSnapshot} query={searchText} /> ·{" "}
                       {new Date(r.submittedAt).toLocaleDateString("vi-VN")}
                     </span>
@@ -748,7 +748,7 @@ function RequestListPageInner() {
           <button
             type="button"
             onClick={closeDetail}
-            className="mb-3 flex items-center gap-1 text-[13px] font-medium text-gray-500 hover:text-gray-800"
+            className="mb-3 flex items-center gap-1 text-[14px] font-medium text-gray-500 hover:text-gray-800"
           >
             <X size={14} /> Đóng
           </button>

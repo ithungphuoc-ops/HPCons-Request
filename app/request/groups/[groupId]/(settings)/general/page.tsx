@@ -46,7 +46,7 @@ const decisionNoteOptions: [keyof NonNullable<ProposalGroup["requireDecisionNote
 
 const cardClass = "rounded-[3px] border border-[var(--color-border)] bg-white p-4";
 const cardHeadClass = "mb-3 flex items-start justify-between gap-3";
-const cardTitleClass = "text-[13px] font-semibold uppercase tracking-wide text-gray-500";
+const cardTitleClass = "text-[14px] font-semibold uppercase tracking-wide text-gray-500";
 const cardDescClass = "mt-0.5 text-[12px] text-gray-400";
 const editLinkClass = "shrink-0 text-[12.5px] font-medium text-[var(--color-action-blue)] hover:underline";
 
@@ -344,21 +344,21 @@ function ApproverStepsCard({
                 <button
                   type="button"
                   onClick={() => handleAddFromMenu("fixed")}
-                  className="block w-full px-3 py-2 text-left text-[13px] text-gray-700 hover:bg-gray-50"
+                  className="block w-full px-3 py-2 text-left text-[14px] text-gray-700 hover:bg-gray-50"
                 >
                   Thêm người duyệt cố định
                 </button>
                 <button
                   type="button"
                   onClick={() => handleAddFromMenu("submitter_manager")}
-                  className="block w-full px-3 py-2 text-left text-[13px] text-gray-700 hover:bg-gray-50"
+                  className="block w-full px-3 py-2 text-left text-[14px] text-gray-700 hover:bg-gray-50"
                 >
                   Thêm quản lý trực tiếp
                 </button>
                 <button
                   type="button"
                   onClick={() => handleAddFromMenu("flexible_approver")}
-                  className="block w-full px-3 py-2 text-left text-[13px] font-medium text-[var(--color-action-blue)] hover:bg-blue-50"
+                  className="block w-full px-3 py-2 text-left text-[14px] font-medium text-[var(--color-action-blue)] hover:bg-blue-50"
                 >
                   Thêm người duyệt linh động
                 </button>
@@ -369,7 +369,7 @@ function ApproverStepsCard({
       </div>
 
       {group.approverSteps.length === 0 ? (
-        <p className="text-[13px] text-gray-400">Chưa có bước duyệt nào.</p>
+        <p className="text-[14px] text-gray-400">Chưa có bước duyệt nào.</p>
       ) : (
         <div className="flex flex-col gap-2">
           {group.approverSteps.map((step, index) => (
@@ -436,7 +436,7 @@ function StepRow({
         <span className="flex flex-wrap items-center gap-2 text-[13.5px] font-semibold text-gray-800">
           {displayName}
           {isFlexible && (
-            <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-bold text-gray-500">
+            <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[12px] font-bold text-gray-500">
               LINH ĐỘNG
             </span>
           )}
@@ -564,7 +564,7 @@ function EditApprovalFlowModal({
         >
           <div className="flex flex-col gap-1.5">
             {decisionNoteOptions.map(([key, label]) => (
-              <label key={key} className="flex items-center gap-2 text-[13px] text-gray-700">
+              <label key={key} className="flex items-center gap-2 text-[14px] text-gray-700">
                 <input
                   type="checkbox"
                   checked={requireDecisionNote[key] ?? false}
@@ -680,7 +680,7 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center gap-4 border-b border-[var(--color-border)] py-2 last:border-b-0">
       <dt className="w-[200px] shrink-0 text-[12.5px] text-gray-400">{label}</dt>
-      <dd className="text-[13px] font-medium text-gray-800">{value}</dd>
+      <dd className="text-[14px] font-medium text-gray-800">{value}</dd>
     </div>
   );
 }
@@ -698,7 +698,7 @@ function Field({
 }) {
   return (
     <div>
-      <label className="mb-1 block text-[13px] font-medium text-gray-700">
+      <label className="mb-1 block text-[14px] font-medium text-gray-700">
         {label}
         {required && <span className="ml-0.5 text-[var(--color-danger-red)]">*</span>}
       </label>

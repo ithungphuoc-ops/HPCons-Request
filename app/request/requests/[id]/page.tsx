@@ -44,8 +44,8 @@ export default function RequestDetailPage() {
         ← Quay lại
       </button>
 
-      {loadError && <p className="text-[13px] text-[var(--color-danger-red)]">{loadError}</p>}
-      {!loadError && !request && <p className="text-[13px] text-gray-400">Đang tải...</p>}
+      {loadError && <p className="text-[14px] text-[var(--color-danger-red)]">{loadError}</p>}
+      {!loadError && !request && <p className="text-[14px] text-gray-400">Đang tải...</p>}
       {request && (
         <RequestDetailView request={request} currentUid={currentUid} onActed={load} />
       )}

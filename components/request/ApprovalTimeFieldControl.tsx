@@ -23,7 +23,7 @@ export default function ApprovalTimeFieldControl({
   onChange: (value: unknown) => void;
 }) {
   const label = (
-    <label className="mb-1 block text-[13px] font-medium text-gray-700">
+    <label className="mb-1 block text-[14px] font-medium text-gray-700">
       {field.name}
       {field.required && <span className="ml-0.5 text-[var(--color-danger-red)]">*</span>}
     </label>
@@ -95,7 +95,7 @@ export default function ApprovalTimeFieldControl({
         {label}
         <div className="flex flex-col gap-1.5 rounded border border-[var(--color-border)] p-2">
           {(field.options ?? []).map((opt) => (
-            <label key={opt} className="flex items-center gap-2 text-[13px] text-gray-700">
+            <label key={opt} className="flex items-center gap-2 text-[14px] text-gray-700">
               <input
                 type="checkbox"
                 checked={selected.includes(opt)}

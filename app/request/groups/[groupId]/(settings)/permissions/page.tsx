@@ -73,11 +73,11 @@ function GroupPermissionsPageInner() {
 
       <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="rounded-[3px] border border-[var(--color-border)] bg-white p-3">
-          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+          <p className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-gray-400">
             Phạm vi sử dụng
           </p>
           {group.usedFor.length === 0 ? (
-            <p className="text-[13px] text-gray-600">Toàn công ty</p>
+            <p className="text-[14px] text-gray-600">Toàn công ty</p>
           ) : (
             <div className="flex flex-wrap gap-1.5">
               {group.usedFor.map((u) => (
@@ -87,15 +87,15 @@ function GroupPermissionsPageInner() {
               ))}
             </div>
           )}
-          <p className="mt-2 text-[11px] text-gray-400">Chỉnh sửa ở tab &quot;Thiết lập chung&quot;.</p>
+          <p className="mt-2 text-[12px] text-gray-400">Chỉnh sửa ở tab &quot;Thiết lập chung&quot;.</p>
         </div>
 
         <div className="rounded-[3px] border border-[var(--color-border)] bg-white p-3">
-          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+          <p className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-gray-400">
             Người theo dõi mặc định
           </p>
           {group.followers.length === 0 ? (
-            <p className="text-[13px] text-gray-400">Chưa có</p>
+            <p className="text-[14px] text-gray-400">Chưa có</p>
           ) : (
             <div className="flex flex-wrap gap-1.5">
               {group.followers.map((f) => (
@@ -105,7 +105,7 @@ function GroupPermissionsPageInner() {
               ))}
             </div>
           )}
-          <p className="mt-2 text-[11px] text-gray-400">Chỉnh sửa ở tab &quot;Thiết lập chung&quot;.</p>
+          <p className="mt-2 text-[12px] text-gray-400">Chỉnh sửa ở tab &quot;Thiết lập chung&quot;.</p>
         </div>
       </div>
     </div>
@@ -124,8 +124,8 @@ function PermRow({
   return (
     <div className="flex flex-col gap-2 p-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
       <div className="max-w-[380px]">
-        <p className="text-[13px] text-gray-700">{question}</p>
-        {note && <p className="mt-1 text-[11px] text-gray-400">⏳ {note}</p>}
+        <p className="text-[14px] text-gray-700">{question}</p>
+        {note && <p className="mt-1 text-[12px] text-gray-400">⏳ {note}</p>}
       </div>
       <div className="shrink-0 sm:w-[220px]">{children}</div>
     </div>

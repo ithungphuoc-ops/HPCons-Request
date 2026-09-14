@@ -118,7 +118,7 @@ function GroupsPageInner() {
                 key={tab.key}
                 type="button"
                 onClick={() => setStatusFilter(tab.key)}
-                className={`pb-2 text-[13px] ${
+                className={`pb-2 text-[14px] ${
                   statusFilter === tab.key
                     ? "border-b-2 border-[var(--color-action-blue)] font-semibold text-[var(--color-action-blue)]"
                     : "text-gray-500 hover:text-gray-700"
@@ -137,7 +137,7 @@ function GroupsPageInner() {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Tìm nhóm đề xuất"
-              className="h-[36px] w-[230px] rounded border border-[var(--color-border)] bg-white pl-8 pr-3 text-[13px] outline-none focus:border-[var(--color-action-blue)]"
+              className="h-[36px] w-[230px] rounded border border-[var(--color-border)] bg-white pl-8 pr-3 text-[14px] outline-none focus:border-[var(--color-action-blue)]"
             />
           </div>
 
@@ -146,7 +146,7 @@ function GroupsPageInner() {
               <button
                 type="button"
                 onClick={openCreateGroup}
-                className="flex items-center gap-1.5 pl-4 pr-3 text-[13px] font-medium hover:brightness-95"
+                className="flex items-center gap-1.5 pl-4 pr-3 text-[14px] font-medium hover:brightness-95"
               >
                 <Plus size={15} />
                 Tạo nhóm đề xuất
@@ -170,14 +170,14 @@ function GroupsPageInner() {
                     openCreateGroup();
                     setCreateMenuOpen(false);
                   }}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] hover:bg-gray-50"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-[14px] hover:bg-gray-50"
                 >
                   <Plus size={14} /> Tạo nhóm đề xuất
                 </button>
                 <Link
                   href="/request/groups/from-template"
                   onClick={() => setCreateMenuOpen(false)}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] hover:bg-gray-50"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-[14px] hover:bg-gray-50"
                 >
                   <Layers size={14} /> Tạo nhóm từ mẫu
                 </Link>
@@ -189,7 +189,7 @@ function GroupsPageInner() {
 
       {selectedIds.size > 0 && (
         <div className="sticky top-0 z-10 mt-4 flex items-center gap-3 rounded-[3px] border border-[var(--color-action-blue)] bg-blue-50 px-4 py-2.5">
-          <span className="text-[13px] font-medium text-gray-700">
+          <span className="text-[14px] font-medium text-gray-700">
             Đã chọn {selectedIds.size} nhóm
           </span>
           <div className="ml-auto flex items-center gap-2">
@@ -236,13 +236,13 @@ function GroupsPageInner() {
       <div className="mt-6">
         {filteredCategoryGroups.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-3 rounded-[3px] border border-dashed border-[var(--color-border)] bg-white py-16">
-            <p className="text-[13px] text-gray-400">
+            <p className="text-[14px] text-gray-400">
               Không tìm thấy nhóm đề xuất nào phù hợp.
             </p>
             <button
               type="button"
               onClick={openCreateGroup}
-              className="flex h-[36px] items-center gap-1.5 rounded bg-[var(--color-action-blue)] px-4 text-[13px] font-medium text-white hover:brightness-95"
+              className="flex h-[36px] items-center gap-1.5 rounded bg-[var(--color-action-blue)] px-4 text-[14px] font-medium text-white hover:brightness-95"
             >
               <Plus size={15} /> Tạo nhóm đề xuất
             </button>
@@ -312,7 +312,7 @@ function BulkSlaModal({
       }
     >
       <div className="flex flex-col gap-2">
-        <label className="text-[13px] font-medium text-gray-700">Thời hạn (giờ)</label>
+        <label className="text-[14px] font-medium text-gray-700">Thời hạn (giờ)</label>
         <input
           type="number"
           min={0}
@@ -369,13 +369,13 @@ function BulkReplaceApproverModal({
           áp dụng.
         </p>
         <div>
-          <label className="mb-1 block text-[13px] font-medium text-gray-700">
+          <label className="mb-1 block text-[14px] font-medium text-gray-700">
             Người bị thay <span className="text-[var(--color-danger-red)]">*</span>
           </label>
           <TagUserInput value={from} onChange={(users) => setFrom(users.slice(-1))} />
         </div>
         <div>
-          <label className="mb-1 block text-[13px] font-medium text-gray-700">
+          <label className="mb-1 block text-[14px] font-medium text-gray-700">
             Người thay thế <span className="text-[var(--color-danger-red)]">*</span>
           </label>
           <TagUserInput value={to} onChange={(users) => setTo(users.slice(-1))} />

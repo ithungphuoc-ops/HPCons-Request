@@ -182,7 +182,7 @@ export default function CreateGroupModal() {
           <button
             type="button"
             onClick={() => setAdvancedOpen((v) => !v)}
-            className="text-[13px] font-medium text-[var(--color-action-blue)] hover:underline"
+            className="text-[14px] font-medium text-[var(--color-action-blue)] hover:underline"
           >
             {advancedOpen ? "− Ẩn tùy chọn nâng cao" : "+ Thêm tùy chọn nâng cao"}
           </button>
@@ -237,7 +237,7 @@ export default function CreateGroupModal() {
         )}
 
         {submitError && (
-          <p className="text-[13px] text-[var(--color-danger-red)]">{submitError}</p>
+          <p className="text-[14px] text-[var(--color-danger-red)]">{submitError}</p>
         )}
       </div>
     </Modal>
@@ -258,7 +258,7 @@ function FieldRow({
   return (
     <div className="flex gap-4">
       <div className="w-[200px] shrink-0 pt-1.5">
-        <p className="text-[13px] font-medium text-gray-700">
+        <p className="text-[14px] font-medium text-gray-700">
           {label}
           {required && <span className="ml-0.5 text-[var(--color-danger-red)]">*</span>}
         </p>

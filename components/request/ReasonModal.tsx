@@ -71,7 +71,7 @@ export default function ReasonModal({
           <ApprovalTimeFieldControl field={extraField} value={fieldValue} onChange={setFieldValue} />
         )}
         <div>
-          <label className="mb-1 block text-[13px] font-medium text-gray-700">
+          <label className="mb-1 block text-[14px] font-medium text-gray-700">
             Lý do <span className="text-[var(--color-danger-red)]">*</span>
           </label>
           <textarea

@@ -52,7 +52,7 @@ export default function AddFollowerModal({
       }
     >
       <div className="flex flex-col gap-2">
-        <label className="text-[13px] font-medium text-gray-700">Người theo dõi</label>
+        <label className="text-[14px] font-medium text-gray-700">Người theo dõi</label>
         <TagUserInput
           value={selected}
           onChange={(users) => setSelected(users.slice(-1))}
