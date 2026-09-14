@@ -527,7 +527,16 @@ export default function RequestDetailView({
   };
 
   return (
-    <div className="flex gap-6">
+    // Xếp DỌC mặc định, chỉ nằm cạnh nhau từ khổ xl (1280px — breakpoint máy
+    // tính để bàn theo HPCons Design System V1.1).
+    //
+    // Trước 14/09/2026 đây là `flex gap-6` cứng, KHÔNG có một lớp responsive
+    // nào trong cả tệp này. Hậu quả đo được ở khổ điện thoại 390px: vùng nội
+    // dung còn 308px, cột phải ghim cứng 300px + khoảng cách 24px đã ăn hết,
+    // nên `flex-[3] min-w-0` của nội dung chính bị ép xuống ĐÚNG 0px — mở một
+    // đề xuất trên điện thoại gần như chỉ thấy cột "Người xét duyệt", không
+    // đọc được nội dung phiếu, và khung còn tràn ngang.
+    <div className="flex flex-col gap-6 xl:flex-row">
       <div className="min-w-0 flex-[3]">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -1018,7 +1027,9 @@ export default function RequestDetailView({
         </div>
       </div>
 
-      <div className="print-hide flex w-[300px] shrink-0 flex-col gap-4">
+      {/* Xếp dọc (dưới xl): rộng hết khổ. Nằm cạnh (từ xl): giữ đúng 300px
+          như cũ, không co lại. */}
+      <div className="print-hide flex w-full flex-col gap-4 xl:w-[300px] xl:shrink-0">
         <div className="rounded-[3px] border border-[var(--color-border)] bg-white p-4">
           <h3 className="mb-3 flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide text-gray-500">
             <Users size={13} /> Người xét duyệt
