@@ -107,6 +107,8 @@ export default function SubmitRequestPage() {
   const [savingDraft, setSavingDraft] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null);
+  const [deletingDraft, setDeletingDraft] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [approverPreview, setApproverPreview] = useState<
     | { status: "loading" }
     | { status: "ok"; approvers: TaggedUser[]; steps: ApproverStepPreview[] }
@@ -310,6 +312,41 @@ export default function SubmitRequestPage() {
       }
     }
     return payload;
+  };
+
+  /**
+   * Xoá bản nháp đang mở (Sếp yêu cầu 14/09/2026).
+   *
+   * Trước đây KHÔNG có đường nào xoá nháp trong giao diện: danh sách trỏ nháp
+   * thẳng vào trang soạn này, còn nút "Xoá" thì nằm trong menu "Thêm" của
+   * trang chi tiết — mà nháp không bao giờ mở được trang chi tiết. Hệ quả là
+   * nháp chỉ có thể sinh ra chứ không mất đi (lúc làm việc này production
+   * đang tồn 4 bản nháp không ai xoá được).
+   *
+   * Dùng lại đúng `DELETE /api/requests/[id]` sẵn có — xoá MỀM (ghi
+   * `deletedAt`), dữ liệu vẫn nằm nguyên trong Firestore và khôi phục được
+   * qua /api/requests/[id]/restore, nên bấm nhầm không mất gì vĩnh viễn.
+   */
+  const deleteDraft = async () => {
+    if (!draftId || deletingDraft) return;
+    setConfirmDeleteOpen(false);
+    setDeletingDraft(true);
+    setSubmitError(null);
+    try {
+      const res = await fetch(`/api/requests/${draftId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}) as { error?: string });
+        throw new Error(body.error ?? "Không thể xoá bản nháp.");
+      }
+      // Về thẳng danh sách chứ KHÔNG router.back(): trang trước rất có thể là
+      // chính danh sách đang hiển thị bản nháp vừa xoá (từ bộ nhớ đệm), quay
+      // lui sẽ thấy nó còn nguyên và tưởng xoá hỏng.
+      router.replace("/request/list?scope=mine");
+      router.refresh();
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Có lỗi xảy ra.");
+      setDeletingDraft(false);
+    }
   };
 
   const saveDraft = async () => {
@@ -842,14 +879,64 @@ export default function SubmitRequestPage() {
               Đã lưu nháp lúc {new Date(draftSavedAt).toLocaleTimeString("vi-VN")}
             </span>
           )}
+          {/* "Hủy bỏ" CHỈ quay lại trang trước, KHÔNG đụng gì tới dữ liệu.
+              Khi đang sửa một bản nháp đã lưu thì chữ đó nói dối — nháp vẫn
+              nằm nguyên đó — nên đổi thành "Quay lại" và tách hẳn việc xoá ra
+              một nút riêng. Lúc soạn mới (chưa lưu nháp nào) thì "Hủy bỏ" vẫn
+              đúng vì rời trang là mất phần vừa gõ. */}
           <button
             type="button"
             onClick={() => router.back()}
             className="text-[14px] text-gray-500 hover:underline"
           >
-            Hủy bỏ
+            {draftId && loadedStatus === "draft" ? "Quay lại" : "Hủy bỏ"}
           </button>
+          {draftId && loadedStatus === "draft" && (
+            <button
+              type="button"
+              onClick={() => setConfirmDeleteOpen(true)}
+              disabled={submitting || savingDraft || deletingDraft}
+              className="ml-auto flex items-center gap-1.5 text-[14px] font-medium text-[var(--color-danger-red)] hover:underline disabled:opacity-60"
+            >
+              <Trash2 size={15} />
+              {deletingDraft ? "Đang xoá..." : "Xoá bản nháp"}
+            </button>
+          )}
         </div>
+
+        {confirmDeleteOpen && (
+          <Modal
+            title="Xoá bản nháp"
+            width={440}
+            onClose={() => setConfirmDeleteOpen(false)}
+            footer={
+              <>
+                <button
+                  type="button"
+                  onClick={() => setConfirmDeleteOpen(false)}
+                  className={cancelButtonClass}
+                >
+                  Giữ lại bản nháp
+                </button>
+                <button
+                  type="button"
+                  onClick={deleteDraft}
+                  className="flex h-[38px] flex-1 items-center justify-center rounded bg-[var(--color-danger-red)] text-[14px] font-semibold text-white hover:brightness-95 disabled:opacity-60"
+                >
+                  Xoá bản nháp
+                </button>
+              </>
+            }
+          >
+            <p className="text-[14px] leading-relaxed text-gray-700">
+              Bản nháp này sẽ được gỡ khỏi danh sách của bạn. Đề xuất{" "}
+              <strong>chưa từng được gửi đi</strong> nên không ai nhận được thông báo gì.
+            </p>
+            <p className="mt-2 text-[13px] leading-relaxed text-gray-500">
+              Dữ liệu vẫn được giữ lại, Owner/Admin khôi phục được nếu bấm nhầm.
+            </p>
+          </Modal>
+        )}
       </div>
     </div>
   );
