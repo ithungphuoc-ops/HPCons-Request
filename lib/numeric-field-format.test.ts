@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatCellForDisplay,
   isValidCellValue,
+  normalizeRawForStorage,
   numericTypeForFieldDataType,
   parseCellToRaw,
 } from "./table-field";
@@ -92,5 +93,43 @@ describe("gõ vào rồi rời ô — đúng vòng đời của NumericFieldInpu
     const int = numericTypeForFieldDataType("integer")!;
     expect(isValidCellValue("10", int)).toBe(true);
     expect(isValidCellValue("10.5", int)).toBe(false);
+  });
+});
+
+describe("normalizeRawForStorage — số lưu xuống phải KHỚP số hiện ra", () => {
+  // CodeRabbit bắt trên PR #26: isValidCellValue chấp nhận "1234.5" cho kiểu
+  // tiền tệ, nên giá trị đó được lưu nguyên — trong khi màn hình và bản in
+  // hiện "1,235 VNĐ". Điều kiện hiển thị field, công thức và dòng tổng cộng
+  // vẫn tính trên 1234.5: hai con số cho cùng một ô.
+  const money = numericTypeForFieldDataType("currency")!;
+
+  it("tiền tệ: làm tròn về số nguyên đúng như lúc hiển thị", () => {
+    expect(normalizeRawForStorage("1234.5", money)).toBe("1235");
+    expect(normalizeRawForStorage("1234.4", money)).toBe("1234");
+  });
+
+  it("sau khi chuẩn hoá, giá trị lưu và giá trị hiện ra là MỘT", () => {
+    for (const input of ["1234.5", "1234.4", "999.99", "74610000"]) {
+      const stored = normalizeRawForStorage(input, money);
+      // Hiện lại chính giá trị đã lưu → phải ra đúng chuỗi đó, không lệch nữa.
+      expect(formatCellForDisplay(stored, money)).toBe(
+        formatCellForDisplay(input, money),
+      );
+      expect(Number(stored)).toBe(Math.round(Number(input)));
+    }
+  });
+
+  it("KHÔNG đụng tới các kiểu khác — số thập phân giữ nguyên phần lẻ", () => {
+    const dec = numericTypeForFieldDataType("decimal")!;
+    const int = numericTypeForFieldDataType("integer")!;
+    expect(normalizeRawForStorage("2.5", dec)).toBe("2.5");
+    expect(normalizeRawForStorage("2.5", int)).toBe("2.5");
+    expect(normalizeRawForStorage("abc", "text")).toBe("abc");
+  });
+
+  it("rỗng và chuỗi không phải số thì để nguyên, không biến thành 0", () => {
+    expect(normalizeRawForStorage("", money)).toBe("");
+    expect(normalizeRawForStorage("   ", money)).toBe("");
+    expect(normalizeRawForStorage("abc", money)).toBe("abc");
   });
 });

@@ -17,6 +17,7 @@ import {
   isNumericColumnType,
   isRequiredTableColumn,
   isValidCellValue,
+  normalizeRawForStorage,
   numericTypeForFieldDataType,
   parseCellToRaw,
   resolveTableColumnTypes,
@@ -1430,12 +1431,15 @@ function NumericFieldInput({
   const shown = draft ?? formatCellForDisplay(stored, columnType);
 
   const commit = () => {
-    const raw = parseCellToRaw(draft ?? "", columnType);
+    const parsed = parseCellToRaw(draft ?? "", columnType);
     setDraft(null);
-    if (raw === "") {
+    if (parsed === "") {
       onChange("");
       return;
     }
+    // Chuẩn hoá trước khi lưu để số lưu xuống KHỚP số hiện ra — xem
+    // normalizeRawForStorage() ở lib/table-field.ts.
+    const raw = normalizeRawForStorage(parsed, columnType);
     onChange(isValidCellValue(raw, columnType) ? Number(raw) : raw);
   };
 
@@ -1479,7 +1483,7 @@ function TableCellInput({
         if (!numeric) onCommit(e.target.value);
       }}
       onBlur={(e) => {
-        if (numeric) onCommit(parseCellToRaw(e.target.value, columnType));
+        if (numeric) onCommit(normalizeRawForStorage(parseCellToRaw(e.target.value, columnType), columnType));
         setDraft(null);
       }}
       inputMode={columnType === "int" ? "numeric" : numeric ? "decimal" : undefined}
