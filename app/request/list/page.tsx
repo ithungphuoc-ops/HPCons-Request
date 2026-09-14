@@ -447,7 +447,7 @@ function RequestListPageInner() {
                   role="tab"
                   aria-selected={isActive}
                   onClick={() => setView(v)}
-                  className={`relative shrink-0 cursor-pointer whitespace-nowrap border-b-2 px-3 py-2.5 text-[13px] transition-colors duration-150 ${
+                  className={`relative shrink-0 cursor-pointer whitespace-nowrap border-b-2 px-3 py-2.5 text-[14px] transition-colors duration-150 ${
                     isActive
                       ? "border-[var(--color-action-blue)] font-semibold text-[var(--color-action-blue)]"
                       : "border-transparent font-medium text-gray-500 hover:text-gray-800"
@@ -656,7 +656,7 @@ function RequestListPageInner() {
           {/* ĐANG mở box nội dung (cột trái 320px): dòng rút gọn 2 tầng —
               bảng 7 cột không nhét vừa cột hẹp. Giữ hover/active như cũ. */}
           {status === "loaded" && selectedRequest && filteredRequests.length === 0 && (
-            <p className="px-3 py-6 text-[13px] text-gray-500">
+            <p className="px-3 py-6 text-[14px] text-gray-500">
               {view === "all" ? "Không có đề xuất nào khớp bộ lọc hiện tại." : REQUEST_VIEW_EMPTY[view]}
             </p>
           )}
