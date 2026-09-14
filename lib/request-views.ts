@@ -21,8 +21,6 @@ import type { RequestInstance } from "./types";
  */
 export type RequestListView = "all" | "turn" | "overdue" | "bookmarked";
 
-export const REQUEST_VIEW_ORDER: RequestListView[] = ["all", "turn", "overdue", "bookmarked"];
-
 export const REQUEST_VIEW_LABEL: Record<RequestListView, string> = {
   all: "Tất cả",
   turn: "Đến lượt duyệt",
@@ -30,9 +28,18 @@ export const REQUEST_VIEW_LABEL: Record<RequestListView, string> = {
   bookmarked: "Đã đánh dấu",
 };
 
-/** Câu giải thích hiện khi danh sách rỗng — nói rõ góc nhìn đang lọc theo gì. */
-export const REQUEST_VIEW_EMPTY: Record<RequestListView, string> = {
-  all: "Chưa có đề xuất nào.",
+/** Thứ tự hiện trên dải tab.
+ *
+ * Suy ra TỪ `REQUEST_VIEW_LABEL` chứ không liệt kê tay: liệt kê tay thì thêm
+ * một góc nhìn mới vào union mà quên thêm vào đây sẽ không có lỗi biên dịch
+ * nào, chỉ âm thầm mất một tab. */
+export const REQUEST_VIEW_ORDER = Object.keys(REQUEST_VIEW_LABEL) as RequestListView[];
+
+/** Câu giải thích hiện khi danh sách rỗng — nói rõ góc nhìn đang lọc theo gì.
+ *
+ * Không có khoá `all`: góc nhìn "Tất cả" rỗng nghĩa là không khớp bộ lọc chung
+ * (ô tìm kiếm / trạng thái / nhóm), nơi gọi có câu riêng cho tình huống đó. */
+export const REQUEST_VIEW_EMPTY: Record<Exclude<RequestListView, "all">, string> = {
   turn: "Không có đề xuất nào đang chờ đến lượt bạn duyệt.",
   overdue: "Không có đề xuất nào quá hạn xử lý.",
   bookmarked: "Bạn chưa đánh dấu đề xuất nào. Mở một đề xuất rồi bấm ngôi sao để đánh dấu.",
