@@ -117,7 +117,7 @@ export default function DatePicker({
         onClick={() => setOpen((o) => !o)}
         className={
           className ??
-          'h-[36px] w-full rounded border border-[var(--color-border)] px-3 text-left text-[13px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-action-blue)] disabled:opacity-50 disabled:cursor-not-allowed'
+          'h-[36px] w-full rounded border border-[var(--color-border)] px-3 text-left text-[14px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-action-blue)] disabled:opacity-50 disabled:cursor-not-allowed'
         }
       >
         {selected ? (
@@ -157,7 +157,7 @@ export default function DatePicker({
                 type="time"
                 value={timePart || '00:00'}
                 onChange={(e) => changeTime(e.target.value)}
-                className="h-8 flex-1 rounded border border-[var(--color-border)] px-2 text-[13px] outline-none focus:border-[var(--color-action-blue)]"
+                className="h-8 flex-1 rounded border border-[var(--color-border)] px-2 text-[14px] outline-none focus:border-[var(--color-action-blue)]"
               />
               <button
                 type="button"
@@ -169,7 +169,7 @@ export default function DatePicker({
             </div>
           )}
 
-          <div className="grid grid-cols-7 gap-1 text-center text-[11px] text-gray-400 mb-1">
+          <div className="grid grid-cols-7 gap-1 text-center text-[12px] text-gray-400 mb-1">
             {WEEKDAYS.map((w) => (
               <div key={w}>{w}</div>
             ))}

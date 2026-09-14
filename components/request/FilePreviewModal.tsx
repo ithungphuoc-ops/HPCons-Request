@@ -42,7 +42,7 @@ export default function FilePreviewModal({
           <a
             href={fileUrl}
             download={attachment.name}
-            className="flex items-center gap-1.5 rounded border border-[var(--color-border)] px-3 py-1.5 text-[13px] font-medium text-[var(--color-text-primary)] hover:bg-gray-50 dark:hover:bg-white/5"
+            className="flex items-center gap-1.5 rounded border border-[var(--color-border)] px-3 py-1.5 text-[14px] font-medium text-[var(--color-text-primary)] hover:bg-gray-50 dark:hover:bg-white/5"
           >
             <Download size={14} /> Tải về
           </a>
@@ -50,7 +50,7 @@ export default function FilePreviewModal({
             href={fileUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1.5 rounded border border-[var(--color-border)] px-3 py-1.5 text-[13px] font-medium text-[var(--color-text-primary)] hover:bg-gray-50 dark:hover:bg-white/5"
+            className="flex items-center gap-1.5 rounded border border-[var(--color-border)] px-3 py-1.5 text-[14px] font-medium text-[var(--color-text-primary)] hover:bg-gray-50 dark:hover:bg-white/5"
           >
             <ExternalLink size={14} /> Mở tab mới
           </a>
@@ -65,7 +65,7 @@ export default function FilePreviewModal({
       ) : isPdf ? (
         <iframe src={fileUrl} title={attachment.name} className="h-[70vh] w-full rounded border border-[var(--color-border)]" />
       ) : (
-        <p className="py-10 text-center text-[13px] text-gray-400">
+        <p className="py-10 text-center text-[14px] text-gray-400">
           Không xem trước được loại tệp này ({ext || "?"}). Bấm &quot;Tải về&quot; để xem trên máy.
         </p>
       )}

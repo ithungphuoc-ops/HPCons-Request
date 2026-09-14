@@ -25,7 +25,7 @@ export default function GroupDetailNav({ groupId }: { groupId: string }) {
           <Link
             key={item.key}
             href={href}
-            className={`relative rounded px-3 py-2 text-[13px] ${
+            className={`relative rounded px-3 py-2 text-[14px] ${
               isActive
                 ? "bg-blue-50 font-medium text-[var(--color-action-blue)]"
                 : "text-gray-700 hover:bg-gray-50"

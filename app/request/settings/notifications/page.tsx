@@ -75,13 +75,13 @@ export default function NotificationSettingsPage() {
         <Bell size={20} className="text-[var(--color-action-blue)]" />
         <h1 className="text-[16px] font-semibold text-[var(--color-text-primary)]">Cài đặt thông báo</h1>
       </div>
-      <p className="mb-5 text-[13px] text-[var(--color-text-secondary)]">
+      <p className="mb-5 text-[14px] text-[var(--color-text-secondary)]">
         Chọn loại thông báo bạn muốn nhận trên chuông. Loại bị tắt sẽ không hiện trong chuông và không tính vào số
         thông báo chưa đọc.
       </p>
 
       {!settings ? (
-        <p className="text-[13px] text-[var(--color-text-secondary)]">Đang tải...</p>
+        <p className="text-[14px] text-[var(--color-text-secondary)]">Đang tải...</p>
       ) : (
         <div className="flex flex-col divide-y divide-[var(--color-border)] rounded border border-[var(--color-border)]">
           {ORDER.map((category) => {
@@ -90,7 +90,7 @@ export default function NotificationSettingsPage() {
             return (
               <div key={category} className="flex items-center justify-between gap-4 px-4 py-3">
                 <div>
-                  <p className="text-[13px] font-medium text-[var(--color-text-primary)]">{title}</p>
+                  <p className="text-[14px] font-medium text-[var(--color-text-primary)]">{title}</p>
                   <p className="text-[12px] text-[var(--color-text-secondary)]">{description}</p>
                 </div>
                 <button

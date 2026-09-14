@@ -19,7 +19,7 @@ function FromTemplatePageInner() {
   return (
     <div className="px-8 py-6">
       <h1 className="text-[23px] font-bold text-gray-900">Tạo nhóm từ mẫu</h1>
-      <p className="mt-1 text-[13px] text-gray-500">
+      <p className="mt-1 text-[14px] text-gray-500">
         Chọn một mẫu có sẵn để dựng nhanh nhóm đề xuất, sau đó chỉnh sửa lại theo nhu cầu.
       </p>
 
@@ -34,7 +34,7 @@ function FromTemplatePageInner() {
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-blue-50 text-[var(--color-action-blue)]">
               <Layers size={16} />
             </span>
-            <span className="text-[13px] font-medium text-gray-800">{template.name}</span>
+            <span className="text-[14px] font-medium text-gray-800">{template.name}</span>
           </button>
         ))}
       </div>

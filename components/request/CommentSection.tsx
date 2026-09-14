@@ -331,7 +331,7 @@ export default function CommentSection({
 
     return (
       <div key={comment.id} className="flex items-start gap-2">
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-400 text-[11px] font-semibold text-white">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-400 text-[12px] font-semibold text-white">
           {comment.avatarInitial}
         </span>
         <div className="min-w-0 flex-1 rounded bg-gray-50 px-3 py-2">
@@ -341,7 +341,7 @@ export default function CommentSection({
                 value={editText}
                 onChange={(e) => setEditText(e.target.value)}
                 rows={2}
-                className="min-w-0 flex-1 rounded border border-[var(--color-border)] px-2 py-1 text-[13px] outline-none focus:border-[var(--color-action-blue)]"
+                className="min-w-0 flex-1 rounded border border-[var(--color-border)] px-2 py-1 text-[14px] outline-none focus:border-[var(--color-action-blue)]"
               />
               <button
                 type="button"
@@ -360,8 +360,8 @@ export default function CommentSection({
             </div>
           ) : (
             <>
-              <p className="text-[13px] font-medium text-gray-800">{comment.authorName}</p>
-              <p className="whitespace-pre-wrap text-[13px] text-gray-700">{comment.text}</p>
+              <p className="text-[14px] font-medium text-gray-800">{comment.authorName}</p>
+              <p className="whitespace-pre-wrap text-[14px] text-gray-700">{comment.text}</p>
               {comment.attachment && (
                 <button
                   type="button"
@@ -375,7 +375,7 @@ export default function CommentSection({
                   </span>
                 </button>
               )}
-              <div className="mt-0.5 flex items-center gap-2 text-[11px] text-gray-400">
+              <div className="mt-0.5 flex items-center gap-2 text-[12px] text-gray-400">
                 <span>{new Date(comment.at).toLocaleString("vi-VN")}</span>
                 {comment.editedAt && <span>(đã sửa)</span>}
                 {showEditDelete && (
@@ -454,7 +454,7 @@ export default function CommentSection({
           }}
           rows={2}
           placeholder="Viết thảo luận của bạn — gõ @ để tag người hoặc nhóm/phòng ban"
-          className="min-w-0 flex-1 rounded border border-[var(--color-border)] px-3 py-2 text-[13px] outline-none focus:border-[var(--color-action-blue)]"
+          className="min-w-0 flex-1 rounded border border-[var(--color-border)] px-3 py-2 text-[14px] outline-none focus:border-[var(--color-action-blue)]"
         />
         <button
           type="button"
@@ -474,12 +474,12 @@ export default function CommentSection({
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => insertMention(u)}
-                className={`flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] hover:bg-gray-50 ${
+                className={`flex w-full items-center gap-2 px-3 py-2 text-left text-[14px] hover:bg-gray-50 ${
                   i === highlighted ? "bg-gray-50" : ""
                 }`}
               >
                 <span
-                  className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white ${
+                  className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[12px] font-semibold text-white ${
                     u.kind === "group" ? "bg-teal-500" : "bg-[var(--color-action-blue)]"
                   }`}
                 >
@@ -488,7 +488,7 @@ export default function CommentSection({
                 <span>
                   {u.name} <span className="text-gray-400">@{u.username}</span>
                   {u.kind === "group" && (
-                    <span className="ml-1 text-[10px] text-teal-600">(nhóm/phòng ban)</span>
+                    <span className="ml-1 text-[12px] text-teal-600">(nhóm/phòng ban)</span>
                   )}
                 </span>
               </button>
@@ -499,7 +499,7 @@ export default function CommentSection({
       {postError && <p className="mt-1 text-[12px] text-[var(--color-danger-red)]">{postError}</p>}
 
       <div className="mt-4 flex flex-col gap-3">
-        {flatComments.length === 0 && <p className="text-[13px] text-gray-400">Chưa có thảo luận nào.</p>}
+        {flatComments.length === 0 && <p className="text-[14px] text-gray-400">Chưa có thảo luận nào.</p>}
         {flatComments.map((comment) => renderComment(comment))}
       </div>
 

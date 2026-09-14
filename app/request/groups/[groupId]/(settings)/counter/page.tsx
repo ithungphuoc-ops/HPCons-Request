@@ -40,7 +40,7 @@ function CounterSettingsPageInner() {
       <h2 className="mb-4 text-[15px] font-semibold text-gray-800">Bộ đếm</h2>
       <p className="mb-4 text-[12px] text-gray-500">Mẫu bộ đếm sinh tự động cho đề xuất của nhóm này.</p>
 
-      <label className="mb-1 block text-[13px] font-medium text-gray-700">
+      <label className="mb-1 block text-[14px] font-medium text-gray-700">
         Sử dụng mã bộ đếm cho nhóm đề xuất?
       </label>
       <p className="mb-1 text-[12px] text-gray-400">

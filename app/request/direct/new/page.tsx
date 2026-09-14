@@ -124,20 +124,20 @@ function DirectRequestForm() {
   return (
     <div className="mx-auto max-w-[640px] px-8 py-6">
       <h1 className="text-[20px] font-semibold text-gray-900">Đề xuất trực tiếp</h1>
-      <p className="mt-1 text-[13px] text-gray-500">
+      <p className="mt-1 text-[14px] text-gray-500">
         Không theo mẫu cố định — tự đặt tên, mô tả và chọn người xét duyệt.
       </p>
 
       <div className="mt-6 flex flex-col gap-4">
         <div>
-          <label className="mb-1 block text-[13px] font-medium text-gray-700">
+          <label className="mb-1 block text-[14px] font-medium text-gray-700">
             Tên đề xuất <span className="text-[var(--color-danger-red)]">*</span>
           </label>
           <input className={inputClass} value={title} onChange={(e) => setTitle(e.target.value)} />
         </div>
 
         <div>
-          <label className="mb-1 block text-[13px] font-medium text-gray-700">
+          <label className="mb-1 block text-[14px] font-medium text-gray-700">
             Mô tả đề xuất <span className="text-[var(--color-danger-red)]">*</span>
           </label>
           <textarea
@@ -149,19 +149,19 @@ function DirectRequestForm() {
         </div>
 
         <div>
-          <label className="mb-1 block text-[13px] font-medium text-gray-700">
+          <label className="mb-1 block text-[14px] font-medium text-gray-700">
             Người xét duyệt <span className="text-[var(--color-danger-red)]">*</span>
           </label>
           <TagUserInput value={approvers} onChange={setApprovers} placeholder="Gõ @ để tìm người xét duyệt" />
         </div>
 
         <div>
-          <label className="mb-1 block text-[13px] font-medium text-gray-700">Người theo dõi</label>
+          <label className="mb-1 block text-[14px] font-medium text-gray-700">Người theo dõi</label>
           <TagUserInput value={followers} onChange={setFollowers} />
         </div>
       </div>
 
-      {error && <p className="mt-4 text-[13px] text-[var(--color-danger-red)]">{error}</p>}
+      {error && <p className="mt-4 text-[14px] text-[var(--color-danger-red)]">{error}</p>}
 
       {loadedStatus === "pending" && (
         <p className="mt-4 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-700">
@@ -195,7 +195,7 @@ function DirectRequestForm() {
         <button
           type="button"
           onClick={() => router.back()}
-          className="text-[13px] text-gray-500 hover:underline"
+          className="text-[14px] text-gray-500 hover:underline"
         >
           Hủy bỏ
         </button>

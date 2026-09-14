@@ -22,7 +22,7 @@ function WebhookSettingsPageInner() {
         Gửi sự kiện của nhóm đề xuất này (tạo mới, duyệt, từ chối) tới một địa chỉ Webhook bên ngoài.
       </p>
 
-      <label className="mb-1 block text-[13px] font-medium text-gray-700">Địa chỉ Webhook</label>
+      <label className="mb-1 block text-[14px] font-medium text-gray-700">Địa chỉ Webhook</label>
       <input
         className={inputClass}
         placeholder="https://example.com/webhook"

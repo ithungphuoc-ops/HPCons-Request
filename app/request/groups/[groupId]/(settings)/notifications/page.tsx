@@ -63,8 +63,8 @@ function NotifRow({
   return (
     <div className="flex flex-col gap-2 p-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
       <div className="max-w-[380px]">
-        <p className="text-[13px] text-gray-700">{question}</p>
-        {note && <p className="mt-1 text-[11px] text-gray-400">⏳ {note}</p>}
+        <p className="text-[14px] text-gray-700">{question}</p>
+        {note && <p className="mt-1 text-[12px] text-gray-400">⏳ {note}</p>}
       </div>
       <div className="shrink-0 sm:w-[220px]">{children}</div>
     </div>

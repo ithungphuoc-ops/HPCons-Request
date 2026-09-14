@@ -223,7 +223,7 @@ export default function FollowersConditionalEditor({
       <button
         type="button"
         onClick={addItem}
-        className="flex w-fit items-center gap-1.5 text-[13px] font-medium text-[var(--color-action-blue)] hover:underline"
+        className="flex w-fit items-center gap-1.5 text-[14px] font-medium text-[var(--color-action-blue)] hover:underline"
       >
         <Plus size={14} /> Thêm điều kiện
       </button>

@@ -170,7 +170,7 @@ export default function TagUserInput({
           }}
           onFocus={() => setOpen(true)}
           placeholder={value.length === 0 ? placeholder : ""}
-          className="min-w-[100px] flex-1 text-[13px] outline-none"
+          className="min-w-[100px] flex-1 text-[14px] outline-none"
         />
       </div>
 
@@ -191,10 +191,10 @@ export default function TagUserInput({
               key={u.id}
               type="button"
               onClick={() => selectUser(u)}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] hover:bg-gray-50"
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-[14px] hover:bg-gray-50"
             >
               <span
-                className={`flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold text-white ${
+                className={`flex h-6 w-6 items-center justify-center rounded-full text-[12px] font-semibold text-white ${
                   u.kind === "group" ? "bg-teal-500" : "bg-[var(--color-action-blue)]"
                 }`}
               >
@@ -204,9 +204,9 @@ export default function TagUserInput({
                 <HighlightMatch text={u.name} query={query.replace("@", "").trim()} />{" "}
                 <span className="text-gray-400">@<HighlightMatch text={u.username} query={query.replace("@", "").trim()} /></span>
                 {u.kind === "group" && (
-                  <span className="ml-1 text-[10px] text-teal-600">(nhóm/phòng ban)</span>
+                  <span className="ml-1 text-[12px] text-teal-600">(nhóm/phòng ban)</span>
                 )}
-                {u.title && <span className="block text-[11px] text-gray-400">{u.title}</span>}
+                {u.title && <span className="block text-[12px] text-gray-400">{u.title}</span>}
               </span>
             </button>
           ))}

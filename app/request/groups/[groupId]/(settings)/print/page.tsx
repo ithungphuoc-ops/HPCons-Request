@@ -226,7 +226,7 @@ function PrintSettingsPageInner() {
       <div className="mb-6 rounded-[3px] border border-[var(--color-border)] bg-white p-4">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h3 className="text-[13px] font-semibold text-gray-800">Mẫu in tự động (.docx)</h3>
+            <h3 className="text-[14px] font-semibold text-gray-800">Mẫu in tự động (.docx)</h3>
             <p className="mt-1 text-[12px] text-gray-500">
               Nhóm có thể có nhiều mẫu — gõ thẻ giữ chỗ dạng{" "}
               <code className="rounded bg-gray-100 px-1 py-0.5">${"{ma_truong}"}</code> vào đúng vị
@@ -266,7 +266,7 @@ function PrintSettingsPageInner() {
             templates.map((t) => (
               <div key={t.id} className="rounded border border-[var(--color-border)] px-3 py-2">
                 <div className="flex items-center justify-between gap-3">
-                  <div className="flex min-w-0 items-center gap-2 text-[13px] text-gray-700">
+                  <div className="flex min-w-0 items-center gap-2 text-[14px] text-gray-700">
                     <FileText size={16} className="shrink-0 text-[var(--color-action-blue)]" />
                     {renamingId === t.id ? (
                       <input
@@ -283,7 +283,7 @@ function PrintSettingsPageInner() {
                       <span className="truncate font-medium">{t.name}</span>
                     )}
                     {t.isDefault && (
-                      <span className="flex shrink-0 items-center gap-0.5 rounded-full bg-yellow-100 px-1.5 py-0.5 text-[10px] font-medium text-yellow-700">
+                      <span className="flex shrink-0 items-center gap-0.5 rounded-full bg-yellow-100 px-1.5 py-0.5 text-[12px] font-medium text-yellow-700">
                         <Star size={10} fill="currentColor" /> Mặc định
                       </span>
                     )}
@@ -294,14 +294,14 @@ function PrintSettingsPageInner() {
                         <button
                           type="button"
                           onClick={() => saveRename(t.id)}
-                          className="rounded px-2 py-1 text-[11px] text-[var(--color-action-blue)] hover:bg-blue-50"
+                          className="rounded px-2 py-1 text-[12px] text-[var(--color-action-blue)] hover:bg-blue-50"
                         >
                           Lưu
                         </button>
                         <button
                           type="button"
                           onClick={() => setRenamingId(null)}
-                          className={`${cancelButtonClass} h-7 px-2 text-[11px]`}
+                          className={`${cancelButtonClass} h-7 px-2 text-[12px]`}
                         >
                           Huỷ
                         </button>
@@ -371,26 +371,26 @@ function PrintSettingsPageInner() {
                     )}
                   </div>
                 </div>
-                <p className="mt-1 text-[11px] text-gray-400">
+                <p className="mt-1 text-[12px] text-gray-400">
                   {t.fileName} · phiên bản {t.version} · tạo bởi {t.createdBy.name} · cập nhật{" "}
                   {new Date(t.updatedAt).toLocaleString("vi-VN")}
                 </p>
                 {(t.validation.errors.length > 0 || t.validation.warnings.length > 0) && (
                   <div className="mt-1.5 flex flex-col gap-1">
                     {t.validation.errors.map((e, i) => (
-                      <p key={i} className="flex items-start gap-1 text-[11px] text-[var(--color-danger-red)]">
+                      <p key={i} className="flex items-start gap-1 text-[12px] text-[var(--color-danger-red)]">
                         <AlertTriangle size={12} className="mt-0.5 shrink-0" /> {e}
                       </p>
                     ))}
                     {t.validation.warnings.map((w, i) => (
-                      <p key={i} className="flex items-start gap-1 text-[11px] text-orange-500">
+                      <p key={i} className="flex items-start gap-1 text-[12px] text-orange-500">
                         <AlertTriangle size={12} className="mt-0.5 shrink-0" /> {w}
                       </p>
                     ))}
                   </div>
                 )}
                 {t.detectedVariables.length > 0 && (
-                  <p className="mt-1.5 flex items-center gap-1 text-[11px] text-green-600">
+                  <p className="mt-1.5 flex items-center gap-1 text-[12px] text-green-600">
                     <CheckCircle2 size={12} /> Phát hiện {t.detectedVariables.length} biến trong mẫu.
                   </p>
                 )}
@@ -444,14 +444,14 @@ function PrintSettingsPageInner() {
                     <button
                       type="button"
                       onClick={() => createMissingField(code)}
-                      className="rounded bg-[var(--color-action-blue)] px-2 py-1 text-[11px] font-medium text-white hover:brightness-95"
+                      className="rounded bg-[var(--color-action-blue)] px-2 py-1 text-[12px] font-medium text-white hover:brightness-95"
                     >
                       Tạo
                     </button>
                     <button
                       type="button"
                       onClick={() => setCreatingCode(null)}
-                      className={`${cancelButtonClass} h-7 px-2 text-[11px]`}
+                      className={`${cancelButtonClass} h-7 px-2 text-[12px]`}
                     >
                       Huỷ
                     </button>
@@ -468,7 +468,7 @@ function PrintSettingsPageInner() {
                         setCreatingName(code);
                         setCreatingType("short_text");
                       }}
-                      className="flex items-center gap-0.5 text-[11px] font-medium text-[var(--color-action-blue)] hover:underline"
+                      className="flex items-center gap-0.5 text-[12px] font-medium text-[var(--color-action-blue)] hover:underline"
                     >
                       <Plus size={12} /> Tạo trường
                     </button>
@@ -490,7 +490,7 @@ function PrintSettingsPageInner() {
                 type="button"
                 title={k.label}
                 onClick={() => navigator.clipboard.writeText(`\${${k.key}}`)}
-                className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[11px] text-gray-600 hover:bg-gray-200"
+                className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[12px] text-gray-600 hover:bg-gray-200"
               >
                 ${"{" + k.key + "}"}
               </button>
@@ -509,45 +509,45 @@ function PrintSettingsPageInner() {
       </div>
 
       <div className="mb-6 rounded-[3px] border border-[var(--color-border)] bg-white p-4">
-        <h3 className="text-[13px] font-semibold text-gray-800">
-          Tuỳ chỉnh in đề xuất <span className="ml-1 rounded-full bg-[var(--color-cat-bg)] px-2 py-0.5 text-[10px] font-bold text-[var(--color-cat-text)]">MỚI</span>
+        <h3 className="text-[14px] font-semibold text-gray-800">
+          Tuỳ chỉnh in đề xuất <span className="ml-1 rounded-full bg-[var(--color-cat-bg)] px-2 py-0.5 text-[12px] font-bold text-[var(--color-cat-text)]">MỚI</span>
         </h3>
         <p className="mt-1 text-[12px] text-gray-500">
           Chỉ lưu cấu hình / ẩn-hiện nút ở trang chi tiết đề xuất, chưa tự sinh file thật.
         </p>
 
         <div className="mt-3 flex flex-col gap-1">
-          <label className="flex items-center gap-2 text-[13px] text-gray-700">
+          <label className="flex items-center gap-2 text-[14px] text-gray-700">
             <input type="checkbox" checked={printOptions.allowPrintProposal} onChange={(e) => setPrintOption("allowPrintProposal", e.target.checked)} />
             In đề xuất
           </label>
-          <label className="flex items-center gap-2 text-[13px] text-gray-700">
+          <label className="flex items-center gap-2 text-[14px] text-gray-700">
             <input type="checkbox" checked={printOptions.allowPrintProposalWithDiscussion} onChange={(e) => setPrintOption("allowPrintProposalWithDiscussion", e.target.checked)} />
             In đề xuất và thảo luận
           </label>
-          <label className="flex items-center gap-2 text-[13px] text-gray-700">
+          <label className="flex items-center gap-2 text-[14px] text-gray-700">
             <input type="checkbox" checked={printOptions.allowPrintToWord} onChange={(e) => setPrintOption("allowPrintToWord", e.target.checked)} />
             In đề xuất theo mẫu ra file word
           </label>
-          <label className="flex items-center gap-2 text-[13px] text-gray-700">
+          <label className="flex items-center gap-2 text-[14px] text-gray-700">
             <input type="checkbox" checked={printOptions.allowPrintToPdf} onChange={(e) => setPrintOption("allowPrintToPdf", e.target.checked)} />
             In đề xuất theo mẫu ra file pdf{" "}
-            <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500">⏳ chờ tính năng xuất PDF</span>
+            <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[12px] text-gray-500">⏳ chờ tính năng xuất PDF</span>
           </label>
-          <label className="flex items-center gap-2 text-[13px] text-gray-700">
+          <label className="flex items-center gap-2 text-[14px] text-gray-700">
             <input type="checkbox" checked={printOptions.allowPrintWithQrCode} onChange={(e) => setPrintOption("allowPrintWithQrCode", e.target.checked)} />
             In đề xuất theo mẫu với qrcode{" "}
-            <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500">⏳ chưa sinh QR thật</span>
+            <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[12px] text-gray-500">⏳ chưa sinh QR thật</span>
           </label>
-          <label className="flex items-center gap-2 text-[13px] text-gray-700">
+          <label className="flex items-center gap-2 text-[14px] text-gray-700">
             <input type="checkbox" checked={printOptions.allowPrintAttachmentWithQrCode} onChange={(e) => setPrintOption("allowPrintAttachmentWithQrCode", e.target.checked)} />
             In file đính kèm với qrcode{" "}
-            <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500">⏳ chưa sinh QR thật</span>
+            <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[12px] text-gray-500">⏳ chưa sinh QR thật</span>
           </label>
-          <label className="flex items-center gap-2 text-[13px] text-gray-700">
+          <label className="flex items-center gap-2 text-[14px] text-gray-700">
             <input type="checkbox" checked={printOptions.allowPrintCustomFieldFileWithQrCode} onChange={(e) => setPrintOption("allowPrintCustomFieldFileWithQrCode", e.target.checked)} />
             In trường tùy chỉnh dạng file với qrcode{" "}
-            <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500">⏳ chưa sinh QR thật</span>
+            <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[12px] text-gray-500">⏳ chưa sinh QR thật</span>
           </label>
         </div>
 
@@ -581,7 +581,7 @@ function PrintSettingsPageInner() {
 
       <div className="flex gap-6">
         <div className="w-[320px] shrink-0">
-          <label className="mb-1 block text-[13px] font-medium text-gray-700">
+          <label className="mb-1 block text-[14px] font-medium text-gray-700">
             Ghi chú chân trang mẫu in
           </label>
           <textarea
@@ -601,9 +601,9 @@ function PrintSettingsPageInner() {
         </div>
 
         <div className="min-w-0 flex-1 rounded-[3px] border border-[var(--color-border)] bg-white p-6">
-          <div className="mx-auto max-w-[560px] border border-gray-200 p-6 text-[13px]">
+          <div className="mx-auto max-w-[560px] border border-gray-200 p-6 text-[14px]">
             <p className="text-center text-[15px] font-bold uppercase">{COMPANY_NAME}</p>
-            <p className="mt-1 text-center text-[13px] font-semibold uppercase text-gray-600">
+            <p className="mt-1 text-center text-[14px] font-semibold uppercase text-gray-600">
               {group.name}
             </p>
             <div className="mt-4 flex flex-col gap-1 text-[12px] text-gray-600">

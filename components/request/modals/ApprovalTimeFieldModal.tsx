@@ -89,7 +89,7 @@ export default function ApprovalTimeFieldModal({
   if (fixedSteps.length === 0) {
     return (
       <Modal title="Thêm trường (Mẫu form phê duyệt)" width={480} onClose={onClose}>
-        <p className="text-[13px] text-gray-500">
+        <p className="text-[14px] text-gray-500">
           Nhóm chưa có bước duyệt kiểu &quot;Cố định&quot; nào — Mẫu form phê duyệt chỉ áp dụng được cho
           bước cố định. Vào tab &quot;Thiết lập chung&quot; thêm ít nhất 1 bước cố định trước.
         </p>
@@ -212,7 +212,7 @@ export default function ApprovalTimeFieldModal({
                 </option>
               ))}
             </select>
-            <p className="mt-1 text-[11px] text-gray-400">Chỉ liệt kê bước duyệt cố định</p>
+            <p className="mt-1 text-[12px] text-gray-400">Chỉ liệt kê bước duyệt cố định</p>
             {errors.step && <p className="mt-1 text-[12px] text-[var(--color-danger-red)]">{errors.step}</p>}
           </Row>
           <Row label="Thuộc phần duyệt">
@@ -237,7 +237,7 @@ export default function ApprovalTimeFieldModal({
 function Row({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
   return (
     <div>
-      <p className="mb-1 text-[13px] font-medium text-gray-700">
+      <p className="mb-1 text-[14px] font-medium text-gray-700">
         {label}
         {required && <span className="ml-0.5 text-[var(--color-danger-red)]">*</span>}
       </p>

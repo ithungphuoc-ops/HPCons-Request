@@ -281,7 +281,7 @@ export default function ApproverStepsEditor({
                   title="Hạn xử lý riêng cho bước này (giờ)"
                   placeholder="Hạn xử lý"
                 />
-                <span className="text-[11px] text-gray-400">giờ</span>
+                <span className="text-[12px] text-gray-400">giờ</span>
               </div>
             </div>
 
@@ -322,14 +322,14 @@ export default function ApproverStepsEditor({
                     }
                   />
                   {step.submitterAssigns ? (
-                    <p className="text-[11px] text-gray-500">
+                    <p className="text-[12px] text-gray-500">
                       {step.users.length === 0
                         ? "Không giới hạn — người gửi đề xuất được tag bất kỳ ai làm người duyệt."
                         : "Người gửi đề xuất chỉ được chọn những người có trong danh sách ở trên."}
                     </p>
                   ) : (
                     step.users.length === 0 && (
-                      <p className="text-[11px] font-medium text-amber-600">Chưa cài đặt danh sách duyệt</p>
+                      <p className="text-[12px] font-medium text-amber-600">Chưa cài đặt danh sách duyệt</p>
                     )
                   )}
                 </div>
@@ -337,7 +337,7 @@ export default function ApproverStepsEditor({
             </div>
 
             {(step.code || step.condition) && (
-              <p className="text-[11px] text-gray-400">
+              <p className="text-[12px] text-gray-400">
                 {step.code && <>Mã: {step.code}</>}
                 {step.code && step.condition && " · "}
                 {step.condition && `${step.condition.rules.length} điều kiện`}
@@ -365,21 +365,21 @@ export default function ApproverStepsEditor({
         <button
           type="button"
           onClick={() => addStep("fixed")}
-          className="flex w-fit items-center gap-1.5 text-[13px] font-medium text-[var(--color-action-blue)] hover:underline"
+          className="flex w-fit items-center gap-1.5 text-[14px] font-medium text-[var(--color-action-blue)] hover:underline"
         >
           <Plus size={14} /> Thêm người duyệt cố định
         </button>
         <button
           type="button"
           onClick={() => addStep("submitter_manager")}
-          className="flex w-fit items-center gap-1.5 text-[13px] font-medium text-[var(--color-action-blue)] hover:underline"
+          className="flex w-fit items-center gap-1.5 text-[14px] font-medium text-[var(--color-action-blue)] hover:underline"
         >
           <Plus size={14} /> Thêm quản lý trực tiếp
         </button>
         <button
           type="button"
           onClick={() => addStep("flexible_approver")}
-          className="flex w-fit items-center gap-1.5 text-[13px] font-medium text-[var(--color-action-blue)] hover:underline"
+          className="flex w-fit items-center gap-1.5 text-[14px] font-medium text-[var(--color-action-blue)] hover:underline"
         >
           <Plus size={14} /> Thêm người duyệt linh động
         </button>
@@ -410,7 +410,7 @@ export function ConditionEditor({
 
   if (fields.length === 0) {
     return (
-      <p className="text-[11px] text-gray-400">
+      <p className="text-[12px] text-gray-400">
         Nhóm chưa có trường phù hợp (một/nhiều lựa chọn, số, hoặc ngày) để đặt điều kiện.
       </p>
     );

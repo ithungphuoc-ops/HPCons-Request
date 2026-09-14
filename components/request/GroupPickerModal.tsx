@@ -56,21 +56,21 @@ export default function GroupPickerModal({ onClose }: { onClose: () => void }) {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Tìm nhanh"
-            className="h-[36px] w-full rounded border border-[var(--color-border)] bg-white pl-8 pr-3 text-[13px] outline-none focus:border-[var(--color-action-blue)]"
+            className="h-[36px] w-full rounded border border-[var(--color-border)] bg-white pl-8 pr-3 text-[14px] outline-none focus:border-[var(--color-action-blue)]"
           />
         </div>
 
         <button
           type="button"
           onClick={goDirect}
-          className="flex items-center gap-2 rounded border border-dashed border-[var(--color-border)] px-3 py-2.5 text-left text-[13px] font-medium text-[var(--color-action-blue)] hover:bg-blue-50"
+          className="flex items-center gap-2 rounded border border-dashed border-[var(--color-border)] px-3 py-2.5 text-left text-[14px] font-medium text-[var(--color-action-blue)] hover:bg-blue-50"
         >
           <Layers size={15} /> Đề xuất trực tiếp — không theo mẫu cố định
         </button>
 
         <div className="max-h-[360px] overflow-y-auto">
           {filteredCategories.length === 0 && (
-            <p className="px-1 py-6 text-center text-[13px] text-gray-400">
+            <p className="px-1 py-6 text-center text-[14px] text-gray-400">
               Không có nhóm đề xuất nào khả dụng cho bạn.
             </p>
           )}
@@ -84,7 +84,7 @@ export default function GroupPickerModal({ onClose }: { onClose: () => void }) {
                   onClick={() => goToGroup(g.id)}
                   className="flex w-full flex-col rounded px-3 py-2.5 text-left hover:bg-gray-50"
                 >
-                  <span className="text-[13px] font-medium text-gray-800"><HighlightMatch text={g.name} query={query} /></span>
+                  <span className="text-[14px] font-medium text-gray-800"><HighlightMatch text={g.name} query={query} /></span>
                   {g.description && (
                     <span className="truncate text-[12px] text-gray-400"><HighlightMatch text={g.description} query={query} /></span>
                   )}

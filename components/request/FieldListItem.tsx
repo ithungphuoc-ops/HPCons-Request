@@ -43,7 +43,7 @@ export default function FieldListItem({ field, onToggleRequired, onEdit, onRemov
     <div
       ref={setNodeRef}
       style={style}
-      className={`group flex items-center gap-3 border-b border-gray-100 bg-white px-3 py-3 text-[13px] last:border-0 ${
+      className={`group flex items-center gap-3 border-b border-gray-100 bg-white px-3 py-3 text-[14px] last:border-0 ${
         isDragging ? "opacity-60 shadow-md" : ""
       }`}
     >
@@ -75,7 +75,7 @@ export default function FieldListItem({ field, onToggleRequired, onEdit, onRemov
             <Zap size={14} />
           </button>
           {copied && (
-            <span className="absolute right-0 top-full z-10 mt-1 whitespace-nowrap rounded bg-gray-800 px-2 py-1 text-[11px] text-white">
+            <span className="absolute right-0 top-full z-10 mt-1 whitespace-nowrap rounded bg-gray-800 px-2 py-1 text-[12px] text-white">
               Đã sao chép mã trường
             </span>
           )}
@@ -103,7 +103,7 @@ export default function FieldListItem({ field, onToggleRequired, onEdit, onRemov
         />
       </button>
 
-      <span className="shrink-0 rounded bg-gray-100 px-2 py-1 text-[11px] font-medium text-gray-600">
+      <span className="shrink-0 rounded bg-gray-100 px-2 py-1 text-[12px] font-medium text-gray-600">
         {fieldDataTypeLabels[field.dataType]}
       </span>
 

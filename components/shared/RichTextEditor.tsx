@@ -45,7 +45,7 @@ export default function RichTextEditor({
     onUpdate: ({ editor }) => onChange(editor.getHTML()),
     editorProps: {
       attributes: {
-        class: "min-h-[100px] px-3 py-2 text-[13px] outline-none prose prose-sm max-w-none",
+        class: "min-h-[100px] px-3 py-2 text-[14px] outline-none prose prose-sm max-w-none",
       },
     },
   });

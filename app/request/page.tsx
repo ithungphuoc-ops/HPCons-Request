@@ -43,15 +43,15 @@ export default function RequestHomePage() {
           href="/request/list?scope=sent-to-me"
           className="rounded-[3px] border border-[var(--color-border)] bg-white p-5 hover:border-[var(--color-action-blue)]"
         >
-          <p className="text-[13px] text-gray-500">Chờ tôi duyệt</p>
+          <p className="text-[14px] text-gray-500">Chờ tôi duyệt</p>
           <p className="mt-1 text-[28px] font-bold text-gray-900">{inboxCount}</p>
         </Link>
         <Link
           href="/request/list?scope=mine"
           className="rounded-[3px] border border-[var(--color-border)] bg-white p-5 hover:border-[var(--color-action-blue)]"
         >
-          <p className="text-[13px] text-gray-500">Đề xuất của tôi</p>
-          <p className="mt-1 text-[13px] text-[var(--color-action-blue)]">Xem tất cả →</p>
+          <p className="text-[14px] text-gray-500">Đề xuất của tôi</p>
+          <p className="mt-1 text-[14px] text-[var(--color-action-blue)]">Xem tất cả →</p>
         </Link>
       </div>
 
@@ -64,7 +64,7 @@ export default function RequestHomePage() {
         </div>
         {recentMine.length === 0 ? (
           <div className="flex min-h-[140px] items-center justify-center rounded-[3px] border border-dashed border-[var(--color-border)] bg-white">
-            <p className="text-[13px] text-gray-400">Bạn chưa tạo đề xuất nào.</p>
+            <p className="text-[14px] text-gray-400">Bạn chưa tạo đề xuất nào.</p>
           </div>
         ) : (
           <div className="overflow-hidden rounded-[3px] border border-[var(--color-border)] bg-white">
@@ -78,7 +78,7 @@ export default function RequestHomePage() {
                       : `/request/direct/new?draftId=${r.id}`
                     : `/request/list?scope=mine&id=${r.id}`
                 }
-                className="flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-[13px] last:border-0 hover:bg-gray-50"
+                className="flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-[14px] last:border-0 hover:bg-gray-50"
               >
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium text-gray-800">{r.groupNameSnapshot}</p>

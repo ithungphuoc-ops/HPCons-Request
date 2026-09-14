@@ -26,7 +26,7 @@ function MucDieuHuong({
       type="button"
       onClick={onClick}
       title={title ?? label}
-      className={`flex flex-col items-center justify-center gap-0.5 py-2.5 text-[10px] font-semibold transition-colors active:scale-95 ${
+      className={`flex flex-col items-center justify-center gap-0.5 py-2.5 text-[12px] font-semibold transition-colors active:scale-95 ${
         noiBat ? "text-[var(--color-action-blue)]" : "text-gray-500 hover:text-gray-700"
       }`}
     >
