@@ -17,6 +17,7 @@ import {
   isNumericColumnType,
   isRequiredTableColumn,
   isValidCellValue,
+  numericTypeForFieldDataType,
   parseCellToRaw,
   resolveTableColumnTypes,
   sumColumn,
@@ -50,7 +51,13 @@ import {
   selectClass,
   textareaClass,
 } from "@/components/shared/form-styles";
-import type { ProposalField, RequestAttachment, RequestInstance, TaggedUser } from "@/lib/types";
+import type {
+  FieldDataType,
+  ProposalField,
+  RequestAttachment,
+  RequestInstance,
+  TaggedUser,
+} from "@/lib/types";
 
 const MAX_ATTACHMENTS = 6;
 // Tải thẳng lên R2 nên trần do CHÍNH mình chọn, không còn là 4,5MB của Vercel.
@@ -435,6 +442,20 @@ export default function SubmitRequestPage() {
         // API né qua chỗ này. Chỉ 2 hàm không phải "server-only" dùng lại
         // được ở đây — logic không tách chung 100% với server được vì
         // findInvalidTableRows nằm trong file "server-only".
+        // Trường số đứng riêng: ô nhập là <input type="text"> (để hiện được
+        // dấu phẩy ngăn hàng nghìn) nên mất hàng rào sẵn có của type="number"
+        // — phải tự kiểm lại ở đây, nếu không chuỗi bậy sẽ lọt xuống Firestore.
+        const numericFieldType = numericTypeForFieldDataType(field.dataType);
+        if (numericFieldType) {
+          const raw = values[field.id];
+          const text = raw === null || raw === undefined ? "" : String(raw).trim();
+          if (text !== "" && !isValidCellValue(text, numericFieldType)) {
+            nextErrors[field.id] =
+              numericFieldType === "int"
+                ? `"${field.name}" phải là số nguyên, không âm.`
+                : `"${field.name}" phải là số, không âm (dùng dấu chấm cho phần thập phân).`;
+          }
+        }
         if (field.dataType === "table" || field.dataType === "base_table") {
           const columns = field.tableColumns ?? [];
           const rows = deserializeTableRows(values[field.id]);
@@ -1081,24 +1102,13 @@ function FieldControl({
         />
       );
     case "integer":
-      return (
-        <input
-          type="number"
-          step={1}
-          className={inputClass}
-          value={(value as string) ?? ""}
-          onChange={(e) => onChange(e.target.value === "" ? "" : Number(e.target.value))}
-        />
-      );
     case "decimal":
     case "currency":
       return (
-        <input
-          type="number"
-          step="any"
-          className={inputClass}
-          value={(value as string) ?? ""}
-          onChange={(e) => onChange(e.target.value === "" ? "" : Number(e.target.value))}
+        <NumericFieldInput
+          dataType={field.dataType}
+          value={value}
+          onChange={onChange}
         />
       );
     case "date":
@@ -1390,6 +1400,58 @@ function FieldControl({
  * Tách thành component riêng vì cần state "đang gõ" — không đặt useState
  * trong thân `switch` của FieldControl được (vi phạm luật hook).
  */
+/**
+ * Ô nhập cho trường số đứng riêng (Số nguyên / Số thập phân / Tiền tệ).
+ *
+ * Tách thành component riêng vì cần `useState` — không đặt hook trong `switch`
+ * của `FieldControl` được. Cùng lý do đã tách `TableCellInput` bên dưới, và cố
+ * ý chạy đúng một kiểu với nó để người dùng không phải học 2 cách gõ số:
+ *   - Đang gõ  → hiện số THÔ, dễ sửa, không bị dấu phẩy nhảy loạn dưới con trỏ.
+ *   - Rời ô    → hiện bản đã định dạng ("74,610,000 VNĐ").
+ *
+ * GIÁ TRỊ LƯU XUỐNG vẫn là KIỂU SỐ như trước, không phải chuỗi — điều kiện hiển
+ * thị field và công thức đều so sánh sau khi ép kiểu số (xem ProposalField.
+ * condition ở lib/types.ts), lưu thành chuỗi là vỡ chỗ đó. Chỉ khi người dùng
+ * gõ thứ không phải số thì mới giữ nguyên chuỗi họ gõ, để phần kiểm tra lúc gửi
+ * báo lỗi và họ thấy được mình đã gõ gì.
+ */
+function NumericFieldInput({
+  dataType,
+  value,
+  onChange,
+}: {
+  dataType: FieldDataType;
+  value: unknown;
+  onChange: (v: unknown) => void;
+}) {
+  const columnType = numericTypeForFieldDataType(dataType) ?? "decimal";
+  const [draft, setDraft] = useState<string | null>(null);
+  const stored = value === null || value === undefined ? "" : String(value);
+  const shown = draft ?? formatCellForDisplay(stored, columnType);
+
+  const commit = () => {
+    const raw = parseCellToRaw(draft ?? "", columnType);
+    setDraft(null);
+    if (raw === "") {
+      onChange("");
+      return;
+    }
+    onChange(isValidCellValue(raw, columnType) ? Number(raw) : raw);
+  };
+
+  return (
+    <input
+      type="text"
+      inputMode={columnType === "int" ? "numeric" : "decimal"}
+      className={inputClass}
+      value={shown}
+      onFocus={() => setDraft(stored)}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+    />
+  );
+}
+
 function TableCellInput({
   value,
   columnType,

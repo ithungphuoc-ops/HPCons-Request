@@ -1,6 +1,10 @@
 import { COMPANY_NAME } from "@/lib/constants";
 import { resolveRequestTitle } from "@/lib/request-title";
-import { deserializeTableRows } from "@/lib/table-field";
+import {
+  deserializeTableRows,
+  formatCellForDisplay,
+  numericTypeForFieldDataType,
+} from "./table-field";
 import type {
   ApproverStepDef,
   ProposalField,
@@ -113,6 +117,14 @@ function formatFieldValueForPrint(field: ProposalField, value: unknown): string 
   }
   if (field.dataType === "user_select" && typeof value === "object") {
     return (value as { name?: string }).name ?? "";
+  }
+  // Trường số: định dạng GIỐNG HỆT trên màn hình (Sếp chốt 14/09/2026) — mẫu
+  // in ra Word cầm đi ký, để số trần "74610000" thì người ký phải tự đếm chữ
+  // số. Dùng chung numericTypeForFieldDataType + formatCellForDisplay với
+  // trang chi tiết nên hai nơi không thể lệch nhau.
+  const numericType = numericTypeForFieldDataType(field.dataType);
+  if (numericType) {
+    return formatCellForDisplay(String(value), numericType);
   }
   return String(value);
 }

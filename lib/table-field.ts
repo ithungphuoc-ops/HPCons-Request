@@ -1,4 +1,4 @@
-import type { TableColumnType } from "@/lib/types";
+import type { FieldDataType, TableColumnType } from "@/lib/types";
 
 /**
  * Firestore không cho phép một mảng chứa trực tiếp mảng khác bên trong
@@ -87,6 +87,33 @@ export const TABLE_COLUMN_TYPE_LABELS: Record<TableColumnType, string> = {
 };
 
 export const TABLE_COLUMN_TYPES = Object.keys(TABLE_COLUMN_TYPE_LABELS) as TableColumnType[];
+
+/**
+ * Kiểu CỘT tương ứng với kiểu TRƯỜNG đứng riêng — `null` nghĩa là trường đó
+ * không phải trường số.
+ *
+ * Lý do có hàm này (Sếp hỏi 14/09/2026): 13/09 mới chỉ làm định dạng tiền tệ
+ * cho CỘT TRONG BẢNG. Trường "Tiền tệ" đứng riêng thì vẫn dùng chung nhánh với
+ * "Số thập phân" — chỉ là một ô nhập số trơn, hiện ra màn hình là `74610000`
+ * không dấu phẩy không VNĐ. Tức là chọn "Tiền tệ" hay "Số thập phân" cho ra
+ * kết quả y hệt nhau, cái nhãn đó chưa có tác dụng gì.
+ *
+ * Thay vì viết bộ định dạng thứ hai, nối thẳng vào bộ đã có của cột bảng để
+ * hai nơi KHÔNG BAO GIỜ lệch nhau: cùng dấu phẩy ngăn hàng nghìn, cùng dấu
+ * chấm thập phân, cùng đuôi VNĐ.
+ */
+export function numericTypeForFieldDataType(dataType: FieldDataType): TableColumnType | null {
+  switch (dataType) {
+    case "currency":
+      return "money";
+    case "integer":
+      return "int";
+    case "decimal":
+      return "decimal";
+    default:
+      return null;
+  }
+}
 
 export function isNumericColumnType(type: TableColumnType): boolean {
   return type !== "text";
