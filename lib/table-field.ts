@@ -1,4 +1,4 @@
-import type { TableColumnType } from "@/lib/types";
+import type { FieldDataType, TableColumnType } from "@/lib/types";
 
 /**
  * Firestore không cho phép một mảng chứa trực tiếp mảng khác bên trong
@@ -88,6 +88,33 @@ export const TABLE_COLUMN_TYPE_LABELS: Record<TableColumnType, string> = {
 
 export const TABLE_COLUMN_TYPES = Object.keys(TABLE_COLUMN_TYPE_LABELS) as TableColumnType[];
 
+/**
+ * Kiểu CỘT tương ứng với kiểu TRƯỜNG đứng riêng — `null` nghĩa là trường đó
+ * không phải trường số.
+ *
+ * Lý do có hàm này (Sếp hỏi 14/09/2026): 13/09 mới chỉ làm định dạng tiền tệ
+ * cho CỘT TRONG BẢNG. Trường "Tiền tệ" đứng riêng thì vẫn dùng chung nhánh với
+ * "Số thập phân" — chỉ là một ô nhập số trơn, hiện ra màn hình là `74610000`
+ * không dấu phẩy không VNĐ. Tức là chọn "Tiền tệ" hay "Số thập phân" cho ra
+ * kết quả y hệt nhau, cái nhãn đó chưa có tác dụng gì.
+ *
+ * Thay vì viết bộ định dạng thứ hai, nối thẳng vào bộ đã có của cột bảng để
+ * hai nơi KHÔNG BAO GIỜ lệch nhau: cùng dấu phẩy ngăn hàng nghìn, cùng dấu
+ * chấm thập phân, cùng đuôi VNĐ.
+ */
+export function numericTypeForFieldDataType(dataType: FieldDataType): TableColumnType | null {
+  switch (dataType) {
+    case "currency":
+      return "money";
+    case "integer":
+      return "int";
+    case "decimal":
+      return "decimal";
+    default:
+      return null;
+  }
+}
+
 export function isNumericColumnType(type: TableColumnType): boolean {
   return type !== "text";
 }
@@ -130,6 +157,30 @@ export function parseCellToRaw(input: string, type: TableColumnType): string {
 }
 
 /** Ô rỗng là hợp lệ ở đây — "bắt buộc" là luật riêng (findInvalidTableRows). */
+/**
+ * Chuẩn hoá giá trị TRƯỚC KHI LƯU, để "số lưu xuống" luôn khớp "số hiện ra".
+ *
+ * Chỉ có tác dụng với kiểu tiền tệ (CodeRabbit bắt được trên PR #26,
+ * 14/09/2026). Đồng Việt Nam không có đơn vị nhỏ hơn nên khi hiển thị,
+ * `formatCellForDisplay` làm tròn về số nguyên. Nhưng phần kiểm tra lại CHẤP
+ * NHẬN "1234.5", nên trước đây giá trị đó được lưu nguyên: màn hình và bản in
+ * hiện "1,235 VNĐ" trong khi điều kiện hiển thị field, công thức và dòng tổng
+ * cộng vẫn tính trên 1234.5. Hai con số cho cùng một ô — kiểu sai lệch rất khó
+ * lần ra vì nhìn vào đâu cũng thấy hợp lý.
+ *
+ * Làm tròn ngay lúc lưu chứ không từ chối: người dùng dán số từ Excel có phần
+ * lẻ là chuyện thường, và vì ô nhập hiện bản đã định dạng ngay khi rời ô nên
+ * họ THẤY con số đã làm tròn — không có gì bị đổi lén.
+ */
+export function normalizeRawForStorage(raw: string, type: TableColumnType): string {
+  if (type !== "money") return raw;
+  const value = String(raw ?? "").trim();
+  if (value === "") return value;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return value;
+  return String(Math.round(parsed));
+}
+
 export function isValidCellValue(raw: string, type: TableColumnType): boolean {
   if (!isNumericColumnType(type)) return true;
   const value = raw.trim();

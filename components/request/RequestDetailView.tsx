@@ -63,6 +63,7 @@ import {
   deserializeTableRows,
   formatCellForDisplay,
   isNumericColumnType,
+  numericTypeForFieldDataType,
   resolveTableColumnTypes,
   sumColumn,
 } from "@/lib/table-field";
@@ -117,6 +118,13 @@ function formatValue(value: unknown): string {
  * JS hiểu là mốc UTC, đổi qua giờ địa phương ở múi giờ âm sẽ LÙI 1 ngày.
  */
 function formatFieldValue(value: unknown, dataType?: FieldDataType): string {
+  // Trường số (Số nguyên / Số thập phân / Tiền tệ): dùng CHUNG bộ định dạng
+  // với cột bảng, xem numericTypeForFieldDataType() ở lib/table-field.ts.
+  const numericType = dataType ? numericTypeForFieldDataType(dataType) : null;
+  if (numericType) {
+    if (value === undefined || value === null || value === "") return "—";
+    return formatCellForDisplay(String(value), numericType) || "—";
+  }
   if (dataType === "date" || dataType === "datetime") {
     if (value === undefined || value === null || value === "") return "—";
     const matched = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/.exec(String(value).trim());
