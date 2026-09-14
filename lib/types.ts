@@ -361,11 +361,20 @@ export interface ProposalGroup {
    * qua (chỉ điền thông tin hệ thống) — mặc định true (bắt buộc), giữ đúng
    * hành vi hiện tại khi field này chưa được đặt. */
   requiresSubmissionForm?: boolean;
-  /** Bật SLA riêng cho từng bước duyệt (độc lập SLA chung slaHours) — chưa áp
-   * dụng logic tính hạn riêng trong change này, chỉ lưu cấu hình. */
+  /** Bật SLA riêng cho từng bước duyệt (độc lập SLA chung slaHours).
+   *
+   * ĐÃ ÁP DỤNG THẬT (đừng tin chú thích cũ nói "chỉ lưu cấu hình" — chú thích
+   * đó viết lúc mới thêm field và đã lỗi thời): `resolveInitialSlaHours()` lấy
+   * SLA của bước đầu, `recomputeDeadlineForNextStep()` tính lại `deadlineAt`
+   * mỗi khi đề xuất chuyển sang bước kế — mỗi bước có đồng hồ riêng tính từ
+   * lúc TỚI LƯỢT, không cộng dồn từ lúc gửi. Cả hai ở lib/server/requests.ts. */
   approverSlaEnabled?: boolean;
   /** Tính SLA theo lịch làm việc (bỏ giờ ngoài hành chính/ngày nghỉ) thay vì
-   * giờ đồng hồ liên tục — chưa áp dụng logic tính trong change này. */
+   * giờ đồng hồ liên tục.
+   *
+   * ĐÃ ÁP DỤNG THẬT (chú thích cũ nói "chưa áp dụng" đã lỗi thời):
+   * `computeDeadline()` nhận cờ này, phần cộng dồn giờ làm việc ở
+   * lib/business-hours.ts. */
   slaByWorkCalendar?: boolean;
   /** Bắt buộc người duyệt nhập ghi chú khi thực hiện hành động tương ứng. */
   requireDecisionNote?: {
