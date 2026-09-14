@@ -2,6 +2,8 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
+import { Trash2 } from "lucide-react";
+import Modal from "@/components/shared/Modal";
 import TagUserInput from "@/components/shared/TagUserInput";
 import {
   cancelButtonClass,
@@ -33,6 +35,8 @@ function DirectRequestForm() {
   const [submitting, setSubmitting] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
   const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null);
+  const [deletingDraft, setDeletingDraft] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
   useEffect(() => {
     if (!draftId) return;
@@ -56,6 +60,45 @@ function DirectRequestForm() {
     followers,
     isDraft,
   });
+
+  /**
+   * Xoá bản nháp "đề xuất trực tiếp" (groupId = null).
+   *
+   * Bản sao có chủ ý của `deleteDraft` ở trang soạn theo nhóm: 2 trang này là
+   * 2 form hoàn toàn khác nhau (trang kia dựng field động theo nhóm, trang này
+   * chỉ có tiêu đề + mô tả), chỉ trùng đúng đoạn xoá này. Nếu sau có thêm chỗ
+   * thứ ba thì hãy tách thành hook dùng chung.
+   */
+  const deleteDraft = async () => {
+    if (!draftId || deletingDraft) return;
+    setConfirmDeleteOpen(false);
+    setDeletingDraft(true);
+    setError(null);
+    try {
+      // Đọc lại trạng thái thật trước khi xoá — chống trường hợp mở 2 tab, tab
+      // kia đã bấm gửi (xem chú thích đầy đủ ở trang soạn theo nhóm).
+      const check = await fetch(`/api/requests/${draftId}`);
+      if (check.ok) {
+        const fresh = (await check.json()) as { request: RequestInstance };
+        if (fresh.request.status !== "draft") {
+          setError(
+            "Đề xuất này không còn là bản nháp (có thể đã được gửi ở cửa sổ khác) — tải lại trang để xem trạng thái mới.",
+          );
+          setDeletingDraft(false);
+          return;
+        }
+      }
+      const res = await fetch(`/api/requests/${draftId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}) as { error?: string });
+        throw new Error(body.error ?? "Không thể xoá bản nháp.");
+      }
+      router.replace("/request/list?scope=mine");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Có lỗi xảy ra.");
+      setDeletingDraft(false);
+    }
+  };
 
   const saveDraft = async () => {
     setSavingDraft(true);
@@ -192,14 +235,62 @@ function DirectRequestForm() {
             Đã lưu nháp lúc {new Date(draftSavedAt).toLocaleTimeString("vi-VN")}
           </span>
         )}
+        {/* Nút này CHỈ quay lại trang trước, KHÔNG đụng gì tới dữ liệu — xem
+            chú thích cùng nội dung ở trang soạn theo nhóm. */}
         <button
           type="button"
           onClick={() => router.back()}
           className="text-[14px] text-gray-500 hover:underline"
         >
-          Hủy bỏ
+          {loadedStatus !== null ? "Quay lại" : "Hủy bỏ"}
         </button>
+        {draftId && loadedStatus === "draft" && (
+          <button
+            type="button"
+            onClick={() => setConfirmDeleteOpen(true)}
+            disabled={submitting || savingDraft || deletingDraft}
+            className="ml-auto flex items-center gap-1.5 text-[14px] font-medium text-[var(--color-danger-red)] hover:underline disabled:opacity-60"
+          >
+            <Trash2 size={15} />
+            {deletingDraft ? "Đang xoá..." : "Xoá bản nháp"}
+          </button>
+        )}
       </div>
+
+      {confirmDeleteOpen && (
+        <Modal
+          title="Xoá bản nháp"
+          width={440}
+          onClose={() => setConfirmDeleteOpen(false)}
+          footer={
+            <>
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteOpen(false)}
+                className={cancelButtonClass}
+              >
+                Giữ lại bản nháp
+              </button>
+              <button
+                type="button"
+                onClick={deleteDraft}
+                disabled={deletingDraft}
+                className="flex h-[38px] flex-1 items-center justify-center rounded bg-[var(--color-danger-red)] text-[14px] font-semibold text-white hover:brightness-95 disabled:opacity-60"
+              >
+                Xoá bản nháp
+              </button>
+            </>
+          }
+        >
+          <p className="text-[14px] leading-relaxed text-gray-700">
+            Bản nháp này sẽ được gỡ khỏi danh sách của bạn. Đề xuất{" "}
+            <strong>chưa từng được gửi đi</strong> nên không ai nhận được thông báo gì.
+          </p>
+          <p className="mt-2 text-[13px] leading-relaxed text-gray-500">
+            Dữ liệu vẫn được giữ lại, Owner/Admin khôi phục được nếu bấm nhầm.
+          </p>
+        </Modal>
+      )}
     </div>
   );
 }

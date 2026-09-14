@@ -72,6 +72,20 @@ export async function PATCH(
     if (!found) {
       return NextResponse.json({ error: "Không tìm thấy đề xuất." }, { status: 404 });
     }
+    // 🔴 CHỐT CHẶN "ĐỀ XUẤT MA" (agent review bắt được 14/09/2026):
+    // `loadRequest` KHÔNG lọc `deletedAt`, nên trước đây một bản nháp đã xoá
+    // vẫn PATCH được. Kịch bản thật: xoá nháp xong bấm Back về đúng URL cũ còn
+    // trong lịch sử trình duyệt → form nạp lại bình thường (status vẫn
+    // "draft") → bấm "Gửi đề xuất" → doc thành status "pending" NHƯNG
+    // `deletedAt` vẫn còn. Mọi scope ở app/api/requests/route.ts đều
+    // `.filter(r => !r.deletedAt)`, nên KHÔNG AI nhìn thấy đề xuất đó — kể cả
+    // người duyệt — trong khi người gửi đinh ninh là đã gửi rồi.
+    if (found.deletedAt) {
+      return NextResponse.json(
+        { error: "Đề xuất này đã bị xoá — không sửa hay gửi lại được. Liên hệ Owner/Admin nếu cần khôi phục." },
+        { status: 409 },
+      );
+    }
     // "pending" (15/08/2026, Sếp chốt): cho sửa cả khi đang chờ duyệt, không
     // chỉ nháp/bị trả lại — nhưng KHÔNG có khái niệm "lưu nháp" nữa ở trạng
     // thái này (chỉ có "sửa & gửi lại", luôn reset duyệt — xem nhánh dưới).

@@ -135,6 +135,12 @@ export default function SubmitRequestPage() {
     fetch(`/api/requests/${draftId}`)
       .then((res) => (res.ok ? res.json() : Promise.reject(new Error("fetch failed"))))
       .then((data: { request: RequestInstance }) => {
+        // Đã bị xoá thì KHÔNG nạp form — để nạp thì người dùng sửa rồi bấm gửi,
+        // máy chủ chặn (409) nhưng họ phải gõ lại từ đầu mới biết. Báo ngay.
+        if (data.request.deletedAt) {
+          setSubmitError("Bản nháp này đã bị xoá. Liên hệ Owner/Admin nếu cần khôi phục.");
+          return;
+        }
         setValues(data.request.values ?? {});
         setFollowers(data.request.followers ?? []);
         setLoadedStatus(data.request.status);
@@ -333,16 +339,31 @@ export default function SubmitRequestPage() {
     setDeletingDraft(true);
     setSubmitError(null);
     try {
+      // Đọc lại trạng thái THẬT trước khi xoá: mở cùng bản nháp ở 2 tab, tab
+      // kia bấm gửi thì tab này vẫn giữ loadedStatus "draft" từ lúc tải — xoá
+      // đi sẽ xoá nhầm một đề xuất VỪA GỬI ĐI, trong khi hộp xác nhận vừa hứa
+      // "chưa từng được gửi đi nên không ai nhận thông báo".
+      const check = await fetch(`/api/requests/${draftId}`);
+      if (check.ok) {
+        const fresh = (await check.json()) as { request: RequestInstance };
+        if (fresh.request.status !== "draft") {
+          setSubmitError(
+            "Đề xuất này không còn là bản nháp (có thể đã được gửi ở cửa sổ khác) — tải lại trang để xem trạng thái mới.",
+          );
+          setDeletingDraft(false);
+          return;
+        }
+      }
       const res = await fetch(`/api/requests/${draftId}`, { method: "DELETE" });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}) as { error?: string });
         throw new Error(body.error ?? "Không thể xoá bản nháp.");
       }
-      // Về thẳng danh sách chứ KHÔNG router.back(): trang trước rất có thể là
-      // chính danh sách đang hiển thị bản nháp vừa xoá (từ bộ nhớ đệm), quay
-      // lui sẽ thấy nó còn nguyên và tưởng xoá hỏng.
+      // `replace` chứ KHÔNG `push`/`back`: nó GỠ URL của bản nháp vừa xoá khỏi
+      // lịch sử trình duyệt. Nếu để lại, bấm Back là mở lại đúng trang soạn đó
+      // — và trước khi có chốt chặn ở PATCH, bấm gửi sẽ tạo ra "đề xuất ma"
+      // (status pending nhưng deletedAt còn, không ai thấy).
       router.replace("/request/list?scope=mine");
-      router.refresh();
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Có lỗi xảy ra.");
       setDeletingDraft(false);
@@ -855,7 +876,9 @@ export default function SubmitRequestPage() {
             Đề xuất này đang chờ duyệt — sửa và gửi lại sẽ xoá mọi quyết định duyệt đã có, duyệt lại từ đầu.
           </p>
         )}
-        <div className="mt-6 flex items-center gap-3 border-t border-gray-100 pt-5">
+        {/* flex-wrap: hàng này có tới 5 phần tử (Gửi / Lưu nháp / mốc giờ /
+            Quay lại / Xoá bản nháp) — trên điện thoại không đủ chỗ một hàng. */}
+        <div className="mt-6 flex flex-wrap items-center gap-3 border-t border-gray-100 pt-5">
           <button
             type="button"
             onClick={handleSubmit}
@@ -879,17 +902,17 @@ export default function SubmitRequestPage() {
               Đã lưu nháp lúc {new Date(draftSavedAt).toLocaleTimeString("vi-VN")}
             </span>
           )}
-          {/* "Hủy bỏ" CHỈ quay lại trang trước, KHÔNG đụng gì tới dữ liệu.
-              Khi đang sửa một bản nháp đã lưu thì chữ đó nói dối — nháp vẫn
-              nằm nguyên đó — nên đổi thành "Quay lại" và tách hẳn việc xoá ra
-              một nút riêng. Lúc soạn mới (chưa lưu nháp nào) thì "Hủy bỏ" vẫn
-              đúng vì rời trang là mất phần vừa gõ. */}
+          {/* Nút này CHỈ quay lại trang trước, KHÔNG đụng gì tới dữ liệu. Chữ
+              "Hủy bỏ" vì vậy chỉ đúng khi đang soạn mới (rời trang là mất phần
+              vừa gõ). Còn khi đang sửa một đề xuất ĐÃ nằm trên máy chủ — nháp,
+              bị trả lại, hay đang chờ duyệt — thì nó không huỷ gì cả, nên đổi
+              thành "Quay lại". Việc xoá tách hẳn ra nút riêng bên phải. */}
           <button
             type="button"
             onClick={() => router.back()}
             className="text-[14px] text-gray-500 hover:underline"
           >
-            {draftId && loadedStatus === "draft" ? "Quay lại" : "Hủy bỏ"}
+            {loadedStatus !== null ? "Quay lại" : "Hủy bỏ"}
           </button>
           {draftId && loadedStatus === "draft" && (
             <button
@@ -921,6 +944,7 @@ export default function SubmitRequestPage() {
                 <button
                   type="button"
                   onClick={deleteDraft}
+                  disabled={deletingDraft}
                   className="flex h-[38px] flex-1 items-center justify-center rounded bg-[var(--color-danger-red)] text-[14px] font-semibold text-white hover:brightness-95 disabled:opacity-60"
                 >
                   Xoá bản nháp
