@@ -1027,6 +1027,19 @@ export default function RequestDetailView({
             {request.approversSnapshot.map((approver, index) => {
               const state = request.approvers.find((a) => a.id === approver.id);
               const stepMeta = request.approverStepMeta?.[index];
+              // Ai ĐANG tới lượt — trước đây mọi người còn "pending" đều hiện
+              // chung một chữ "Chưa xử lý", nhìn vào không biết đề xuất đang
+              // tắc ở ai. Dùng lại canApproverAct (đúng hàm quyết định quyền
+              // thao tác), nên nhãn hiển thị không thể lệch với thực tế.
+              const isCurrentTurn =
+                request.status === "pending" &&
+                canApproverAct(request.approvalFlow, request.approvers, approver.id);
+              // `deadlineAt` đã LÀ hạn của riêng bước đang chờ — server tính
+              // lại mỗi lần chuyển bước (recomputeDeadlineForNextStep), nên
+              // gắn đồng hồ này vào đúng người đang tới lượt là chính xác.
+              const showCountdown = isCurrentTurn && !!request.deadlineAt;
+              const lateForThisStep =
+                showCountdown && new Date(request.deadlineAt!).getTime() < now;
               const StatusIcon =
                 state?.decision === "approved"
                   ? CheckCircle2
@@ -1034,7 +1047,12 @@ export default function RequestDetailView({
                     ? XCircle
                     : Clock;
               return (
-                <div key={approver.id} className="flex items-center gap-2 text-[13px]">
+                <div
+                  key={approver.id}
+                  className={`flex items-center gap-2 rounded text-[13px] ${
+                    isCurrentTurn ? "-mx-1.5 bg-blue-50/70 px-1.5 py-1" : ""
+                  }`}
+                >
                   <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-action-blue)] text-[10px] font-semibold text-white">
                     {approver.avatarInitial}
                   </span>
@@ -1045,6 +1063,19 @@ export default function RequestDetailView({
                         {stepMeta?.name}
                         {stepMeta?.name && stepMeta?.slaHours ? " · " : ""}
                         {stepMeta?.slaHours ? `Hạn xử lý: ${stepMeta.slaHours} giờ` : ""}
+                      </span>
+                    )}
+                    {showCountdown && (
+                      <span
+                        className={`block truncate text-[11px] font-semibold ${
+                          lateForThisStep
+                            ? "text-[var(--color-danger-red)]"
+                            : "text-[var(--color-action-blue)]"
+                        }`}
+                      >
+                        {lateForThisStep
+                          ? "Đã quá hạn bước này"
+                          : `Còn ${formatCountdown(request.deadlineAt!, now)}`}
                       </span>
                     )}
                   </span>
@@ -1062,7 +1093,9 @@ export default function RequestDetailView({
                       ? "Đã duyệt"
                       : state?.decision === "rejected"
                         ? "Đã từ chối"
-                        : "Chưa xử lý"}
+                        : isCurrentTurn
+                          ? "Đang chờ"
+                          : "Chưa tới lượt"}
                   </span>
                 </div>
               );
