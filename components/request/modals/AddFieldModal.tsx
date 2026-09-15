@@ -19,13 +19,11 @@ import {
   type FieldDataType,
   type TableColumnType,
 } from "@/lib/types";
+import { DateLeadTimeZonesNote } from "@/components/request/DateLeadTimeZonesNote";
 import {
   DATE_LEAD_TIME_DEFAULT_BLOCK_DAYS,
   DATE_LEAD_TIME_DEFAULT_STANDARD_DAYS,
-  DATE_LEAD_TIME_FOOTNOTE,
   DATE_LEAD_TIME_MAX_DAYS,
-  type DateLeadTimeZoneKind,
-  dateLeadTimeZones,
   resolveDateLeadTimeNumbers,
   validateDateLeadTimeNumbers,
 } from "@/lib/date-lead-time";
@@ -610,48 +608,25 @@ export default function AddFieldModal() {
                     )}
                   </div>
                   {/* Khung tóm tắt TỰ VIẾT LẠI theo 2 số Admin vừa gõ.
-                      Sếp chốt "cách A" 15/09/2026: bày thành TỪNG VÙNG có nhãn thay vì
-                      một đoạn văn liền mạch — đây là bảng để admin LIẾC kiểm mình đặt
-                      đúng chưa, không phải đoạn văn để đọc. Nhóm không bật vùng hỏi gấp
-                      thì tự còn 2 dòng, khỏi phải viết câu giải thích một thứ vắng mặt.
-                      Nội dung từng vùng sinh ở lib/date-lead-time.ts, DÙNG CHUNG với câu
-                      báo lỗi cho người gửi nên hai nơi không thể lệch nhau. */}
-                  <div className="rounded-md bg-amber-50 p-2.5 text-[12px] leading-relaxed text-amber-700">
-                    {(() => {
-                      const b = Number(dateLeadTimeBlockDays);
-                      const st = Number(dateLeadTimeStandardDays);
-                      if (validateDateLeadTimeNumbers({ blockDays: b, standardDays: st })) {
-                        return "Nhập đủ 2 mốc hợp lệ để xem luật sẽ chạy thế nào.";
-                      }
-                      const dauVung: Record<DateLeadTimeZoneKind, { ky: string; nen: string }> = {
-                        blocked: { ky: "✕", nen: "bg-[var(--color-danger-red)]" },
-                        urgent: { ky: "!", nen: "bg-amber-600" },
-                        ok: { ky: "✓", nen: "bg-[var(--color-confirm-green)]" },
-                      };
-                      return (
-                        <>
-                          <div className="flex flex-col gap-1.5">
-                            {dateLeadTimeZones({ blockDays: b, standardDays: st }).map((vung) => (
-                              <div key={vung.kind} className="flex items-start gap-2">
-                                <span
-                                  className={`mt-0.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full text-[12px] font-bold text-white ${dauVung[vung.kind].nen}`}
-                                  aria-hidden
-                                >
-                                  {dauVung[vung.kind].ky}
-                                </span>
-                                <span>
-                                  <b>{vung.label}</b> — {vung.detail}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                          <p className="mt-2 border-t border-dashed border-amber-300 pt-1.5 text-amber-600">
-                            {DATE_LEAD_TIME_FOOTNOTE}
-                          </p>
-                        </>
-                      );
-                    })()}
-                  </div>
+                      DÙNG CHUNG component với chỗ hiện dưới ô ngày trên phiếu gửi
+                      (DateLeadTimeZonesNote) — Sếp yêu cầu 15/09/2026 là ngoài
+                      phiếu đề nghị phải ra ĐÚNG thông báo như trong thiết lập, nên
+                      không được để 2 nơi tự vẽ mỗi nơi một kiểu. */}
+                  {validateDateLeadTimeNumbers({
+                    blockDays: Number(dateLeadTimeBlockDays),
+                    standardDays: Number(dateLeadTimeStandardDays),
+                  }) ? (
+                    <div className="rounded-md bg-amber-50 p-2.5 text-[12px] leading-relaxed text-amber-700">
+                      Nhập đủ 2 mốc hợp lệ để xem luật sẽ chạy thế nào.
+                    </div>
+                  ) : (
+                    <DateLeadTimeZonesNote
+                      rule={{
+                        blockDays: Number(dateLeadTimeBlockDays),
+                        standardDays: Number(dateLeadTimeStandardDays),
+                      }}
+                    />
+                  )}
                 </>
               )}
             </div>

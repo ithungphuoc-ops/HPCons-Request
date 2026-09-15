@@ -3,6 +3,7 @@
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FileDown, Loader2, Paperclip, Plus, Trash2, Upload, X } from "lucide-react";
+import { DateLeadTimeZonesNote } from "@/components/request/DateLeadTimeZonesNote";
 import { useRequestContext } from "@/context/RequestContext";
 import {
   HPCORE_MEMBER_GROUPS_API,
@@ -1011,6 +1012,14 @@ function FieldRow({
    * field (thuộc GROUP). */
   onTableColumnsChange?: (columns: string[]) => void;
 }) {
+  // Ngày đang chọn có rơi vào vùng CHẶN không — suy ra từ chính `value` đang
+  // hiện chứ không nhận qua prop, để không bao giờ lệch với ô ngày bên cạnh.
+  const ngayDangChon =
+    field.dateLeadTimeRule?.enabled && typeof value === "string" ? parseFieldDateOnly(value) : null;
+  const ngayBiChan =
+    ngayDangChon !== null &&
+    classifyDateLeadTimeByDate(ngayDangChon, field.dateLeadTimeRule) === "blocked";
+
   if (field.dataType === "section_title") {
     return (
       <div className="-mx-6 mt-1 border-b border-gray-100 bg-gray-50 px-6 py-2">
@@ -1057,7 +1066,21 @@ function FieldRow({
         {dateLeadTimeFlagged && (
           <p className="mt-1 text-[12px] font-medium text-amber-700">⚠ {DATE_LEAD_TIME_URGENT_NOTE}</p>
         )}
-        {error && <p className="mt-1 text-[12px] text-[var(--color-danger-red)]">{error}</p>}
+        {/* Ngày bị CHẶN → hiện ĐÚNG khối luật như trong thiết lập, không phải
+            một câu rút gọn. Sếp yêu cầu 15/09/2026, nguyên văn: "ngoài phiếu đề
+            nghị sẽ ra thông báo như trong thiết lập" — lần đầu tôi tự rút gọn
+            thành một câu, sai với yêu cầu, Sếp bắt lỗi.
+            Ngày QUÁ KHỨ thì vẫn là câu ngắn: nó không liên quan tới 2 con số cấu
+            hình, kể cả 3 vùng ra là lạc đề.
+            Tính lại trạng thái TẠI ĐÂY từ chính `value` đang hiện, không giữ
+            state riêng, nên không có đường nào lệch với ô ngày bên cạnh. */}
+        {ngayBiChan ? (
+          <div className="mt-1.5">
+            <DateLeadTimeZonesNote rule={field.dateLeadTimeRule} tone="danger" />
+          </div>
+        ) : (
+          error && <p className="mt-1 text-[12px] text-[var(--color-danger-red)]">{error}</p>
+        )}
       </div>
     </div>
   );
