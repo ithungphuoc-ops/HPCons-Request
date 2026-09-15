@@ -52,3 +52,66 @@ describe("Thiếu biến môi trường → không gửi, không throw", () => {
     await expect(sendMail({ to: "a@b.com", subject: "x", html: "<p>x</p>" })).resolves.toBe(false);
   });
 });
+
+describe("nói rõ lý do khi BỎ QUA gửi email", () => {
+  // Vì sao có nhóm test này: 15/09/2026 gửi thử một đề xuất thật trên
+  // production rồi đọc nhật ký máy chủ vẫn KHÔNG biết email có đi hay không —
+  // đường "thiếu cấu hình" trả false mà không để lại một dòng nào. Phải mở hộp
+  // thư người nhận mới biết. Khoá hành vi mới lại bằng test để không ai lỡ tay
+  // đưa sự im lặng đó quay về.
+  //
+  // PHẢI nạp lại module trong từng ca: `cachedTransporter` sống suốt vòng đời
+  // module, nên nếu dùng bản đã import ở đầu tệp thì cảnh báo đã bắn từ ca test
+  // trước, spy gắn sau không bắt được gì.
+  async function napLai() {
+    vi.resetModules();
+    return await import("./mailer");
+  }
+
+  it("thiếu CẢ HAI biến -> cảnh báo nêu đủ tên 2 biến", async () => {
+    delete process.env.GMAIL_USER;
+    delete process.env.GMAIL_APP_PASSWORD;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const m = await napLai();
+
+    const duoc = await m.sendMail({ to: "a@b.com", subject: "x", html: "y" });
+
+    expect(duoc).toBe(false);
+    expect(warn).toHaveBeenCalledTimes(1);
+    const noiDung = String(warn.mock.calls[0][0]);
+    expect(noiDung).toContain("GMAIL_USER");
+    expect(noiDung).toContain("GMAIL_APP_PASSWORD");
+    warn.mockRestore();
+  });
+
+  it("thiếu ĐÚNG MỘT biến -> chỉ nêu đúng biến đang thiếu", async () => {
+    process.env.GMAIL_USER = "app@hpcons.com.vn";
+    delete process.env.GMAIL_APP_PASSWORD;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const m = await napLai();
+
+    await m.sendMail({ to: "a@b.com", subject: "x", html: "y" });
+
+    const noiDung = String(warn.mock.calls[0][0]);
+    expect(noiDung).toContain("GMAIL_APP_PASSWORD");
+    expect(noiDung).not.toContain("GMAIL_USER");
+    warn.mockRestore();
+    delete process.env.GMAIL_USER;
+  });
+
+  it("chỉ cảnh báo MỘT lần dù gửi nhiều email", async () => {
+    // Một đề xuất báo cho nhiều người: log mỗi lần gửi sẽ đẻ ra hàng loạt dòng
+    // giống hệt nhau, lấp mất log thật.
+    delete process.env.GMAIL_USER;
+    delete process.env.GMAIL_APP_PASSWORD;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const m = await napLai();
+
+    await m.sendMail({ to: "a@b.com", subject: "x", html: "y" });
+    await m.sendMail({ to: "c@d.com", subject: "x", html: "y" });
+    await m.sendMail({ to: "e@f.com", subject: "x", html: "y" });
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+  });
+});
