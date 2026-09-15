@@ -973,7 +973,13 @@ export default function RequestDetailView({
               ))}
 
             {canSupplementAfterApproval && (
-              <AdjustmentControl requestId={request.id} onDone={onActed} />
+              <AdjustmentControl
+                requestId={request.id}
+                onDone={(data) => {
+                  setAttachments(data.attachments);
+                  setHistory(data.history);
+                }}
+              />
             )}
 
             {adjustmentEntries.length > 0 && (
@@ -982,8 +988,17 @@ export default function RequestDetailView({
                   <li key={`${h.at}-${i}`} className="text-[14px] text-gray-700">
                     <span className="text-gray-800">{h.note}</span>
                     <span className="ml-1.5 text-[12px] text-amber-600">
-                      🕘 {h.actor} · {new Date(h.at).toLocaleString("vi-VN")}
+                      🕘 {h.actor} · {new Date(h.at).toLocaleString("vi-VN")} · lần {i + 1}
                     </span>
+                    {/* Tệp đi kèm ĐÚNG lần điều chỉnh này (Sếp chốt "cách 1",
+                        15/09/2026) — tệp vẫn nằm trong danh sách "Tài liệu đính
+                        kèm" bên dưới, đây chỉ là chỗ cho biết nó thuộc lần nào. */}
+                    {h.attachmentName && (
+                      <span className="mt-0.5 flex items-center gap-1 text-[12px] text-[var(--color-action-blue)]">
+                        <Paperclip size={11} className="shrink-0" />
+                        {h.attachmentName}
+                      </span>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -1482,34 +1497,56 @@ function TableSupplementControl({
  * ghi đè vào đó là mất dấu "duyệt cái gì / cuối cùng lấy cái gì". Nội dung đi
  * vào `history` kèm tên người và giờ (xem route adjustment).
  */
-function AdjustmentControl({ requestId, onDone }: { requestId: string; onDone: () => void }) {
+function AdjustmentControl({
+  requestId,
+  onDone,
+}: {
+  requestId: string;
+  onDone: (data: { attachments: RequestAttachment[]; history: RequestHistoryEntry[] }) => void;
+}) {
   const [noiDung, setNoiDung] = useState("");
+  const [tep, setTep] = useState<File | null>(null);
   const [dangGui, setDangGui] = useState(false);
   const [loi, setLoi] = useState<string | null>(null);
+  const oTepRef = useRef<HTMLInputElement>(null);
 
   const gui = async () => {
     const text = noiDung.trim();
-    if (!text) {
-      setLoi("Chưa nhập nội dung điều chỉnh.");
+    if (!text && !tep) {
+      setLoi("Nhập nội dung điều chỉnh hoặc đính kèm tệp.");
       return;
     }
     setDangGui(true);
     setLoi(null);
     try {
+      // Tệp lên R2 TRƯỚC, rồi mới gọi route — cùng luồng với nút "Thêm tệp
+      // tin" bên dưới (xem uploadAttachment ở component cha).
+      let attachment: RequestAttachment | undefined;
+      if (tep) {
+        const uploaded = await uploadAttachments([tep]);
+        attachment = uploaded[0];
+        if (!attachment) throw new Error("Không tải được tệp lên.");
+      }
       const res = await fetch(`/api/requests/${requestId}/adjustment`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ noiDung: text }),
+        body: JSON.stringify({ noiDung: text, ...(attachment ? { attachment } : {}) }),
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
         setLoi(body.error ?? "Không gửi được điều chỉnh.");
         return;
       }
+      const data = (await res.json()) as { request: RequestInstance };
       setNoiDung("");
-      onDone();
-    } catch {
-      setLoi("Có lỗi xảy ra, vui lòng thử lại.");
+      setTep(null);
+      if (oTepRef.current) oTepRef.current.value = "";
+      onDone({
+        attachments: data.request.attachments ?? [],
+        history: data.request.history,
+      });
+    } catch (err) {
+      setLoi(err instanceof Error ? err.message : "Có lỗi xảy ra, vui lòng thử lại.");
     } finally {
       setDangGui(false);
     }
@@ -1517,31 +1554,67 @@ function AdjustmentControl({ requestId, onDone }: { requestId: string; onDone: (
 
   return (
     <div className="print-hide">
-      <label htmlFor="o-dieu-chinh" className="mb-1 block text-[12px] font-medium text-gray-600">
-        Nội dung điều chỉnh
-      </label>
-      <div className="flex flex-wrap items-start gap-2">
+      {/* Bố cục Sếp chốt 15/09/2026: giống hệt ô Thảo luận — kẹp tệp bên trái,
+          ô chữ NHIỀU DÒNG ở giữa, nút CÓ CHỮ bên phải.
+          Vì sao không dùng nút mũi tên như Thảo luận: mũi tên hợp với ô chat
+          (ai cũng hiểu là "gửi"), còn đây là hành động ghi vào hồ sơ nên phải
+          nói thẳng đang làm gì.
+          Vì sao bỏ nhãn "Nội dung điều chỉnh": câu hướng dẫn ngay phía trên đã
+          nói rõ rồi, thêm nhãn nữa là ba dòng chữ chồng nhau. */}
+      <div className="flex items-start gap-2">
         <input
-          id="o-dieu-chinh"
-          type="text"
+          ref={oTepRef}
+          type="file"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) setTep(f);
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => oTepRef.current?.click()}
+          disabled={dangGui}
+          title="Đính kèm tệp cho lần điều chỉnh này"
+          aria-label="Đính kèm tệp cho lần điều chỉnh này"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded border border-[var(--color-border)] text-gray-500 hover:border-[var(--color-action-blue)] hover:text-[var(--color-action-blue)] disabled:opacity-50"
+        >
+          <Paperclip size={15} />
+        </button>
+        <textarea
           value={noiDung}
           maxLength={ADJUSTMENT_MAX_LENGTH}
           onChange={(e) => setNoiDung(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !dangGui) gui();
-          }}
-          placeholder="Ví dụ: Thép hộp 40x80 đổi từ 120 cây xuống 90 cây"
-          className="h-9 min-w-[240px] flex-1 rounded border border-[var(--color-border)] px-3 text-[14px] text-gray-800 outline-none focus:border-[var(--color-action-blue)]"
+          rows={2}
+          placeholder="Mô tả điều chỉnh — ví dụ: Thép hộp 40x80 đổi từ 120 cây xuống 90 cây"
+          className="min-w-0 flex-1 rounded border border-[var(--color-border)] px-3 py-2 text-[14px] text-gray-800 outline-none focus:border-[var(--color-action-blue)]"
         />
         <button
           type="button"
           onClick={gui}
           disabled={dangGui}
-          className="flex h-9 shrink-0 items-center rounded bg-[var(--color-action-blue)] px-4 text-[14px] font-medium text-white hover:opacity-90 disabled:opacity-50"
+          className="flex h-9 shrink-0 items-center rounded bg-[var(--color-action-blue)] px-4 text-[14px] font-medium text-white hover:brightness-95 disabled:opacity-50"
         >
-          {dangGui ? "Đang gửi..." : "Gửi điều chỉnh"}
+          {dangGui ? "Đang gửi..." : "Cập nhật điều chỉnh"}
         </button>
       </div>
+      {tep && (
+        <span className="mt-2 inline-flex items-center gap-1.5 rounded border border-[var(--color-border)] bg-blue-50 px-2 py-1 text-[12px] text-gray-700">
+          <Paperclip size={12} className="shrink-0" />
+          {tep.name}
+          <button
+            type="button"
+            onClick={() => {
+              setTep(null);
+              if (oTepRef.current) oTepRef.current.value = "";
+            }}
+            aria-label="Bỏ tệp đã chọn"
+            className="text-gray-400 hover:text-[var(--color-danger-red)]"
+          >
+            <X size={12} />
+          </button>
+        </span>
+      )}
       {loi && <p className="mt-1 text-[12px] text-[var(--color-danger-red)]">{loi}</p>}
     </div>
   );

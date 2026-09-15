@@ -5,10 +5,17 @@ import { canSupplementAfterApproval } from "@/lib/permissions";
 import { loadRequest } from "@/lib/server/requests";
 import { requireSession, ForbiddenError } from "@/lib/session";
 import { ADJUSTMENT_HISTORY_PREFIX, ADJUSTMENT_MAX_LENGTH } from "@/lib/request-history-labels";
-import type { RequestHistoryEntry } from "@/lib/types";
+import { MAX_DIRECT_UPLOAD_FILE_SIZE } from "@/lib/constants";
+import { verifyUploadedAttachment } from "@/lib/server/verify-upload";
+import type { RequestAttachment, RequestHistoryEntry } from "@/lib/types";
+
+export const runtime = "nodejs";
 
 interface AdjustmentBody {
   noiDung?: unknown;
+  /** Tệp đã tải lên R2 TRƯỚC khi gọi route này (qua lib/upload-client.ts),
+   * giống hệt luồng của route attachments. Không bắt buộc. */
+  attachment?: unknown;
 }
 
 /**
@@ -54,9 +61,6 @@ export async function POST(
 
     const body = (await request.json()) as AdjustmentBody;
     const noiDung = typeof body.noiDung === "string" ? body.noiDung.trim() : "";
-    if (!noiDung) {
-      return NextResponse.json({ error: "Chưa nhập nội dung điều chỉnh." }, { status: 400 });
-    }
     // Chặn dài phía MÁY CHỦ chứ không chỉ maxLength của ô nhập: ô nhập chỉ
     // ngăn người gõ tay, ai gọi thẳng API vẫn đẩy được chuỗi vài trăm KB vào
     // history và làm phình mọi lần đọc đề xuất về sau.
@@ -67,17 +71,51 @@ export async function POST(
       );
     }
 
+    // Tệp đi KÈM lần điều chỉnh này (Sếp chốt 15/09/2026, "cách 1"): nó vẫn
+    // vào `attachments` như mọi tài liệu khác, nhưng history ghi thêm tên tệp
+    // nên sau này đọc "đổi 120 xuống 90 cây" là thấy ngay chứng từ đi cùng.
+    const att = body.attachment as Partial<RequestAttachment> | undefined;
+    let attachmentMoi: RequestAttachment | null = null;
+    if (att) {
+      if (typeof att.path !== "string" || !att.path || typeof att.name !== "string" || !att.name) {
+        return NextResponse.json({ error: "Tệp đính kèm không hợp lệ." }, { status: 400 });
+      }
+      // Đo kích thước THẬT trên R2 thay vì tin con số client gửi — cùng lý do
+      // và cùng hàm với route attachments (xem chú thích ở đó).
+      const verified = await verifyUploadedAttachment(
+        att as RequestAttachment,
+        session.uid,
+        MAX_DIRECT_UPLOAD_FILE_SIZE,
+      );
+      if (!verified.ok) {
+        return NextResponse.json({ error: verified.error }, { status: 400 });
+      }
+      attachmentMoi = { name: att.name, path: att.path, size: verified.size };
+    }
+
+    if (!noiDung && !attachmentMoi) {
+      return NextResponse.json({ error: "Chưa nhập nội dung điều chỉnh." }, { status: 400 });
+    }
+
     const nowIso = new Date().toISOString();
     const soLan = found.history.filter((h) => h.action.startsWith(ADJUSTMENT_HISTORY_PREFIX)).length + 1;
     const entry: RequestHistoryEntry = {
       at: nowIso,
       actor: session.name,
       action: `${ADJUSTMENT_HISTORY_PREFIX} (lần ${soLan})`,
-      note: noiDung,
+      note: noiDung || "(chỉ đính tệp)",
+      ...(attachmentMoi ? { attachmentName: attachmentMoi.name } : {}),
     };
     const history = [...found.history, entry];
-    await adminDb.collection("requests").doc(id).update({ history, updatedAt: nowIso });
-    return NextResponse.json({ request: { ...found, history, updatedAt: nowIso } });
+    const attachments = attachmentMoi
+      ? [...(found.attachments ?? []), attachmentMoi]
+      : (found.attachments ?? []);
+
+    await adminDb
+      .collection("requests")
+      .doc(id)
+      .update({ history, attachments, updatedAt: nowIso });
+    return NextResponse.json({ request: { ...found, history, attachments, updatedAt: nowIso } });
   } catch (error) {
     return apiErrorResponse(error);
   }

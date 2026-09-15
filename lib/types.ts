@@ -567,6 +567,12 @@ export interface RequestHistoryEntry {
   /** Người nhận khi action là chuyển tiếp. */
   target?: string;
   note?: string;
+  /** Tên tệp đính kèm CÙNG LÚC với hành động này (hiện chỉ "Điều chỉnh sau
+   * duyệt", 15/09/2026). Tệp vẫn nằm trong `RequestInstance.attachments` như
+   * mọi tài liệu khác — trường này CHỈ để biết nó thuộc lần nào, nhờ đó đọc
+   * "đổi 120 xuống 90 cây" là thấy ngay chứng từ đi kèm. Đề xuất cũ không có
+   * trường này, UI tự bỏ qua. */
+  attachmentName?: string;
 }
 
 /** Giá trị của trường "file" trong values — path là đường dẫn thật trong
