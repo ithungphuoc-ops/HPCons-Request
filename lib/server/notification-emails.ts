@@ -50,7 +50,14 @@ function escapedRequestLabel(request: RequestInstance): string {
 async function sendToUid(uid: string, subject: string, html: string) {
   try {
     const email = await resolveUserEmail(uid);
-    if (!email) return;
+    if (!email) {
+      // Đường bỏ qua thứ hai (sau "thiếu cấu hình SMTP"): người này không có
+      // email trong danh bạ App Tổng. Trước đây `return` im lặng — nhìn log
+      // không tài nào biết vì sao đúng một người không nhận được mail trong
+      // khi những người khác nhận bình thường.
+      console.warn(`[mailer] BỎ QUA gửi email cho uid ${uid}: danh bạ App Tổng không có email.`);
+      return;
+    }
     await sendMail({ to: email, subject, html });
   } catch (error) {
     console.error("Gửi email thông báo cho 1 người thất bại (bỏ qua, không ảnh hưởng luồng chính):", error);

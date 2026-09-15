@@ -21,6 +21,23 @@ function getTransporter() {
   const user = process.env.GMAIL_USER;
   const pass = process.env.GMAIL_APP_PASSWORD;
   if (!user || !pass) {
+    // 🔴 PHẢI NÓI RA, ĐỪNG IM LẶNG (Sếp chốt 15/09/2026).
+    //
+    // Trước đây thiếu cấu hình là lặng lẽ `return null`, `sendMail` lặng lẽ
+    // trả `false`, và KHÔNG một dòng log nào. Hậu quả đo được hôm nay: gửi thử
+    // một đề xuất thật trên production rồi đọc nhật ký máy chủ vẫn KHÔNG biết
+    // email có đi hay không — "không thấy lỗi" không chứng minh được là đã gửi,
+    // vì đường bỏ qua cũng không để lại dấu vết. Phải mở hộp thư người nhận mới
+    // biết, mà cách đó không dùng được khi người nhận không phải mình.
+    //
+    // Chỉ log MỘT lần cho cả tiến trình (nhờ `cachedTransporter`), không log
+    // mỗi lần gửi — một đề xuất báo cho nhiều người sẽ đẻ ra hàng loạt dòng
+    // giống hệt nhau, lấp mất log thật.
+    console.warn(
+      "[mailer] BỎ QUA gửi email: thiếu biến môi trường" +
+        `${user ? "" : " GMAIL_USER"}${pass ? "" : " GMAIL_APP_PASSWORD"}` +
+        " (Vercel → Settings → Environment Variables của project request-app).",
+    );
     cachedTransporter = null;
     return null;
   }
@@ -92,7 +109,10 @@ export async function resolveUserEmail(uid: string): Promise<string | null> {
     const snap = await getHpcoreDb().collection("users").doc(uid).get();
     const email = (snap.data()?.email as string | undefined)?.trim();
     return email || null;
-  } catch {
+  } catch (error) {
+    // Nuốt lỗi thì đúng (không được làm hỏng luồng duyệt), nhưng nuốt IM LẶNG
+    // thì sai — đây là một trong hai đường làm email biến mất không dấu vết.
+    console.error(`[mailer] Không tra được email của uid ${uid}:`, error);
     return null;
   }
 }
