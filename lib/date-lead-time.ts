@@ -131,9 +131,78 @@ export function classifyDateLeadTimeByDate(
   return classifyDateLeadTime(countBusinessDaysBetween(now, target), standardDays, blockDays);
 }
 
-/** Câu chặn đổi theo mốc Admin đặt: chặn ≤ blockDays nghĩa là phải cách ÍT NHẤT blockDays+1 ngày. */
+/**
+ * Ba vùng của luật ngày, sinh ra từ 2 con số Admin đặt.
+ *
+ * ★ MỘT NƠI VIẾT, HAI NƠI DÙNG (Sếp chốt "cách A", 15/09/2026): hộp thiết lập
+ * của Admin và câu báo lỗi cho người gửi PHẢI cùng gốc, không được mỗi nơi
+ * viết một kiểu rồi lệch nhau khi sửa.
+ *
+ * Vì sao trả về MẢNG VÙNG thay vì một câu dài — 4 chỗ hỏng của câu cũ:
+ *   "Chọn ngày cách ngày đề nghị ≤ 2 ngày làm việc: chặn hẳn, không cho gửi.
+ *    Từ 3 ngày làm việc trở lên là hợp lệ — không có khoảng hỏi gấp. Ngày
+ *    trước ngày đề nghị luôn bị chặn, không phụ thuộc 2 số này."
+ *   1. `≤` là ký hiệu toán, không đọc thành lời tiếng Việt được.
+ *   2. "chặn hẳn, không cho gửi" — hai vế cùng một nghĩa, thừa một.
+ *   3. "không có khoảng hỏi gấp" — tả một vùng ĐANG TẮT, người đọc phải hình
+ *      dung ra nó rồi mới xoá đi.
+ *   4. "không phụ thuộc 2 số này" — "2 số" nào, người đọc phải ngước lên tìm.
+ * Tách thành vùng thì nhóm không bật vùng hỏi gấp chỉ còn 2 dòng, KHÔNG phải
+ * viết thêm câu giải thích một thứ vắng mặt.
+ */
+export type DateLeadTimeZoneKind = "blocked" | "urgent" | "ok";
+
+export interface DateLeadTimeZone {
+  kind: DateLeadTimeZoneKind;
+  /** Nhãn ngắn, in đậm ở đầu dòng. */
+  label: string;
+  /** Phần mô tả sau nhãn. */
+  detail: string;
+}
+
+export function dateLeadTimeZones(
+  rule?: { blockDays?: number; standardDays?: number } | null,
+): DateLeadTimeZone[] {
+  const { blockDays, standardDays } = resolveDateLeadTimeNumbers(rule);
+  const minOk = blockDays + 1;
+  const coVungHoiGap = standardDays > minOk;
+
+  const zones: DateLeadTimeZone[] = [
+    {
+      kind: "blocked",
+      label: "Không gửi được",
+      detail: `chọn ngày cách dưới ${minOk} ngày làm việc`,
+    },
+  ];
+  if (coVungHoiGap) {
+    zones.push({
+      kind: "urgent",
+      label: "Gửi được, app hỏi lại",
+      detail: `từ ${minOk} đến ${standardDays - 1} ngày làm việc. Người gửi xác nhận là gấp thì phiếu được ghi chú lại.`,
+    });
+  }
+  zones.push({
+    kind: "ok",
+    label: "Gửi bình thường",
+    detail: `từ ${coVungHoiGap ? standardDays : minOk} ngày làm việc trở lên`,
+  });
+  return zones;
+}
+
+/** Dòng chân của hộp thiết lập — nói rõ 2 điều KHÔNG phụ thuộc 2 con số trên. */
+export const DATE_LEAD_TIME_FOOTNOTE =
+  "Chủ Nhật không tính là ngày làm việc. Ngày đã qua luôn bị chặn, dù đặt hai số này thế nào.";
+
+/**
+ * Câu báo cho NGƯỜI GỬI khi họ chọn ngày quá gấp.
+ *
+ * Cố ý CHỈ lấy ý của vùng đầu tiên, không kể cả 3 vùng như hộp thiết lập:
+ * người gửi đang bị chặn, thứ họ cần là "phải chọn ngày nào", không phải bản
+ * mô tả toàn bộ luật. Con số vẫn sinh từ đúng `blockDays` nên không lệch được
+ * với hộp thiết lập.
+ */
 export function dateLeadTimeBlockedMessage(blockDays: number = DATE_LEAD_TIME_DEFAULT_BLOCK_DAYS): string {
-  return `Ngày cần cấp phải cách ngày đề nghị ÍT NHẤT ${blockDays + 1} ngày làm việc (Không bao gồm Chủ Nhật) — vui lòng chọn ngày khác.`;
+  return `Ngày cần cấp phải cách ngày đề nghị ít nhất ${blockDays + 1} ngày làm việc, không tính Chủ Nhật.`;
 }
 
 /** Riêng cho ngày quá khứ — không nhắc mốc 3 ngày, báo thẳng cho người dùng chọn lại. */
