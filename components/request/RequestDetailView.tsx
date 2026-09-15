@@ -70,6 +70,8 @@ import {
 import { uploadAttachments } from "@/lib/upload-client";
 import { canSupplementAfterApproval as canSupplementAfterApprovalCheck } from "@/lib/permissions";
 import {
+  ADJUSTMENT_HISTORY_PREFIX,
+  ADJUSTMENT_MAX_LENGTH,
   ATTACHMENT_SUPPLEMENT_HISTORY_PREFIX,
   TABLE_SUPPLEMENT_HISTORY_PREFIX,
 } from "@/lib/request-history-labels";
@@ -250,6 +252,9 @@ export default function RequestDetailView({
   const attachmentSupplementEntries = history.filter((h) =>
     h.action.startsWith(ATTACHMENT_SUPPLEMENT_HISTORY_PREFIX),
   );
+  /** Các lần đã ghi điều chỉnh sau duyệt — đọc thẳng từ history, không giữ
+   * state riêng nên tải lại trang vẫn đúng. */
+  const adjustmentEntries = history.filter((h) => h.action.startsWith(ADJUSTMENT_HISTORY_PREFIX));
 
   useEffect(() => {
     if (!request.groupId) return;
@@ -942,23 +947,47 @@ export default function RequestDetailView({
             bảng, xem TableSupplementControl) + đính tài liệu cấp đề xuất. */}
         {request.status === "approved" && (
           <div className="mt-4 rounded-[3px] border border-[var(--color-border)] bg-white p-4">
-            <h2 className="mb-3 flex items-center gap-1.5 text-[14px] font-semibold uppercase tracking-wide text-gray-500">
-              <Paperclip size={14} /> Cập nhật / Bổ sung đề nghị sau duyệt
+            <h2 className="mb-2 flex items-center gap-1.5 text-[14px] font-semibold uppercase tracking-wide text-gray-500">
+              <Paperclip size={14} /> Điều chỉnh đề nghị sau duyệt
             </h2>
+            {/* Câu này là phần QUAN TRỌNG của thay đổi 15/09/2026, không phải
+                chữ trang trí: khối cũ là một bảng trống đủ 5 cột nhìn y hệt
+                bảng lúc tạo đề xuất, nên người dùng hiểu nhầm đây là chỗ khai
+                THÊM MẶT HÀNG MỚI. Nói thẳng dùng khi nào là hết hiểu nhầm. */}
+            <p className="mb-3 rounded-r border-l-[3px] border-[var(--color-action-blue)] bg-gray-50 px-3 py-2 text-[14px] leading-relaxed text-gray-600">
+              Dùng khi phiếu đã duyệt nhưng cần sửa đổi số lượng hoặc quy cách hàng đã đề xuất. Không
+              áp dụng cho việc đề nghị hàng khác.
+            </p>
 
-            {canSupplementAfterApproval &&
-              request.fieldsSnapshot
-                .filter((field) => field.dataType === "table" || field.dataType === "base_table")
-                .map((field) => (
-                  <TableSupplementControl
-                    key={field.id}
-                    requestId={request.id}
-                    field={field}
-                    rows={deserializeTableRows(request.values[field.id])}
-                    history={history}
-                    onSupplemented={onActed}
-                  />
+            {/* Các dòng ĐÃ bổ sung bằng khối bảng cũ (trước 15/09/2026) vẫn
+                hiện nguyên — chỉ bỏ chỗ NHẬP mới, không bỏ dữ liệu đã có. */}
+            {request.fieldsSnapshot
+              .filter((field) => field.dataType === "table" || field.dataType === "base_table")
+              .map((field) => (
+                <TableSupplementControl
+                  key={field.id}
+                  field={field}
+                  rows={deserializeTableRows(request.values[field.id])}
+                  history={history}
+                />
+              ))}
+
+            {canSupplementAfterApproval && (
+              <AdjustmentControl requestId={request.id} onDone={onActed} />
+            )}
+
+            {adjustmentEntries.length > 0 && (
+              <ul className="mt-3 flex flex-col gap-1.5 border-t border-[var(--color-border)] pt-3">
+                {adjustmentEntries.map((h, i) => (
+                  <li key={`${h.at}-${i}`} className="text-[14px] text-gray-700">
+                    <span className="text-gray-800">{h.note}</span>
+                    <span className="ml-1.5 text-[12px] text-amber-600">
+                      🕘 {h.actor} · {new Date(h.at).toLocaleString("vi-VN")}
+                    </span>
+                  </li>
                 ))}
+              </ul>
+            )}
 
             <div className="mt-3 flex items-center justify-between gap-2 border-t border-[var(--color-border)] pt-3">
               <p className="text-[12px] font-medium text-gray-600">Tài liệu đính kèm</p>
@@ -1340,26 +1369,34 @@ function FileValueView({
  * `POST /api/requests/[id]/table-supplement` — KHÔNG sửa/xoá dòng cũ, xem
  * design.md của change add-post-approval-supplement.
  */
+/**
+ * CHỈ HIỂN THỊ những dòng đã bổ sung bằng khối bảng CŨ (trước 15/09/2026).
+ *
+ * 🔴 Trước đây component này vừa hiện vừa CHO NHẬP thêm dòng. Sếp bỏ phần nhập
+ * ngày 15/09/2026 vì bảng trống đủ 5 cột trông y hệt bảng lúc tạo đề xuất,
+ * người dùng tưởng là chỗ khai thêm mặt hàng mới. Nay chỗ nhập là một ô chữ
+ * ngắn (AdjustmentControl) ghi thẳng vào lịch sử.
+ *
+ * GIỮ phần hiển thị: đề xuất cũ đã bổ sung dòng thì dữ liệu đó vẫn nằm trong
+ * `values` và vẫn phải đọc được. Đề xuất chưa từng bổ sung dòng nào thì
+ * component trả `null`, không vẽ bảng rỗng.
+ *
+ * Route `POST /api/requests/[id]/table-supplement` VẪN CÒN và vẫn kiểm quyền
+ * như cũ — chỉ không còn nút nào trong giao diện gọi tới nó.
+ */
 function TableSupplementControl({
-  requestId,
   field,
   rows: allRows,
   history,
-  onSupplemented,
 }: {
-  requestId: string;
   field: ProposalField;
   /** Toàn bộ dòng HIỆN CÓ của field (đã bao gồm mọi lần bổ sung trước) —
    * `deserializeTableRows(request.values[field.id])` truyền từ nơi gọi. */
   rows: string[][];
   history: RequestHistoryEntry[];
-  onSupplemented: () => void;
 }) {
   const columns = field.tableColumns ?? [];
   const emptyRow = () => columns.map(() => "");
-  const [rows, setRows] = useState<string[][]>([emptyRow()]);
-  const [status, setStatus] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
 
   if (columns.length === 0) return null;
 
@@ -1390,46 +1427,15 @@ function TableSupplementControl({
     }
   }
 
-  const updateCell = (rowIndex: number, colIndex: number, value: string) => {
-    setRows((prev) =>
-      prev.map((row, ri) => (ri === rowIndex ? row.map((cell, ci) => (ci === colIndex ? value : cell)) : row)),
-    );
-  };
-  const addRow = () => setRows((prev) => [...prev, emptyRow()]);
-  const removeRow = (rowIndex: number) =>
-    setRows((prev) => (prev.length <= 1 ? prev : prev.filter((_, ri) => ri !== rowIndex)));
-
-  const submit = async () => {
-    const filledRows = rows.filter((row) => row.some((cell) => cell.trim() !== ""));
-    if (filledRows.length === 0) {
-      setStatus("Chưa nhập dòng nào để bổ sung.");
-      return;
-    }
-    setSubmitting(true);
-    setStatus(null);
-    try {
-      const res = await fetch(`/api/requests/${requestId}/table-supplement`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fieldId: field.id, newRows: filledRows, newColumns: [] }),
-      });
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) {
-        setStatus(data.error ?? "Không thể bổ sung dữ liệu.");
-        return;
-      }
-      setRows([emptyRow()]);
-      onSupplemented();
-    } catch {
-      setStatus("Có lỗi xảy ra, vui lòng thử lại.");
-    } finally {
-      setSubmitting(false);
-    }
-  };
+  // Chưa từng bổ sung dòng nào (đề xuất mới, hoặc nhóm không dùng bảng) →
+  // không vẽ gì. Trước đây luôn vẽ vì còn phải chứa ô nhập.
+  if (loggedRows.length === 0) return null;
 
   return (
     <div className="mb-3 border-b border-[var(--color-border)] pb-3">
-      <p className="mb-1.5 text-[12px] font-medium text-gray-600">{field.name}</p>
+      <p className="mb-1.5 text-[12px] font-medium text-gray-600">
+        {field.name} <span className="font-normal text-gray-400">— đã bổ sung trước đây</span>
+      </p>
       <div className="overflow-x-auto rounded border border-[var(--color-border)]">
         <table className="w-full text-[12px]">
           <thead className="bg-gray-50">
@@ -1440,7 +1446,6 @@ function TableSupplementControl({
                   {col}
                 </th>
               ))}
-              <th className="w-8" />
             </tr>
           </thead>
           <tbody>
@@ -1461,57 +1466,83 @@ function TableSupplementControl({
                     )}
                   </td>
                 ))}
-                <td />
-              </tr>
-            ))}
-            {rows.map((row, ri) => (
-              <tr key={`new-${ri}`} className="border-t border-[var(--color-border)]">
-                <td className="px-2 py-1 text-gray-400">{loggedRows.length + ri + 1}</td>
-                {row.map((cell, ci) => (
-                  <td key={ci} className="px-1 py-1">
-                    <input
-                      type="text"
-                      value={cell}
-                      onChange={(e) => updateCell(ri, ci, e.target.value)}
-                      className="w-full rounded px-1.5 py-1 text-[12px] focus:bg-blue-50 focus:outline-none"
-                    />
-                  </td>
-                ))}
-                <td className="px-1 py-1 text-center">
-                  {rows.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => removeRow(ri)}
-                      className="text-gray-300 hover:text-[var(--color-danger-red)]"
-                      title="Xoá dòng"
-                    >
-                      <X size={13} />
-                    </button>
-                  )}
-                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      <div className="mt-1.5 flex items-center gap-3">
+    </div>
+  );
+}
+
+/**
+ * Ô ghi điều chỉnh sau duyệt — Sếp chốt 15/09/2026 thay cho khối bảng cũ.
+ *
+ * Gửi đi KHÔNG sửa `values`: bảng gốc là thứ người duyệt đã đọc và đã đồng ý,
+ * ghi đè vào đó là mất dấu "duyệt cái gì / cuối cùng lấy cái gì". Nội dung đi
+ * vào `history` kèm tên người và giờ (xem route adjustment).
+ */
+function AdjustmentControl({ requestId, onDone }: { requestId: string; onDone: () => void }) {
+  const [noiDung, setNoiDung] = useState("");
+  const [dangGui, setDangGui] = useState(false);
+  const [loi, setLoi] = useState<string | null>(null);
+
+  const gui = async () => {
+    const text = noiDung.trim();
+    if (!text) {
+      setLoi("Chưa nhập nội dung điều chỉnh.");
+      return;
+    }
+    setDangGui(true);
+    setLoi(null);
+    try {
+      const res = await fetch(`/api/requests/${requestId}/adjustment`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ noiDung: text }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setLoi(body.error ?? "Không gửi được điều chỉnh.");
+        return;
+      }
+      setNoiDung("");
+      onDone();
+    } catch {
+      setLoi("Có lỗi xảy ra, vui lòng thử lại.");
+    } finally {
+      setDangGui(false);
+    }
+  };
+
+  return (
+    <div className="print-hide">
+      <label htmlFor="o-dieu-chinh" className="mb-1 block text-[12px] font-medium text-gray-600">
+        Nội dung điều chỉnh
+      </label>
+      <div className="flex flex-wrap items-start gap-2">
+        <input
+          id="o-dieu-chinh"
+          type="text"
+          value={noiDung}
+          maxLength={ADJUSTMENT_MAX_LENGTH}
+          onChange={(e) => setNoiDung(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !dangGui) gui();
+          }}
+          placeholder="Ví dụ: Thép hộp 40x80 đổi từ 120 cây xuống 90 cây"
+          className="h-9 min-w-[240px] flex-1 rounded border border-[var(--color-border)] px-3 text-[14px] text-gray-800 outline-none focus:border-[var(--color-action-blue)]"
+        />
         <button
           type="button"
-          onClick={addRow}
-          className="print-hide flex items-center gap-1 text-[12px] font-medium text-[var(--color-action-blue)] hover:underline"
+          onClick={gui}
+          disabled={dangGui}
+          className="flex h-9 shrink-0 items-center rounded bg-[var(--color-action-blue)] px-4 text-[14px] font-medium text-white hover:opacity-90 disabled:opacity-50"
         >
-          <Plus size={13} /> Thêm dòng
+          {dangGui ? "Đang gửi..." : "Gửi điều chỉnh"}
         </button>
-        <button
-          type="button"
-          onClick={submit}
-          disabled={submitting}
-          className="flex h-7 items-center gap-1 rounded bg-[var(--color-action-blue)] px-3 text-[12px] font-medium text-white hover:opacity-90 disabled:opacity-50"
-        >
-          {submitting ? "Đang gửi..." : "Gửi cập nhật"}
-        </button>
-        {status && <span className="text-[12px] text-gray-500">{status}</span>}
       </div>
+      {loi && <p className="mt-1 text-[12px] text-[var(--color-danger-red)]">{loi}</p>}
     </div>
   );
 }

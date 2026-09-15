@@ -3,7 +3,9 @@ import {
   classifyDateLeadTime,
   classifyDateLeadTimeByDate,
   countBusinessDaysBetween,
+  DATE_LEAD_TIME_FOOTNOTE,
   dateLeadTimeBlockedMessage,
+  dateLeadTimeZones,
   parseFieldDateOnly,
   resolveDateLeadTimeNumbers,
   validateDateLeadTimeNumbers,
@@ -149,11 +151,73 @@ describe("validateDateLeadTimeNumbers", () => {
   });
 });
 
-describe("dateLeadTimeBlockedMessage", () => {
-  it("nói ÍT NHẤT blockDays + 1 ngày", () => {
-    expect(dateLeadTimeBlockedMessage(2)).toContain("ÍT NHẤT 3 ngày làm việc");
-    expect(dateLeadTimeBlockedMessage(0)).toContain("ÍT NHẤT 1 ngày làm việc");
-    expect(dateLeadTimeBlockedMessage()).toContain("ÍT NHẤT 3 ngày làm việc");
+describe("dateLeadTimeBlockedMessage — câu cho NGƯỜI GỬI", () => {
+  it("nói đúng số ngày tối thiểu = blockDays + 1", () => {
+    expect(dateLeadTimeBlockedMessage(2)).toContain("ít nhất 3 ngày làm việc");
+    expect(dateLeadTimeBlockedMessage(0)).toContain("ít nhất 1 ngày làm việc");
+    expect(dateLeadTimeBlockedMessage()).toContain("ít nhất 3 ngày làm việc");
+  });
+
+  it("chỉ nói việc người gửi phải làm, KHÔNG kể cả 3 vùng như hộp thiết lập", () => {
+    // Người gửi đang bị chặn — thứ họ cần là "phải chọn ngày nào", không phải
+    // bản mô tả toàn bộ luật. Sếp chốt 15/09/2026.
+    const cau = dateLeadTimeBlockedMessage(3);
+    expect(cau).not.toContain("hỏi lại");
+    expect(cau).not.toContain("Gửi bình thường");
+    expect(cau.length).toBeLessThan(120);
+  });
+
+  it("không dùng ký hiệu toán", () => {
+    // "≤" không đọc thành lời tiếng Việt được — một trong 4 chỗ hỏng của câu cũ.
+    expect(dateLeadTimeBlockedMessage(5)).not.toContain("≤");
+  });
+});
+
+describe("dateLeadTimeZones — cách A, hộp thiết lập của Admin", () => {
+  it("không có vùng hỏi gấp thì CHỈ 2 vùng", () => {
+    // Điểm chính của cách A: nhóm không bật vùng giữa thì khỏi phải viết thêm
+    // câu "không có khoảng hỏi gấp" để giải thích một thứ vắng mặt.
+    const z = dateLeadTimeZones({ blockDays: 2, standardDays: 3 });
+    expect(z.map((x) => x.kind)).toEqual(["blocked", "ok"]);
+    expect(z[0].detail).toContain("dưới 3 ngày làm việc");
+    expect(z[1].detail).toContain("từ 3 ngày làm việc trở lên");
+  });
+
+  it("có vùng hỏi gấp thì đủ 3 vùng, các mốc nối liền nhau không hở", () => {
+    const z = dateLeadTimeZones({ blockDays: 3, standardDays: 7 });
+    expect(z.map((x) => x.kind)).toEqual(["blocked", "urgent", "ok"]);
+    expect(z[0].detail).toContain("dưới 4 ngày");
+    expect(z[1].detail).toContain("từ 4 đến 6 ngày");
+    expect(z[2].detail).toContain("từ 7 ngày");
+  });
+
+  it("thiếu cấu hình thì rơi về 2 số mặc định, không vỡ", () => {
+    expect(dateLeadTimeZones()).toEqual(dateLeadTimeZones(undefined));
+    expect(dateLeadTimeZones(null).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("mốc chặn 0 = chỉ cấm ngày hôm nay trở về trước", () => {
+    const z = dateLeadTimeZones({ blockDays: 0, standardDays: 1 });
+    expect(z).toHaveLength(2);
+    expect(z[0].detail).toContain("dưới 1 ngày làm việc");
+  });
+
+  it("MỘT GỐC cho cả 2 nơi: số trong câu người gửi khớp vùng chặn của Admin", () => {
+    // Đây chính là điều Sếp yêu cầu ở việc 2 — hộp thiết lập và câu báo lỗi
+    // không được lệch nhau.
+    for (const blockDays of [0, 1, 2, 5, 9]) {
+      const z = dateLeadTimeZones({ blockDays, standardDays: blockDays + 1 });
+      const soToiThieu = String(blockDays + 1);
+      expect(z[0].detail).toContain(`dưới ${soToiThieu} ngày`);
+      expect(dateLeadTimeBlockedMessage(blockDays)).toContain(`ít nhất ${soToiThieu} ngày`);
+    }
+  });
+
+  it("dòng chân nói rõ 2 điều KHÔNG phụ thuộc 2 con số", () => {
+    // Câu cũ ghi "không phụ thuộc 2 số này" — người đọc phải ngước lên tìm
+    // xem 2 số nào. Nay gọi thẳng tên.
+    expect(DATE_LEAD_TIME_FOOTNOTE).toContain("Chủ Nhật");
+    expect(DATE_LEAD_TIME_FOOTNOTE).toContain("Ngày đã qua");
   });
 });
 
