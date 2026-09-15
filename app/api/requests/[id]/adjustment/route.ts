@@ -7,7 +7,7 @@ import { requireSession, ForbiddenError } from "@/lib/session";
 import { ADJUSTMENT_HISTORY_PREFIX, ADJUSTMENT_MAX_LENGTH } from "@/lib/request-history-labels";
 import { MAX_DIRECT_UPLOAD_FILE_SIZE } from "@/lib/constants";
 import { verifyUploadedAttachment } from "@/lib/server/verify-upload";
-import type { RequestAttachment, RequestHistoryEntry } from "@/lib/types";
+import type { RequestAttachment, RequestHistoryEntry, RequestInstance } from "@/lib/types";
 
 export const runtime = "nodejs";
 
@@ -98,24 +98,54 @@ export async function POST(
     }
 
     const nowIso = new Date().toISOString();
-    const soLan = found.history.filter((h) => h.action.startsWith(ADJUSTMENT_HISTORY_PREFIX)).length + 1;
-    const entry: RequestHistoryEntry = {
-      at: nowIso,
-      actor: session.name,
-      action: `${ADJUSTMENT_HISTORY_PREFIX} (lần ${soLan})`,
-      note: noiDung || "(chỉ đính tệp)",
-      ...(attachmentMoi ? { attachmentName: attachmentMoi.name } : {}),
-    };
-    const history = [...found.history, entry];
-    const attachments = attachmentMoi
-      ? [...(found.attachments ?? []), attachmentMoi]
-      : (found.attachments ?? []);
+    const ref = adminDb.collection("requests").doc(id);
 
-    await adminDb
-      .collection("requests")
-      .doc(id)
-      .update({ history, attachments, updatedAt: nowIso });
-    return NextResponse.json({ request: { ...found, history, attachments, updatedAt: nowIso } });
+    /**
+     * 🔴 GHI TRONG GIAO DỊCH, không đọc-rồi-ghi-đè (CodeRabbit bắt trên PR #27).
+     *
+     * Trước đó `soLan` tính từ bản đọc lúc đầu rồi ghi đè CẢ mảng `history`.
+     * Hai lần gửi chạy song song — người dùng mở 2 tab, hoặc bấm "Cập nhật
+     * điều chỉnh" cùng lúc với "Thêm tệp tin" ở khối ngay dưới — sẽ cùng đọc
+     * một bản, cùng tính ra "lần N", rồi lần ghi sau XOÁ MẤT lần ghi trước.
+     * Mất hẳn một dòng điều chỉnh mà không có dấu vết nào.
+     *
+     * Giao dịch Firestore tự chạy lại khi tài liệu đổi giữa chừng, nên cả hai
+     * dòng đều được giữ và đánh số đúng thứ tự.
+     */
+    const ketQua = await adminDb.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) return { loi: "Không tìm thấy đề xuất." as const, ma: 404 };
+      const moiNhat = { id: snap.id, ...snap.data() } as RequestInstance;
+
+      // Kiểm lại trên bản MỚI NHẤT: giữa lúc tải tệp lên R2 (mất vài giây với
+      // tệp lớn) đề xuất có thể đã bị xoá, hoặc trạng thái đã đổi.
+      if (moiNhat.deletedAt) return { loi: "Đề xuất này đã bị xoá." as const, ma: 409 };
+      if (moiNhat.status !== "approved") {
+        return { loi: "Chỉ ghi điều chỉnh được cho đề xuất đã duyệt." as const, ma: 400 };
+      }
+
+      const lichSuCu = moiNhat.history ?? [];
+      const soLan = lichSuCu.filter((h) => h.action.startsWith(ADJUSTMENT_HISTORY_PREFIX)).length + 1;
+      const entry: RequestHistoryEntry = {
+        at: nowIso,
+        actor: session.name,
+        action: `${ADJUSTMENT_HISTORY_PREFIX} (lần ${soLan})`,
+        note: noiDung || "(chỉ đính tệp)",
+        ...(attachmentMoi ? { attachmentName: attachmentMoi.name } : {}),
+      };
+      const history = [...lichSuCu, entry];
+      const attachments = attachmentMoi
+        ? [...(moiNhat.attachments ?? []), attachmentMoi]
+        : (moiNhat.attachments ?? []);
+
+      tx.update(ref, { history, attachments, updatedAt: nowIso });
+      return { request: { ...moiNhat, history, attachments, updatedAt: nowIso } };
+    });
+
+    if ("loi" in ketQua) {
+      return NextResponse.json({ error: ketQua.loi }, { status: ketQua.ma });
+    }
+    return NextResponse.json({ request: ketQua.request });
   } catch (error) {
     return apiErrorResponse(error);
   }
