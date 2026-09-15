@@ -399,8 +399,12 @@ export interface ProposalGroup {
    * (tương đương hành vi hiện tại), áp dụng ở từng nơi đọc field này. */
   permissionRules?: GroupPermissionRules;
   /** 3 cờ thông báo CẤP NHÓM — khác "Cài đặt thông báo" cá nhân của từng
-   * người dùng (NotificationSettings). `emailNotify` chỉ lưu cấu hình, CHƯA
-   * gửi email thật (chưa có hạ tầng). */
+   * người dùng (NotificationSettings).
+   *
+   * ⚠️ ĐỪNG TIN chú thích cũ ở đây nói `emailNotify` "chỉ lưu cấu hình, chưa
+   * gửi email thật" — ĐÃ LỖI THỜI. Email gửi THẬT từ 24/08/2026 qua
+   * lib/server/notification-emails.ts (Nodemailer + Gmail SMTP), nối vào 2
+   * route: gửi đề xuất và mỗi quyết định duyệt. */
   notificationRules?: GroupNotificationRules;
   /** 7 cờ + 2 vị trí QR cho tab "In đề xuất" — CHỈ lưu cấu hình/ẩn-hiện nút,
    * KHÔNG tự sinh PDF/chèn QR thật (PDF chờ capability `pdf-export` riêng). */
@@ -451,7 +455,12 @@ export const DEFAULT_GROUP_PERMISSION_RULES: GroupPermissionRules = {
 export interface GroupNotificationRules {
   sequentialTurnBasedNotify: boolean;
   perStepBlockNotify: boolean;
-  /** CHỈ lưu cấu hình — chưa gửi email thật (chưa có hạ tầng). */
+  /** Bật/tắt gửi email THẬT cho nhóm này. Mặc định TẮT để nhóm cũ không tự
+   * nhiên bắt đầu gửi mail; Sếp đã bật cho cả 24 nhóm ngày 15/09/2026.
+   *
+   * ⚠️ Chú thích cũ ghi "chỉ lưu cấu hình, chưa gửi email thật" ĐÃ LỖI THỜI —
+   * hạ tầng có từ 24/08/2026, xem lib/server/mailer.ts + notification-emails.ts.
+   * Biến GMAIL_USER/GMAIL_APP_PASSWORD đã cấu hình trên Vercel production. */
   emailNotify: boolean;
 }
 

@@ -2,16 +2,40 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { Bell } from "lucide-react";
+import {
+  AtSign,
+  Bell,
+  CheckCircle2,
+  Eye,
+  History,
+  Inbox,
+  Settings,
+  UserX,
+  XCircle,
+  type LucideIcon,
+} from "lucide-react";
 import type { NotificationSettings, RequestInstance } from "@/lib/types";
 import {
   ATTACHMENT_SUPPLEMENT_HISTORY_PREFIX,
   TABLE_SUPPLEMENT_HISTORY_PREFIX,
 } from "@/lib/request-history-labels";
 
+/** Loại thông báo — quyết định icon + màu ở dải bên trái mỗi dòng. Cùng bộ
+ * với `NotificationCategory` (cài đặt cá nhân) để người dùng tắt loại nào là
+ * mất đúng loại icon đó, không lệch. */
+type NotificationKind =
+  | "approver_pending"
+  | "own_decided"
+  | "own_rejected"
+  | "mentioned"
+  | "following"
+  | "manager_bypassed"
+  | "approver_followup";
+
 interface NotificationItem {
   id: string;
   requestId: string;
+  kind: NotificationKind;
   text: string;
   at: string;
 }
@@ -37,6 +61,7 @@ function buildNotifications(
       items.push({
         id: `inbox-${r.id}`,
         requestId: r.id,
+        kind: "approver_pending",
         text: forwardedToMe
           ? `Bạn được chuyển tiếp đề xuất "${r.groupNameSnapshot}"`
           : `"${r.groupNameSnapshot}" đang chờ bạn duyệt`,
@@ -56,6 +81,7 @@ function buildNotifications(
       items.push({
         id: `following-${r.id}`,
         requestId: r.id,
+        kind: "following",
         text: isBrandNew
           ? `Đề xuất bạn đang theo dõi "${r.groupNameSnapshot}" vừa được gửi`
           : `Đề xuất bạn đang theo dõi "${r.groupNameSnapshot}" có cập nhật mới`,
@@ -82,6 +108,7 @@ function buildNotifications(
       items.push({
         id: `mine-${r.id}`,
         requestId: r.id,
+        kind: r.status === "approved" ? "own_decided" : "own_rejected",
         text: `Đề xuất "${r.groupNameSnapshot}" của bạn đã ${
           r.status === "approved" ? "được chấp thuận" : "bị từ chối"
         }`,
@@ -98,6 +125,7 @@ function buildNotifications(
       items.push({
         id: `mentioned-${r.id}`,
         requestId: r.id,
+        kind: "mentioned",
         text: `Bạn được nhắc tới trong đề xuất "${r.groupNameSnapshot}"`,
         at: r.updatedAt,
       });
@@ -109,6 +137,7 @@ function buildNotifications(
       items.push({
         id: `manager-bypassed-${r.id}`,
         requestId: r.id,
+        kind: "manager_bypassed",
         text: `Đề xuất "${r.groupNameSnapshot}" đã chọn người khác duyệt thay bạn`,
         at: r.updatedAt,
       });
@@ -123,6 +152,7 @@ function buildNotifications(
       items.push({
         id: `approver-followup-${r.id}`,
         requestId: r.id,
+        kind: "approver_followup",
         text:
           r.status === "rejected"
             ? `Đề xuất "${r.groupNameSnapshot}" bạn đã duyệt bị từ chối ở bước sau`
@@ -135,11 +165,54 @@ function buildNotifications(
   return items.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime()).slice(0, 8);
 }
 
+/** "5 phút trước" / "Hôm qua 14:20" — dễ đọc hơn dãy "09:37:16 15/9/2026".
+ * Giờ đầy đủ vẫn còn, nằm ở `title` của dòng (rê chuột là thấy). */
+function nhanThoiGian(iso: string, now: number): string {
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return "";
+  const phut = Math.floor((now - t) / 60000);
+  if (phut < 1) return "Vừa xong";
+  if (phut < 60) return `${phut} phút trước`;
+  const gio = Math.floor(phut / 60);
+  if (gio < 24) return `${gio} giờ trước`;
+  const d = new Date(t);
+  const hhmm = d.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
+  const ngay = Math.floor(gio / 24);
+  if (ngay === 1) return `Hôm qua ${hhmm}`;
+  if (ngay < 7) return `${ngay} ngày trước`;
+  return `${d.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" })} ${hhmm}`;
+}
+
+/** Mỗi loại một icon + một màu. Người duyệt đang chờ mình thì nổi nhất (xanh
+ * dương), từ chối/vượt cấp màu đỏ, còn lại xám nhạt — để liếc một cái là biết
+ * dòng nào cần làm gì, thay vì 8 dòng chữ giống hệt nhau. */
+const KIEU_THONG_BAO: Record<
+  NotificationKind,
+  { Icon: LucideIcon; nen: string; chu: string }
+> = {
+  approver_pending: { Icon: Inbox, nen: "bg-blue-50", chu: "text-[var(--color-action-blue)]" },
+  own_decided: { Icon: CheckCircle2, nen: "bg-green-50", chu: "text-[var(--color-confirm-green)]" },
+  own_rejected: { Icon: XCircle, nen: "bg-red-50", chu: "text-[var(--color-danger-red)]" },
+  mentioned: { Icon: AtSign, nen: "bg-amber-50", chu: "text-amber-600" },
+  following: { Icon: Eye, nen: "bg-gray-100", chu: "text-gray-500" },
+  manager_bypassed: { Icon: UserX, nen: "bg-red-50", chu: "text-[var(--color-danger-red)]" },
+  approver_followup: { Icon: History, nen: "bg-gray-100", chu: "text-gray-500" },
+};
+
 export default function NotificationBell() {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<NotificationItem[]>([]);
   const [pendingCount, setPendingCount] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
+  // Mốc thời gian để tính "5 phút trước". Giữ trong state và làm mới mỗi phút
+  // thay vì gọi Date.now() thẳng lúc render — gọi thẳng thì mỗi lần render ra
+  // một con số khác, nhãn thời gian nhảy lung tung không rõ lý do.
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
 
   useEffect(() => {
     Promise.all([
@@ -219,27 +292,74 @@ export default function NotificationBell() {
       {open && (
         // z-50: FuncBar (sidebar nhóm đề xuất) dùng z-40 cho chính nó — z-20 cũ
         // thấp hơn nên bị sidebar vẽ đè lên trên (góp ý Nhung 14/08/2026).
-        <div className="absolute left-full top-0 z-50 ml-2 w-[300px] rounded border border-[var(--color-border)] bg-white shadow-lg">
-          <div className="border-b border-gray-100 px-3 py-2 text-[14px] font-semibold text-gray-700">
-            Thông báo
+        <div className="absolute left-full top-0 z-50 ml-2 w-[380px] overflow-hidden rounded-lg border border-[var(--color-border)] bg-white shadow-[0_8px_28px_rgba(16,34,48,0.16)]">
+          <div className="flex items-center gap-2 border-b border-gray-100 px-4 py-3">
+            <span className="text-[15px] font-semibold text-gray-800">Thông báo</span>
+            {items.length > 0 && (
+              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[12px] font-semibold text-gray-500">
+                {items.length}
+              </span>
+            )}
+            <Link
+              href="/request/settings/notifications"
+              onClick={() => setOpen(false)}
+              title="Cài đặt thông báo"
+              aria-label="Cài đặt thông báo"
+              className="ml-auto flex h-7 w-7 items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+            >
+              <Settings size={15} />
+            </Link>
           </div>
-          <div className="max-h-[360px] overflow-y-auto">
+
+          <div className="max-h-[420px] overflow-y-auto">
             {items.length === 0 ? (
-              <p className="px-3 py-6 text-center text-[12px] text-gray-400">Chưa có thông báo nào.</p>
+              <div className="px-4 py-10 text-center">
+                <span className="mx-auto mb-2 flex h-11 w-11 items-center justify-center rounded-full bg-gray-100 text-gray-300">
+                  <Bell size={20} />
+                </span>
+                <p className="text-[14px] font-medium text-gray-500">Chưa có thông báo nào</p>
+                <p className="mt-0.5 text-[12px] text-gray-400">
+                  Có việc cần bạn xử lý thì sẽ hiện ở đây.
+                </p>
+              </div>
             ) : (
-              items.map((item) => (
-                <Link
-                  key={item.id}
-                  href={`/request/requests/${item.requestId}`}
-                  onClick={() => setOpen(false)}
-                  className="block border-b border-gray-50 px-3 py-2.5 text-[12px] text-gray-700 last:border-0 hover:bg-gray-50"
-                >
-                  <p>{item.text}</p>
-                  <p className="mt-0.5 text-gray-400">{new Date(item.at).toLocaleString("vi-VN")}</p>
-                </Link>
-              ))
+              items.map((item) => {
+                const kieu = KIEU_THONG_BAO[item.kind];
+                return (
+                  <Link
+                    key={item.id}
+                    href={`/request/requests/${item.requestId}`}
+                    onClick={() => setOpen(false)}
+                    title={new Date(item.at).toLocaleString("vi-VN")}
+                    className="flex gap-3 border-b border-gray-50 px-4 py-3 last:border-0 hover:bg-gray-50"
+                  >
+                    <span
+                      className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${kieu.nen} ${kieu.chu}`}
+                      aria-hidden
+                    >
+                      <kieu.Icon size={16} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[14px] leading-snug text-gray-800">{item.text}</span>
+                      <span className="mt-1 block text-[12px] text-gray-400">
+                        {nhanThoiGian(item.at, now)}
+                      </span>
+                    </span>
+                  </Link>
+                );
+              })
             )}
           </div>
+
+          {items.length > 0 && (
+            <Link
+              href="/request/list?scope=sent-to-me"
+              onClick={() => setOpen(false)}
+              className="block border-t border-gray-100 bg-gray-50 px-4 py-2.5 text-center text-[13px] font-medium text-[var(--color-action-blue)] hover:bg-gray-100"
+            >
+              Xem tất cả đề xuất chờ tôi duyệt
+            </Link>
+          )}
         </div>
       )}
     </div>
