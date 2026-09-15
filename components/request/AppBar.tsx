@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { BarChart3, BellRing, Gift, Grid3x3, HelpCircle, Home, Menu, Moon, Search, Settings, Sun } from "lucide-react";
+import { BarChart3, Gift, Grid3x3, HelpCircle, Home, Menu, Moon, Search, Settings, Sun } from "lucide-react";
 import AppLauncher from "@/components/request/AppLauncher";
 import GiftPopup from "@/components/request/GiftPopup";
 import NotificationBell from "@/components/request/NotificationBell";
@@ -72,15 +72,13 @@ export default function AppBar() {
 
         <NotificationBell />
 
-        <Link
-          href="/request/settings/notifications"
-          title="Cài đặt thông báo"
-          aria-label="Cài đặt thông báo"
-          className="flex h-12 w-12 items-center justify-center rounded-xl text-[var(--color-appbar-text)] hover:bg-white/10 hover:text-[var(--color-appbar-text-active)]"
-        >
-          <BellRing size={20} strokeWidth={1.75} />
-        </Link>
-
+        {/* ĐÃ BỎ nút chuông thứ hai (BellRing) trỏ tới /request/settings/notifications
+            — Sếp chốt 15/09/2026. Hai cái chuông đứng cạnh nhau, hình gần giống
+            nhau, không ai đoán được cái nào mở gì. Từ 15/09/2026 bảng thông báo
+            đã có sẵn nút bánh răng vào đúng trang đó (kể cả khi không có thông
+            báo nào, vì đầu bảng luôn hiện) — nên nút này chỉ còn là chỗ gây
+            nhầm. Cần lối tắt lại thì thêm vào bảng thông báo, ĐỪNG thêm icon
+            thứ hai vào thanh này. */}
         {/* Popup khung điện thoại nhúng iframe app khác (quacuatoi.hpcore.vn —
             hệ thống nhiệm vụ đổi điểm UrBox). Xem components/request/GiftPopup.tsx. */}
         <button
