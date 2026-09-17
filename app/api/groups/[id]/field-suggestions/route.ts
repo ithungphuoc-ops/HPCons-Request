@@ -3,7 +3,7 @@ import { unstable_cache } from "next/cache";
 import { adminDb } from "@/lib/firebase/admin";
 import { apiErrorResponse } from "@/lib/http";
 import { requireSession } from "@/lib/session";
-import type { RequestInstance } from "@/lib/types";
+import type { ProposalGroup, RequestInstance } from "@/lib/types";
 
 const MAX_SUGGESTIONS = 50;
 /** Chỉ xét N đề xuất GẦN NHẤT của nhóm (sắp trong bộ nhớ theo submittedAt,
@@ -30,7 +30,9 @@ const loadSuggestionsCached = unstable_cache(
     const snap = await adminDb.collection("requests").where("groupId", "==", groupId).get();
     const docs = snap.docs
       .map((d) => d.data() as RequestInstance)
-      .filter((r) => !r.deletedAt)
+      // Nháp CHỈ chủ nhân xem được (đúng quy ước canView() ở lib/server/requests.ts)
+      // — không được rò nội dung nháp riêng tư của người khác qua gợi ý autocomplete.
+      .filter((r) => !r.deletedAt && r.status !== "draft")
       .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))
       .slice(0, MAX_REQUESTS_SCANNED);
 
@@ -67,6 +69,20 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     if (!fieldId) {
       return NextResponse.json({ error: "Thiếu fieldId." }, { status: 400 });
     }
+
+    // Chỉ phục vụ đúng field đã được Admin/Owner nhóm BẬT gợi ý — suggestFromHistory
+    // là cờ cấu hình phía server, không chỉ là gợi ý UI phía client; không kiểm ở
+    // đây thì ai cũng có thể đổi fieldId trên DevTools để dò giá trị field khác.
+    const groupSnap = await adminDb.collection("groups").doc(groupId).get();
+    if (!groupSnap.exists) {
+      return NextResponse.json({ error: "Không tìm thấy nhóm." }, { status: 404 });
+    }
+    const group = groupSnap.data() as ProposalGroup;
+    const field = group.fields?.find((f) => f.id === fieldId);
+    if (!field || field.dataType !== "short_text" || !field.suggestFromHistory) {
+      return NextResponse.json({ error: "Trường này chưa bật gợi ý từ lịch sử." }, { status: 403 });
+    }
+
     const suggestions = await loadSuggestionsCached(groupId, fieldId);
     return NextResponse.json({ suggestions });
   } catch (error) {
