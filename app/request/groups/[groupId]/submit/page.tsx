@@ -601,6 +601,7 @@ export default function SubmitRequestPage() {
               <FieldRow
                 key={field.id}
                 field={field}
+                groupId={group.id}
                 value={values[field.id]}
                 error={errors[field.id]}
                 onChange={(value) =>
@@ -991,6 +992,7 @@ export default function SubmitRequestPage() {
 
 function FieldRow({
   field,
+  groupId,
   value,
   error,
   onChange,
@@ -999,6 +1001,8 @@ function FieldRow({
   onTableColumnsChange,
 }: {
   field: ProposalField;
+  /** Chỉ dùng cho field có `suggestFromHistory` — biết đúng nhóm để xin gợi ý. */
+  groupId: string;
   value: unknown;
   error?: string;
   onChange: (value: unknown) => void;
@@ -1052,6 +1056,7 @@ function FieldRow({
       >
         <FieldControl
           field={field}
+          groupId={groupId}
           value={value}
           onChange={onChange}
           readOnlyComputed={readOnlyComputed}
@@ -1088,12 +1093,14 @@ function FieldRow({
 
 function FieldControl({
   field,
+  groupId,
   value,
   onChange,
   readOnlyComputed,
   onTableColumnsChange,
 }: {
   field: ProposalField;
+  groupId: string;
   value: unknown;
   onChange: (value: unknown) => void;
   readOnlyComputed?: boolean;
@@ -1103,6 +1110,17 @@ function FieldControl({
   const tableFileInputRef = useRef<HTMLInputElement>(null);
   switch (field.dataType) {
     case "short_text":
+      if (field.suggestFromHistory && !readOnlyComputed) {
+        return (
+          <ShortTextWithSuggestions
+            groupId={groupId}
+            fieldId={field.id}
+            value={(value as string) ?? ""}
+            placeholder={field.placeholder}
+            onChange={onChange}
+          />
+        );
+      }
       return (
         <input
           className={readOnlyComputed ? disabledInputClass : inputClass}
@@ -1629,6 +1647,65 @@ function UserSelectControl({
       onChange={(users) => onChange(users.slice(-1)[0] ?? null)}
       placeholder="Gõ @ để chọn người dùng"
     />
+  );
+}
+
+/**
+ * Ô nhập tự do CÓ GỢI Ý (Sếp chốt 17/09/2026) — tải các giá trị đã từng
+ * nhập cho ĐÚNG field này trong CÙNG nhóm (GET /api/groups/[id]/field-
+ * suggestions), hiện qua <datalist> chuẩn của trình duyệt: vẫn gõ tự do
+ * bình thường, gợi ý chỉ là 1 dropdown tuỳ chọn hiện thêm bên dưới ô nhập,
+ * không ép chọn. Dùng chung khuôn mẫu input+datalist đã có ở "Phân loại"
+ * lúc tạo nhóm (CreateGroupModal.tsx) — khác ở nguồn dữ liệu là ĐỘNG (đọc
+ * từ đề xuất thật) thay vì mảng cố định.
+ */
+function ShortTextWithSuggestions({
+  groupId,
+  fieldId,
+  value,
+  placeholder,
+  onChange,
+}: {
+  groupId: string;
+  fieldId: string;
+  value: string;
+  placeholder?: string;
+  onChange: (value: string) => void;
+}) {
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const listId = `field-suggest-${fieldId}`;
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/groups/${groupId}/field-suggestions?fieldId=${fieldId}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { suggestions?: string[] } | null) => {
+        if (!cancelled) setSuggestions(data?.suggestions ?? []);
+      })
+      .catch(() => {
+        // Lỗi tải gợi ý không chặn nhập liệu — ô nhập vẫn dùng bình thường như
+        // short_text thường, chỉ là không có gợi ý lần này.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [groupId, fieldId]);
+
+  return (
+    <>
+      <input
+        className={inputClass}
+        list={listId}
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      <datalist id={listId}>
+        {suggestions.map((s) => (
+          <option key={s} value={s} />
+        ))}
+      </datalist>
+    </>
   );
 }
 

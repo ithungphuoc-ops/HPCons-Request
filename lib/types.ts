@@ -87,6 +87,16 @@ export interface ProposalField {
    * xem design.md của change add-base-vn-approver-and-approval-form-parity,
    * Decision #4. Giới hạn ~300 ký tự khi lưu (`sanitizeHelpText()`). */
   helpText?: string;
+  /**
+   * Chỉ cho field kiểu short_text: bật thì ô nhập lúc gửi đề xuất hiện GỢI Ý
+   * (datalist trình duyệt) các giá trị đã từng nhập cho ĐÚNG field này trong
+   * CÙNG nhóm đề xuất — vẫn cho gõ tự do, chỉ là gợi ý để chọn, không ép buộc
+   * (Sếp chốt 17/09/2026, ví dụ dùng: "Tên công trình" tránh mỗi lần 1 người
+   * gõ 1 kiểu khác nhau, khó đối chiếu giữa các app). Công tắc CHUNG cho mọi
+   * field short_text, không hard-code riêng cho field nào — xem
+   * GET /api/groups/[id]/field-suggestions.
+   */
+  suggestFromHistory?: boolean;
 }
 
 /**
