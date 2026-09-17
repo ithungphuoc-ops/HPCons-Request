@@ -2,15 +2,26 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { Check, Download, Plus, Search, X } from "lucide-react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { Download, Plus, Search, X } from "lucide-react";
 import RequestStatusBadge, { STATUS_LABEL } from "@/components/request/RequestStatusBadge";
 import RequestDetailView from "@/components/request/RequestDetailView";
+import Avatar from "@/components/request/Avatar";
+import ApproverCluster from "@/components/request/ApproverCluster";
 import { useRequestContext } from "@/context/RequestContext";
 import { primaryButtonClass } from "@/components/shared/form-styles";
 import HighlightMatch from "@/components/shared/HighlightMatch";
-import { resolveRequestTitle, TITLE_FIELD_CODES } from "@/lib/request-title";
+import { resolveRequestTitle } from "@/lib/request-title";
 import { useCurrentSession } from "@/lib/useCurrentSession";
+import { useDirectoryAvatars } from "@/lib/useDirectoryAvatars";
+import { exportRequestsToExcel } from "@/lib/request-export-excel";
+import {
+  chuanHoaTimKiem,
+  draftLinkFor,
+  notableFields,
+  notableFieldParts,
+  submitterInitial,
+} from "@/lib/request-list-format";
 import { DEFAULT_GROUP_PERMISSION_RULES } from "@/lib/types";
 import {
   matchesRequestView,
@@ -19,7 +30,7 @@ import {
   REQUEST_VIEW_ORDER,
   type RequestListView,
 } from "@/lib/request-views";
-import type { ListLoadStatus, ProposalField, RequestInstance, RequestListScope } from "@/lib/types";
+import type { ListLoadStatus, RequestInstance, RequestListScope } from "@/lib/types";
 
 const scopeLabels: Record<RequestListScope, string> = {
   all: "Tất cả",
@@ -28,153 +39,6 @@ const scopeLabels: Record<RequestListScope, string> = {
   following: "Đang theo dõi",
   group: "Nhóm đề xuất",
 };
-
-/** Chữ cái đầu của tên người gửi làm avatar tròn — RequestSubmitter không có
- * sẵn avatarInitial (khác TaggedUser), lấy từ ký tự đầu của name. */
-function submitterInitial(r: RequestInstance): string {
-  return (r.submittedBy.name?.trim().charAt(0) || "?").toUpperCase();
-}
-
-/**
- * Ảnh đại diện: ưu tiên ảnh THẬT từ hồ sơ app tổng (users/{uid}.avatarUrl —
- * xem /api/directory/avatars), lỗi tải/chưa có ảnh thì rơi về vòng tròn chữ
- * cái đầu — không bao giờ hiện ô ảnh vỡ.
- */
-function Avatar({
-  url,
-  initial,
-  size,
-  className = "",
-  fallbackClassName,
-}: {
-  url: string | null | undefined;
-  initial: string;
-  size: number;
-  className?: string;
-  /** class cho vòng tròn chữ cái (màu nền/chữ tuỳ ngữ cảnh: xanh, xám...). */
-  fallbackClassName: string;
-}) {
-  const [failed, setFailed] = useState(false);
-  if (url && !failed) {
-    return (
-      // eslint-disable-next-line @next/next/no-img-element -- ảnh R2 ngoài domain, kích thước nhỏ, không cần next/image
-      <img
-        src={url}
-        alt=""
-        width={size}
-        height={size}
-        onError={() => setFailed(true)}
-        className={`shrink-0 rounded-full object-cover ${className}`}
-        style={{ width: size, height: size }}
-      />
-    );
-  }
-  return (
-    <span
-      className={`flex shrink-0 items-center justify-center rounded-full font-semibold ${fallbackClassName} ${className}`}
-      style={{ width: size, height: size, fontSize: Math.round(size * 0.36) }}
-    >
-      {initial}
-    </span>
-  );
-}
-
-/** Field "nổi bật" đáng hiện trên dòng danh sách: kiểu lựa chọn/bộ phận/ngày/
- * số — giá trị ngắn, đọc phát hiểu ngay (giống chuỗi phụ của Base.vn thật). */
-const NOTABLE_FIELD_TYPES = new Set(["single_choice", "department_select", "date", "datetime", "integer", "decimal", "currency"]);
-
-function formatListValue(field: ProposalField, value: unknown): string {
-  if (value === undefined || value === null || value === "") return "";
-  if (Array.isArray(value)) return value.length ? value.join(", ") : "";
-  const s = String(value);
-  if (field.dataType === "date" || field.dataType === "datetime") {
-    const t = Date.parse(s);
-    if (!Number.isNaN(t)) return new Date(t).toLocaleDateString("vi-VN");
-  }
-  return s;
-}
-
-/** Tối đa 3 cặp {tên field, giá trị} nổi bật của 1 đề xuất — dùng chung cho
- * chuỗi hiển thị lẫn phạm vi tìm kiếm (chỉ tìm trên GIÁ TRỊ, không tìm trên
- * tên field để khỏi khớp nhầm mọi dòng có cùng field). */
-function notableFields(r: RequestInstance): { name: string; value: string }[] {
-  return r.fieldsSnapshot
-    .filter((f) => NOTABLE_FIELD_TYPES.has(f.dataType) && !(f.code && TITLE_FIELD_CODES.has(f.code)))
-    .sort((a, b) => a.order - b.order)
-    .map((f) => ({ name: f.name, value: formatListValue(f, r.values[f.id]) }))
-    .filter((x) => x.value)
-    .slice(0, 3);
-}
-
-function notableFieldParts(r: RequestInstance): string[] {
-  return notableFields(r).map((x) => `${x.name}: ${x.value}`);
-}
-
-/** Cụm avatar người duyệt chồng nhau (tối đa 3 + "+N"), mỗi avatar có chấm
- * quyết định nhỏ đè góc: ✓ xanh đã duyệt / ✕ đỏ từ chối / xám đang chờ —
- * icon kèm màu (không chỉ dựa màu). */
-function ApproverCluster({
-  request,
-  avatars,
-}: {
-  request: RequestInstance;
-  avatars: Record<string, string | null>;
-}) {
-  if (request.approversSnapshot.length === 0) return null;
-  const decisionById = new Map(request.approvers.map((a) => [a.id, a.decision]));
-  const shown = request.approversSnapshot.slice(0, 3);
-  const extra = request.approversSnapshot.length - shown.length;
-  return (
-    // Tách rời từng người, có khoảng cách — KHÔNG chồng avatar lên nhau
-    // (Sếp góp ý 17/08/2026 sau khi xem bản đầu).
-    <span className="flex items-center gap-1.5">
-      {shown.map((user) => {
-        const decision = decisionById.get(user.id) ?? "pending";
-        return (
-          <span key={user.id} className="relative" title={`${user.name} — ${decision === "approved" ? "đã duyệt" : decision === "rejected" ? "từ chối" : "đang chờ"}`}>
-            <Avatar
-              url={avatars[user.id]}
-              initial={user.avatarInitial || user.name.charAt(0).toUpperCase()}
-              size={24}
-              fallbackClassName="bg-gray-200 text-gray-600"
-            />
-            <span
-              className={`absolute -bottom-0.5 -right-0.5 flex h-[11px] w-[11px] items-center justify-center rounded-full ring-1 ring-white ${
-                decision === "approved" ? "bg-emerald-500" : decision === "rejected" ? "bg-red-500" : "bg-gray-300"
-              }`}
-            >
-              {decision === "approved" && <Check size={8} strokeWidth={3.5} className="text-white" />}
-              {decision === "rejected" && <X size={8} strokeWidth={3.5} className="text-white" />}
-            </span>
-          </span>
-        );
-      })}
-      {extra > 0 && (
-        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-100 text-[12px] font-semibold text-gray-500">
-          +{extra}
-        </span>
-      )}
-    </span>
-  );
-}
-
-function draftLinkFor(r: RequestInstance): string {
-  return r.groupId
-    ? `/request/groups/${r.groupId}/submit?draftId=${r.id}`
-    : `/request/direct/new?draftId=${r.id}`;
-}
-
-/** Bỏ dấu tiếng Việt + hạ chữ thường để tìm kiếm không phụ thuộc dấu ("de nghi" khớp "Đề nghị"). */
-function chuanHoaTimKiem(s: string): string {
-  return s
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/đ/g, "d")
-    .replace(/Đ/g, "d")
-    .toLowerCase()
-    .trim();
-}
-
 
 
 export default function RequestListPage() {
@@ -198,11 +62,6 @@ function RequestListPageInner() {
   const [requests, setRequests] = useState<RequestInstance[]>([]);
   const [status, setStatus] = useState<ListLoadStatus>("loading");
   const [currentUid, setCurrentUid] = useState<string | null>(null);
-  // Ảnh đại diện thật từ app tổng (uid → URL, null = chưa có ảnh) — tải 1 lần
-  // cho mọi uid xuất hiện trong danh sách, cache trong phiên (đổi scope không
-  // tải lại uid đã biết).
-  const [avatars, setAvatars] = useState<Record<string, string | null>>({});
-  const avatarCache = useRef(new Map<string, string | null>());
   // Bộ lọc client-side trên danh sách đã tải (Sếp yêu cầu 17/08/2026):
   // tìm theo tên (không dấu), lọc trạng thái, lọc nhóm.
   const [searchText, setSearchText] = useState("");
@@ -254,29 +113,7 @@ function RequestListPageInner() {
       .catch(() => setCurrentUid(null));
   }, []);
 
-  useEffect(() => {
-    const uids = new Set<string>();
-    for (const r of requests) {
-      uids.add(r.submittedBy.uid);
-      for (const a of r.approversSnapshot) uids.add(a.id);
-    }
-    const missing = [...uids].filter((u) => !avatarCache.current.has(u));
-    if (missing.length === 0) {
-      setAvatars(Object.fromEntries(avatarCache.current));
-      return;
-    }
-    fetch(`/api/directory/avatars?uids=${missing.join(",")}`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: { avatars?: Record<string, string | null> } | null) => {
-        for (const [uid, url] of Object.entries(data?.avatars ?? {})) {
-          avatarCache.current.set(uid, url);
-        }
-        setAvatars(Object.fromEntries(avatarCache.current));
-      })
-      .catch(() => {
-        // Lỗi tải avatar không chặn danh sách — mọi người hiện chữ cái đầu.
-      });
-  }, [requests]);
+  const avatars = useDirectoryAvatars(requests);
 
   // KHÔNG tự chọn sẵn đề xuất đầu tiên (Sếp chốt 16/08/2026): mặc định danh
   // sách chiếm toàn bộ chiều rộng, box nội dung chỉ hiện khi bấm vào 1 đề xuất.
@@ -357,32 +194,14 @@ function RequestListPageInner() {
     return true;
   }, [isAdmin, scope, group, currentUid, filteredRequests]);
 
-  /** Xuất danh sách ĐANG LỌC ra file Excel .xlsx — thư viện tải lười lúc bấm,
-   * không cộng vào bundle lúc mở trang. */
+  /** Xuất danh sách ĐANG LỌC ra file Excel .xlsx — logic thật nằm ở
+   * lib/request-export-excel.ts, dùng chung với Trang chủ (/request). */
   const exportExcel = async () => {
     try {
-      await doExportExcel();
+      await exportRequestsToExcel(filteredRequests);
     } catch {
       alert("Xuất Excel thất bại — thử tải lại trang rồi bấm lại.");
     }
-  };
-
-  const doExportExcel = async () => {
-    const XLSX = await import("xlsx");
-    const rows = filteredRequests.map((r) => ({
-      "Tên đề xuất": resolveRequestTitle(r),
-      "Nhóm": r.groupNameSnapshot,
-      "Thông tin": notableFieldParts(r).join(" · "),
-      "Người gửi": r.submittedBy.name,
-      "Người duyệt": r.approversSnapshot.map((a) => a.name).join(", "),
-      "Trạng thái": STATUS_LABEL[r.status],
-      "Ngày": new Date(r.status === "draft" ? (r.updatedAt ?? r.submittedAt) : r.submittedAt).toLocaleDateString("vi-VN"),
-    }));
-    const ws = XLSX.utils.json_to_sheet(rows);
-    ws["!cols"] = [{ wch: 32 }, { wch: 22 }, { wch: 48 }, { wch: 20 }, { wch: 30 }, { wch: 14 }, { wch: 11 }];
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Đề xuất");
-    XLSX.writeFile(wb, `danh-sach-de-xuat-${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
 
   const baseQuery = scope === "group" && groupId ? `scope=group&groupId=${groupId}` : `scope=${scope}`;
