@@ -42,6 +42,9 @@ const tableTypes: FieldDataType[] = ["table", "base_table"];
 const computedEligibleTypes: FieldDataType[] = ["short_text", "paragraph"];
 /** Chỉ field ngày mới cấu hình được ràng buộc "ngày cần cấp" (dateLeadTimeRule). */
 const dateLeadTimeEligibleTypes: FieldDataType[] = ["date", "datetime"];
+/** Chỉ field văn bản ngắn mới bật được "gợi ý từ lịch sử" (paragraph để văn
+ * bản dài, gợi ý cả đoạn văn không hợp lý — Sếp chốt 17/09/2026). */
+const suggestFromHistoryEligibleTypes: FieldDataType[] = ["short_text"];
 /** Admin tự gõ 2 mốc (Sếp chốt "phương án C" 13/09/2026) — không còn danh sách cứng. */
 
 export default function AddFieldModal() {
@@ -67,6 +70,7 @@ export default function AddFieldModal() {
   // tử là 1 nhánh { điều kiện tuỳ chọn + mẫu chuỗi ${ma_truong} }.
   const [computedBranches, setComputedBranches] = useState<ComputedTemplateBranch[] | null>(null);
   const [dateLeadTimeEnabled, setDateLeadTimeEnabled] = useState(false);
+  const [suggestFromHistory, setSuggestFromHistory] = useState(false);
   // Giữ dạng chuỗi để người dùng xoá trắng ô mà không bị nhảy về 0; validate lúc lưu.
   const [dateLeadTimeBlockDays, setDateLeadTimeBlockDays] = useState(String(DATE_LEAD_TIME_DEFAULT_BLOCK_DAYS));
   const [dateLeadTimeStandardDays, setDateLeadTimeStandardDays] = useState(
@@ -119,6 +123,7 @@ export default function AddFieldModal() {
     setDateLeadTimeEnabled(false);
     setDateLeadTimeBlockDays(String(DATE_LEAD_TIME_DEFAULT_BLOCK_DAYS));
     setDateLeadTimeStandardDays(String(DATE_LEAD_TIME_DEFAULT_STANDARD_DAYS));
+    setSuggestFromHistory(false);
     setErrors({});
   };
 
@@ -139,6 +144,7 @@ export default function AddFieldModal() {
       setVisibleWhen(editingField.visibleWhen);
       setComputedBranches(editingField.computedFrom?.branches ?? null);
       setDateLeadTimeEnabled(editingField.dateLeadTimeRule?.enabled ?? false);
+      setSuggestFromHistory(editingField.suggestFromHistory ?? false);
       // Trường ngày lưu trước 13/09/2026 chưa có blockDays -> điền mặc định 2.
       const leadTimeNums = resolveDateLeadTimeNumbers(editingField.dateLeadTimeRule);
       setDateLeadTimeBlockDays(String(leadTimeNums.blockDays));
@@ -231,6 +237,8 @@ export default function AddFieldModal() {
         dateLeadTimeEligibleTypes.includes(dataType) && dateLeadTimeEnabled
           ? { enabled: true as const, ...leadTimeNumbers }
           : undefined,
+      suggestFromHistory:
+        suggestFromHistoryEligibleTypes.includes(dataType) && suggestFromHistory ? true : undefined,
     };
 
     if (isEditMode && editingField) {
@@ -630,6 +638,23 @@ export default function AddFieldModal() {
                 </>
               )}
             </div>
+          </Row>
+        )}
+
+        {suggestFromHistoryEligibleTypes.includes(dataType) && (
+          <Row label="Gợi ý từ lịch sử">
+            <label className="flex items-center gap-2 text-[14px] text-gray-700">
+              <input
+                type="checkbox"
+                checked={suggestFromHistory}
+                onChange={(e) => setSuggestFromHistory(e.target.checked)}
+              />
+              Bật — ô nhập hiện gợi ý các giá trị đã từng nhập cho trường này trong nhóm, vẫn cho gõ mới tự do
+            </label>
+            <p className="mt-1.5 text-[12px] text-gray-500">
+              Hữu ích cho trường như &quot;Tên công trình&quot; — tránh mỗi lần một người gõ một kiểu khác nhau,
+              khó đối chiếu về sau.
+            </p>
           </Row>
         )}
 
