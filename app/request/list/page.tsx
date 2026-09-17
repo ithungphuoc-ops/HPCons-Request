@@ -416,6 +416,7 @@ function RequestListPageInner() {
                               <Avatar
                                 url={avatars[r.submittedBy.uid]}
                                 initial={submitterInitial(r)}
+                                name={r.submittedBy.name}
                                 size={28}
                                 fallbackClassName={
                                   isDraft ? "bg-gray-100 text-gray-500" : "bg-blue-100 text-[var(--color-action-blue)]"
@@ -500,6 +501,7 @@ function RequestListPageInner() {
                     <Avatar
                       url={avatars[r.submittedBy.uid]}
                       initial={submitterInitial(r)}
+                      name={r.submittedBy.name}
                       size={28}
                       fallbackClassName="bg-gray-100 text-gray-500"
                     />
@@ -536,6 +538,7 @@ function RequestListPageInner() {
                   <Avatar
                     url={avatars[r.submittedBy.uid]}
                     initial={submitterInitial(r)}
+                    name={r.submittedBy.name}
                     size={28}
                     fallbackClassName={
                       isActive

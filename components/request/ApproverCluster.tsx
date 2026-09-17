@@ -35,6 +35,7 @@ export default function ApproverCluster({
             <Avatar
               url={avatars[user.id]}
               initial={user.avatarInitial || user.name.charAt(0).toUpperCase()}
+              name={user.name}
               size={24}
               fallbackClassName="bg-gray-200 text-gray-600"
             />

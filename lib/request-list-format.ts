@@ -31,6 +31,17 @@ export function formatListValue(field: ProposalField, value: unknown): string {
   if (value === undefined || value === null || value === "") return "";
   if (Array.isArray(value)) return value.length ? value.join(", ") : "";
   const s = String(value);
+  if (field.dataType === "date") {
+    // Field kiểu "date" (không giờ) thường lưu "YYYY-MM-DD" thuần. Dùng
+    // Date.parse() cho chuỗi này sẽ parse theo UTC 00:00 (đúng ISO 8601), rồi
+    // toLocaleDateString() lại đổi sang GIỜ ĐỊA PHƯƠNG trình duyệt — với múi
+    // giờ ÂM (vd Mỹ) sẽ LÙI MẤT 1 NGÀY dù app chỉ dùng nội bộ VN (múi dương),
+    // rủi ro thực tế thấp nhưng vẫn là lỗi kỹ thuật thật (review CodeRabbit
+    // PR #33, 17/09/2026). Tách thẳng năm/tháng/ngày từ chuỗi, không qua Date/
+    // múi giờ nào cả — an toàn tuyệt đối bất kể máy người xem ở đâu.
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+    if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+  }
   if (field.dataType === "date" || field.dataType === "datetime") {
     const t = Date.parse(s);
     if (!Number.isNaN(t)) return new Date(t).toLocaleDateString("vi-VN");

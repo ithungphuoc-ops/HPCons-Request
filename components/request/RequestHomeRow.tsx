@@ -106,6 +106,12 @@ export default function RequestHomeRow({
       tabIndex={0}
       onClick={onOpen}
       onKeyDown={(e) => {
+        // CHỈ xử lý khi phím bấm đúng trên chính hàng (focus bằng Tab vào div này) — không
+        // xử lý khi sự kiện nổi bọt lên từ nút sao/nút menu con. Thiếu điều kiện này: bấm Tab
+        // vào nút sao rồi bấm Space để đánh dấu → nút sao xử lý xong, nhưng sự kiện Space vẫn
+        // nổi bọt lên div cha, kích hoạt luôn onOpen() → điều hướng nhầm sang trang chi tiết
+        // (phát hiện qua review CodeRabbit PR #33, 17/09/2026).
+        if (e.target !== e.currentTarget) return;
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           onOpen();
@@ -163,6 +169,7 @@ export default function RequestHomeRow({
             <Avatar
               url={avatars[r.submittedBy.uid]}
               initial={submitterInitial(r)}
+              name={r.submittedBy.name}
               size={22}
               fallbackClassName="bg-blue-100 text-[var(--color-action-blue)]"
             />

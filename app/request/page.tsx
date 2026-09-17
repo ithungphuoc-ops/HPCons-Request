@@ -312,7 +312,14 @@ export default function RequestHomePage() {
         )}
         {status !== "loading" && status !== "error" && filteredRequests.length === 0 && (
           <p className="px-6 py-8 text-center text-[14px] text-gray-500">
-            {tab === "all" ? "Không có đề xuất nào khớp bộ lọc hiện tại." : HOME_TAB_EMPTY[tab]}
+            {/* Đang có tìm kiếm/lọc nhóm mà rỗng → PHẢI dùng câu chung, không dùng câu riêng
+                của tab (vd tab "Đã chấp thuận" rỗng vì đang gõ tìm kiếm không khớp sẽ hiện
+                "Không có đề xuất nào đã chấp thuận" — sai, gây hiểu lầm là công ty không có
+                đề xuất nào loại đó, trong khi thật ra có nhưng bị tìm kiếm lọc mất). Câu riêng
+                theo tab CHỈ đúng khi không có bộ lọc/tìm kiếm nào khác đang áp dụng. */}
+            {tab === "all" || searchText || filterGroup !== "all"
+              ? "Không có đề xuất nào khớp bộ lọc hiện tại."
+              : HOME_TAB_EMPTY[tab]}
           </p>
         )}
         {status !== "loading" && status !== "error" && filteredRequests.length > 0 && (
