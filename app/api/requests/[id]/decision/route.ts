@@ -15,7 +15,12 @@ import { notifyFollowersFullyApproved, notifyPendingApprovers, notifySubmitterRe
 import { recomputeDeadlineForNextStep } from "@/lib/server/requests";
 import { requireSession } from "@/lib/session";
 import type { ApprovalTimeField, GroupNotificationRules, ProposalGroup, RequestInstance, TaggedUser } from "@/lib/types";
-import { guiSangQlkCtr, trichXuatPayload } from "@/lib/qlkctr-sync";
+import {
+  cauNhatKyQlkCtr,
+  guiSangQlkCtr,
+  trangThaiSauKhiGui,
+  trichXuatPayload,
+} from "@/lib/qlkctr-sync";
 import { guiSangThuMua, trichXuatPayloadThuMua } from "@/lib/thumua-sync";
 
 interface DecisionBody {
@@ -315,17 +320,41 @@ export async function POST(
         const payload = await trichXuatPayload(updated);
         if (payload) {
           const ketQua = await guiSangQlkCtr(payload);
-          const syncEntry = {
-            at: new Date().toISOString(),
-            actor: "Hệ thống",
-            action: ketQua.ok ? "Đã đồng bộ sang QLK CTR" : "Đồng bộ QLK CTR thất bại",
-            note: ketQua.ok ? `Công trình: ${ketQua.congTrinh ?? "chờ xác nhận"}` : ketQua.error,
-          };
+          /**
+           * ★★★ SỬA 18/09/2026 — TRƯỚC ĐÂY CHỖ NÀY BÁO "THÀNH CÔNG" CHO CẢ CA KHO BỎ QUA.
+           *
+           * Câu cũ: `action: ketQua.ok ? "Đã đồng bộ sang QLK CTR" : ...` — nhưng QLK CTR trả
+           * `ok: true` cho CẢ HAI kết cục "đã tạo đề nghị" và "bỏ qua vì không khớp công
+           * trình". Nên nhật ký ghi "Đã đồng bộ" trong khi kho không tạo gì, và câu
+           * *"Công trình: chờ xác nhận"* (do `congTrinh` rỗng) càng làm người đọc tưởng đang
+           * chờ ai xử lý tiếp.
+           *
+           * Hậu quả đo được 18/09/2026: bốn đề xuất công trình 000000096 · 000000098 ·
+           * 000000100 · 000000104 KHÔNG có ở kho, mà nhật ký đều ghi "Đã đồng bộ".
+           *
+           * Nay `cauNhatKyQlkCtr` phân ba ca rõ ràng, và ghi thêm cờ `qlkCtrSyncStatus` để
+           * `retryQlkCtrSyncNeuLoi` biết cái nào cần thử lại — xem `lib/qlkctr-sync.ts`.
+           */
+          const { action, note } = cauNhatKyQlkCtr(ketQua);
+          const syncEntry = { at: new Date().toISOString(), actor: "Hệ thống", action, note };
           updated.history = [...updated.history, syncEntry];
-          await ref.update({ history: updated.history });
+          updated.qlkCtrSyncStatus = trangThaiSauKhiGui(ketQua);
+          await ref.update({
+            history: updated.history,
+            qlkCtrSyncStatus: updated.qlkCtrSyncStatus,
+          });
         }
       } catch (syncError) {
         console.error("Đồng bộ QLK CTR lỗi (không ảnh hưởng thao tác duyệt):", syncError);
+        /* Đánh dấu "failed" dù lỗi xảy ra NGOÀI `guiSangQlkCtr` (vốn tự bắt hết lỗi rồi trả
+           `{ ok:false }` — hiếm khi tới đây, nhưng nếu tới thì vẫn cần cờ này để lần sau có
+           người mở đề xuất, `retryQlkCtrSyncNeuLoi()` còn biết mà tự thử lại). Cùng nếp với
+           nhánh Thu mua ngay bên dưới. */
+        try {
+          await ref.update({ qlkCtrSyncStatus: "failed" });
+        } catch {
+          // Bỏ qua — không để lỗi ghi cờ phụ này làm hỏng response duyệt chính.
+        }
       }
 
       // Đồng bộ sang App Thu mua (module mua hàng) — NHÁNH SONG SONG với QLK CTR ở trên,
