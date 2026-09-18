@@ -22,6 +22,7 @@ import {
   toProposalGroup,
 } from "@/lib/server/requests";
 import { requireSession } from "@/lib/session";
+import { retryQlkCtrSyncNeuLoi } from "@/lib/qlkctr-sync";
 import { retryThuMuaSyncNeuLoi } from "@/lib/thumua-sync";
 import type {
   ApprovalFlowType,
@@ -53,6 +54,8 @@ export async function GET(request: Request) {
       // Bắn rồi quên cho từng đề xuất lỡ đồng bộ Thu mua thất bại lần trước — xem
       // lib/thumua-sync.ts. Đây là màn người gửi hay mở lại nhất, nên tự vá ở đây trước.
       for (const r of requests) void retryThuMuaSyncNeuLoi(r);
+      /* ★ Thêm 18/09/2026 — cùng lý do, xem lib/qlkctr-sync.ts. */
+      for (const r of requests) void retryQlkCtrSyncNeuLoi(r);
       return NextResponse.json({ requests });
     }
 

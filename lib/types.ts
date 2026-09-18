@@ -698,6 +698,32 @@ export interface RequestInstance {
    * đồng bộ lỗi" không phải quét chuỗi trong mảng lịch sử.
    */
   thuMuaSyncStatus?: "synced" | "failed";
+  /**
+   * ★★★ KẾT QUẢ LẦN ĐỒNG BỘ SANG QLK CTR (app Kho công trình) GẦN NHẤT — thêm 18/09/2026.
+   *
+   * 🔴 SINH RA TỪ BA SỰ CỐ THẬT, CÙNG MỘT NGUYÊN NHÂN, TRONG NĂM NGÀY.
+   *
+   * Đường sang QLK CTR trước đây là đường DUY NHẤT không có cờ trạng thái: nó chỉ ghi một dòng
+   * vào `history` rồi quên. Hỏng là hỏng vĩnh viễn, không ai thử lại, và không có cách nào dò
+   * ra "còn đề xuất nào chưa sang kho" ngoài việc đọc mắt từng dòng lịch sử.
+   *
+   * Hậu quả đo được ngày 18/09/2026: bốn đề xuất công trình **không có** ở kho —
+   * `000000096`, `000000098`, `000000100`, `000000104` — trong khi `000000099`, `000000102`,
+   * `000000103` sang bình thường. Không ai biết cho tới khi Thu mua lập đơn và bị kho từ chối.
+   *
+   * 🔴 `"bo_qua"` LÀ TRẠNG THÁI QUAN TRỌNG NHẤT, VÀ NÓ TỪNG BỊ ĐẾM LÀ THÀNH CÔNG.
+   * Khi QLK CTR không nhận diện được công trình, nó trả `ok: true` kèm
+   * `trangThai: "bo_qua_khong_khop_cong_trinh"` — tức HTTP 200. Bên này đọc `ok` rồi ghi
+   * *"Đã đồng bộ sang QLK CTR"*, nhìn y như xong, trong khi kho **không tạo gì cả**.
+   * Nay tách hẳn thành `"bo_qua"`: không phải lỗi mạng, nhưng tuyệt đối không phải thành công.
+   *
+   * 📌 VÌ SAO `"bo_qua"` CŨNG ĐƯỢC THỬ LẠI: hai nguyên nhân bỏ qua đều **tự khỏi theo thời
+   * gian** mà không cần sửa đề xuất — admin kho tạo thêm công trình còn thiếu (ca
+   * `000000104`, công trình AID), hoặc app kho vá lại phép so mã (ca `000000096/98/100`, lỗi
+   * dấu `/` vá lúc 10:12 ngày 17/09). Lần thử sau là khớp. Đây khác hẳn lỗi vĩnh viễn kiểu
+   * "sai dữ liệu" — chỗ đó gửi lại y nguyên thì không bao giờ đổi được gì.
+   */
+  qlkCtrSyncStatus?: "synced" | "failed" | "bo_qua";
 }
 
 export type ModalWindowStatus =

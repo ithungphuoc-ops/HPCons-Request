@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { trichXuatPayload } from "./qlkctr-sync";
+import {
+  cauNhatKyQlkCtr,
+  daTaoDeNghiThat,
+  trangThaiSauKhiGui,
+  trichXuatPayload,
+} from "./qlkctr-sync";
 import { serializeTableRows } from "./table-field";
 import type { ProposalField, RequestInstance } from "./types";
 
@@ -296,5 +301,60 @@ describe("trichXuatPayload", () => {
     });
 
     expect(await trichXuatPayload(request)).toBeNull();
+  });
+});
+
+/**
+ * ★★★ PHÂN BIỆT "KHO ĐÃ TẠO ĐỀ NGHỊ" VỚI "KHO BỎ QUA" — thêm 18/09/2026.
+ *
+ * 🔴 SINH RA TỪ BA SỰ CỐ THẬT TRONG NĂM NGÀY. QLK CTR trả `ok: true` (HTTP 200) cho CẢ HAI
+ * kết cục, nên bên này từng ghi "Đã đồng bộ sang QLK CTR" cho cả ca kho không tạo gì. Bốn đề
+ * xuất công trình mất tích ở kho vì vậy: 000000096 · 000000098 · 000000100 · 000000104.
+ *
+ * 🔴 CHIỀU NGHỊCH LÀ CHIỀU CẦN CANH: nếu ai đó "đơn giản hoá" lại thành `return ketQua.ok`
+ * thì mọi thứ vẫn chạy êm, nhật ký vẫn xanh, và lỗi chỉ lộ ra vài ngày sau khi Thu mua lập
+ * đơn và bị kho từ chối. Không có bài kiểm thì không cách nào bắt được.
+ */
+describe("phân biệt kho đã tạo đề nghị với kho bỏ qua", () => {
+  const daTao = { ok: true as const, trangThai: "da_tao_de_nghi", congTrinh: "UNICE QUẢNG NGÃI" };
+  const boQua = { ok: true as const, trangThai: "bo_qua_khong_khop_cong_trinh" };
+  const hong = { ok: false as const, error: "HTTP 503" };
+
+  it("kho tạo thật → daTaoDeNghiThat = true, trạng thái synced", () => {
+    expect(daTaoDeNghiThat(daTao)).toBe(true);
+    expect(trangThaiSauKhiGui(daTao)).toBe("synced");
+  });
+
+  it("🔴 kho BỎ QUA vẫn trả ok:true → KHÔNG được tính là thành công", () => {
+    expect(daTaoDeNghiThat(boQua)).toBe(false);
+    expect(trangThaiSauKhiGui(boQua)).toBe("bo_qua");
+  });
+
+  it("gọi hỏng (mạng/503) → failed, tách khỏi bo_qua", () => {
+    expect(daTaoDeNghiThat(hong)).toBe(false);
+    expect(trangThaiSauKhiGui(hong)).toBe("failed");
+  });
+
+  it("🔴 trạng thái LẠ từ kho KHÔNG được coi là đã tạo", () => {
+    /* Ngày mai kho thêm kết cục mới mà bên này chưa biết: phải rơi vào "bo_qua" để còn được
+       thử lại và còn hiện lên nhật ký, chứ không âm thầm tính là xong. */
+    const la = { ok: true as const, trangThai: "mot_trang_thai_moi_nao_do" };
+    expect(daTaoDeNghiThat(la)).toBe(false);
+    expect(trangThaiSauKhiGui(la)).toBe("bo_qua");
+  });
+
+  it("câu nhật ký ca BỎ QUA phải nói rõ kho CHƯA nhận, không được ghi 'Đã đồng bộ'", () => {
+    const { action, note } = cauNhatKyQlkCtr(boQua);
+    expect(action).not.toContain("Đã đồng bộ");
+    expect(action).toContain("CHƯA nhận");
+    /* Phải chỉ ra việc cần làm, vì hai nguyên nhân bỏ qua đều do người xử lý được. */
+    expect(note).toContain("công trình");
+  });
+
+  it("câu nhật ký ca TẠO THẬT có tên công trình, KHÔNG còn chữ 'chờ xác nhận' gây hiểu nhầm", () => {
+    const { action, note } = cauNhatKyQlkCtr(daTao);
+    expect(action).toBe("Đã đồng bộ sang QLK CTR");
+    expect(note).toContain("UNICE QUẢNG NGÃI");
+    expect(note).not.toContain("chờ xác nhận");
   });
 });

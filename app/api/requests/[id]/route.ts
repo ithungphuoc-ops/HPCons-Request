@@ -21,6 +21,7 @@ import {
 } from "@/lib/server/requests";
 import { requireSession } from "@/lib/session";
 import type { RequestInstance, TaggedUser } from "@/lib/types";
+import { retryQlkCtrSyncNeuLoi } from "@/lib/qlkctr-sync";
 import { retryThuMuaSyncNeuLoi } from "@/lib/thumua-sync";
 import { dateLeadTimeBlockedMessage, resolveDateLeadTimeNumbers } from "@/lib/date-lead-time";
 
@@ -43,6 +44,10 @@ export async function GET(
     }
     // Bắn rồi quên — không đợi kết quả, không làm chậm màn hình. Xem lib/thumua-sync.ts.
     void retryThuMuaSyncNeuLoi(found);
+    /* ★ Thêm 18/09/2026: đường sang QLK CTR nay cũng tự thử lại. Trước đó nó là đường DUY NHẤT
+       không có cơ chế này — bốn đề xuất công trình đã mất tích ở kho vì vậy (000000096 ·
+       000000098 · 000000100 · 000000104). Xem lib/qlkctr-sync.ts. */
+    void retryQlkCtrSyncNeuLoi(found);
     return NextResponse.json({ request: found });
   } catch (error) {
     return apiErrorResponse(error);
