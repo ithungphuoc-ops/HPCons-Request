@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { canApproverAct, hasUnseenUpdate } from "@/lib/approval-logic";
 import { adminDb } from "@/lib/firebase/admin";
 import { apiErrorResponse } from "@/lib/http";
@@ -442,18 +442,31 @@ export async function POST(request: Request) {
 
     // Email thông báo thật — Sếp chốt 24/08/2026. Chỉ gửi khi gửi CHÍNH THỨC
     // (không phải nháp) và nhóm bật `notificationRules.emailNotify`; 2 hàm tự
-    // kiểm tra cờ, không cần if ở đây. Await (không phải bắn-rồi-quên thật)
-    // vì môi trường serverless (Vercel) không đảm bảo code sau response còn
-    // chạy tiếp — giống cách guiSangQlkCtr/guiSangThuMua đã làm.
+    // kiểm tra cờ, không cần if ở đây.
+    //
+    // ⚠️ ĐỔI 21/09/2026 (Sếp báo hôm 18/09 nhiều người gửi đề xuất cùng lúc bị
+    // chậm): TRƯỚC ĐÂY `await` cả khối này TRƯỚC khi trả response — lý do ghi
+    // lại lúc đó là môi trường serverless (Vercel) không đảm bảo code sau
+    // response còn chạy tiếp. Next.js 15 đã có `after()` (next/server) giải
+    // quyết ĐÚNG lý do đó: đăng ký chạy SAU khi response đã gửi cho người
+    // dùng, mà Vercel VẪN đảm bảo chạy xong (không bị đóng băng instance giữa
+    // đường như code chạy tự do sau `return`). Kết quả: người gửi thấy "đã
+    // gửi" ngay khi Firestore ghi xong, không phải chờ thêm round-trip SMTP
+    // (cả công ty dùng chung 1 tài khoản Gmail — nhiều người gửi cùng lúc dễ
+    // bị Gmail làm chậm kết nối, y hệt "kho hàng chung" trong bài học downtime
+    // Sếp gửi). Lỗi gửi mail vẫn chỉ log, không ảnh hưởng gì tới người dùng vì
+    // response đã trả xong từ trước đó.
     if (!isDraft) {
-      try {
-        await Promise.all([
-          notifyPendingApprovers(created, group),
-          notifyFollowersSubmitted(created.followers, created, group),
-        ]);
-      } catch (mailError) {
-        console.error("Gửi email thông báo lúc gửi đề xuất thất bại (không ảnh hưởng thao tác chính):", mailError);
-      }
+      after(async () => {
+        try {
+          await Promise.all([
+            notifyPendingApprovers(created, group),
+            notifyFollowersSubmitted(created.followers, created, group),
+          ]);
+        } catch (mailError) {
+          console.error("Gửi email thông báo lúc gửi đề xuất thất bại (không ảnh hưởng thao tác chính):", mailError);
+        }
+      });
     }
 
     return NextResponse.json({ request: created }, { status: 201 });

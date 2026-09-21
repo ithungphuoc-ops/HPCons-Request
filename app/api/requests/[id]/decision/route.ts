@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import {
   applyApproverDecision,
   approveAndForward,
@@ -244,11 +244,16 @@ export async function POST(
 
       // Email thông báo thật (Sếp chốt 24/08/2026) — người vừa được chuyển
       // tới (hoặc người kế tiếp theo thứ tự) đang chờ xử lý.
-      try {
-        await notifyPendingApprovers(updated, { notificationRules });
-      } catch (mailError) {
-        console.error("Gửi email thông báo lúc chuyển tiếp thất bại (không ảnh hưởng thao tác chính):", mailError);
-      }
+      //
+      // ⚠️ ĐỔI 21/09/2026 — dùng after() (next/server), lý do đầy đủ xem
+      // comment ở app/api/requests/route.ts (cùng thay đổi, cùng ngày).
+      after(async () => {
+        try {
+          await notifyPendingApprovers(updated, { notificationRules });
+        } catch (mailError) {
+          console.error("Gửi email thông báo lúc chuyển tiếp thất bại (không ảnh hưởng thao tác chính):", mailError);
+        }
+      });
 
       return NextResponse.json({ request: updated });
     }
@@ -301,16 +306,35 @@ export async function POST(
     // Email thông báo thật (Sếp chốt 24/08/2026): còn "pending" → báo người
     // kế tiếp đang tới lượt; đã xong (approved/rejected) → báo người tạo
     // (luôn báo) + người theo dõi (chỉ khi approved hoàn toàn).
-    try {
-      if (status === "pending") {
-        await notifyPendingApprovers(updated, { notificationRules });
-      } else {
-        await notifySubmitterResult(updated, { notificationRules });
-        if (status === "approved") await notifyFollowersFullyApproved(updated, { notificationRules });
+    //
+    // ⚠️ ĐỔI 21/09/2026 — dùng after() (next/server) thay vì await trước khi
+    // trả response, lý do đầy đủ xem comment ở app/api/requests/route.ts
+    // (cùng thay đổi, cùng ngày). CHỈ đổi phần email — phần đồng bộ QLK CTR/
+    // Thu mua ngay dưới đây vẫn giữ await như cũ (không nằm trong yêu cầu lần
+    // này, và 2 việc đó còn ghi ngược lại `updated`/`history` trả về trong
+    // CHÍNH response này nên không đổi được sang after() mà không đổi luôn ý
+    // nghĩa dữ liệu trả về).
+    after(async () => {
+      try {
+        if (status === "pending") {
+          await notifyPendingApprovers(updated, { notificationRules });
+        } else {
+          await notifySubmitterResult(updated, { notificationRules });
+          if (status === "approved") await notifyFollowersFullyApproved(updated, { notificationRules });
+        }
+      } catch (mailError) {
+        console.error("Gửi email thông báo sau quyết định thất bại (không ảnh hưởng thao tác chính):", mailError);
       }
-    } catch (mailError) {
-      console.error("Gửi email thông báo sau quyết định thất bại (không ảnh hưởng thao tác chính):", mailError);
-    }
+    });
+
+    // ⚠️ Đoạn đồng bộ QLK CTR/Thu Mua ngay dưới đây MUTATE tiếp `updated`
+    // (updated.history, updated.qlkCtrSyncStatus, updated.thuMuaSyncStatus).
+    // Vì after() chạy SAU khi response đã trả, closure ở trên nhìn `updated`
+    // là CÙNG 1 object tham chiếu — nên callback gửi mail sẽ thấy bản đã bị
+    // mutate thêm, không phải bản tại thời điểm gọi after(). Hiện tại KHÔNG
+    // sao vì notification-emails.ts không đọc 3 field này — nhưng nếu sau
+    // này thêm nội dung email dựa vào history/sync-status thì phải đọc rõ
+    // đoạn này trước, đừng giả định `updated` còn nguyên như lúc after() được gọi.
 
     // Đồng bộ sang QLK CTR (app quản lý kho công trình) khi duyệt xong hoàn toàn — xem
     // openspec/changes/add-qlkctr-sync-webhook. Bọc try/catch riêng, tuyệt đối không được để lỗi
