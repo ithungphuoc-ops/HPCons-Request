@@ -327,6 +327,15 @@ export async function POST(
       }
     });
 
+    // ⚠️ Đoạn đồng bộ QLK CTR/Thu Mua ngay dưới đây MUTATE tiếp `updated`
+    // (updated.history, updated.qlkCtrSyncStatus, updated.thuMuaSyncStatus).
+    // Vì after() chạy SAU khi response đã trả, closure ở trên nhìn `updated`
+    // là CÙNG 1 object tham chiếu — nên callback gửi mail sẽ thấy bản đã bị
+    // mutate thêm, không phải bản tại thời điểm gọi after(). Hiện tại KHÔNG
+    // sao vì notification-emails.ts không đọc 3 field này — nhưng nếu sau
+    // này thêm nội dung email dựa vào history/sync-status thì phải đọc rõ
+    // đoạn này trước, đừng giả định `updated` còn nguyên như lúc after() được gọi.
+
     // Đồng bộ sang QLK CTR (app quản lý kho công trình) khi duyệt xong hoàn toàn — xem
     // openspec/changes/add-qlkctr-sync-webhook. Bọc try/catch riêng, tuyệt đối không được để lỗi
     // ở đây làm hỏng response duyệt đề xuất chính (đề xuất vẫn đã duyệt xong dù đồng bộ lỗi).
