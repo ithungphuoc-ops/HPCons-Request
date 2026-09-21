@@ -15,7 +15,8 @@ vi.mock("@/lib/firebase/admin", () => ({
   adminDb: { collection: () => ({ doc: () => ({ update: updateMock }) }) },
 }));
 
-const { trichXuatPayloadThuMua, retryThuMuaSyncNeuLoi } = await import("./thumua-sync");
+const { trichXuatPayloadThuMua, retryThuMuaSyncNeuLoi, layNguoiTheoDoiGuiSangThuMua } =
+  await import("./thumua-sync");
 
 function baseRequest(overrides: Partial<RequestInstance>): RequestInstance {
   return {
@@ -192,5 +193,52 @@ describe("retryThuMuaSyncNeuLoi", () => {
     const patch = updateMock.mock.calls[0][0];
     expect(patch.thuMuaSyncStatus).toBe("failed");
     vi.unstubAllGlobals();
+  });
+});
+
+describe("layNguoiTheoDoiGuiSangThuMua", () => {
+  it("giữ đúng ba trường Thu mua cần, bỏ phần thừa", () => {
+    const ra = layNguoiTheoDoiGuiSangThuMua([
+      { id: "u1", name: "Đoàn Thu Thùy", username: "thuy.dt", avatarInitial: "Đ", title: "NV" },
+    ]);
+    expect(ra).toEqual([{ id: "u1", name: "Đoàn Thu Thùy", username: "thuy.dt" }]);
+  });
+
+  it("bỏ NHÓM — id của nhóm không phải uid người, gửi sang là bày ra một dòng không ai nhận được thông báo", () => {
+    const ra = layNguoiTheoDoiGuiSangThuMua([
+      { id: "g1", name: "Phòng Thu mua", username: "pth", kind: "group" },
+      { id: "u1", name: "Trà Quế", username: "que.ptt" },
+    ]);
+    expect(ra.map((x) => x.id)).toEqual(["u1"]);
+  });
+
+  it("bỏ phần tử thiếu id — uid là thứ duy nhất có tác dụng thật bên Thu mua", () => {
+    const ra = layNguoiTheoDoiGuiSangThuMua([
+      { name: "Không có uid", username: "x" },
+      { id: "   ", name: "id toàn khoảng trắng", username: "y" },
+      { id: "u1", name: "Hợp lệ", username: "z" },
+    ]);
+    expect(ra.map((x) => x.id)).toEqual(["u1"]);
+  });
+
+  it("bỏ trùng theo id, giữ người đầu — hai dòng y hệt thì gỡ một phát mất cả hai", () => {
+    const ra = layNguoiTheoDoiGuiSangThuMua([
+      { id: "u1", name: "Lần một", username: "a" },
+      { id: "u1", name: "Lần hai", username: "b" },
+    ]);
+    expect(ra).toHaveLength(1);
+    expect(ra[0].name).toBe("Lần một");
+  });
+
+  it("rác vào thì mảng rỗng ra, KHÔNG ném lỗi — dữ liệu lạ chỉ được làm mất người theo dõi, không được làm hỏng cả lượt đồng bộ", () => {
+    expect(layNguoiTheoDoiGuiSangThuMua(null)).toEqual([]);
+    expect(layNguoiTheoDoiGuiSangThuMua(undefined)).toEqual([]);
+    expect(layNguoiTheoDoiGuiSangThuMua("chuỗi lạ")).toEqual([]);
+    expect(layNguoiTheoDoiGuiSangThuMua([null, 42, ["mảng lồng"], {}])).toEqual([]);
+  });
+
+  it("cắt khoảng trắng thừa quanh id và tên", () => {
+    const ra = layNguoiTheoDoiGuiSangThuMua([{ id: " u1 ", name: " Tên  ", username: " nick " }]);
+    expect(ra[0]).toEqual({ id: "u1", name: "Tên", username: "nick" });
   });
 });
