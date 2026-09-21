@@ -50,6 +50,19 @@ export type ThuMuaVatTu = {
 
 export type ThuMuaTaiLieuDinhKem = { ten: string; url: string };
 
+/**
+ * Người theo dõi đề xuất, gửi kèm sang Thu mua.
+ *
+ * 🔴 BA TRƯỜNG NÀY LÀ HỢP ĐỒNG VỚI BÊN THU MUA — đừng đổi tên. Bên đó đọc đúng `id` / `name` /
+ * `username` (xem `HPCons-ThuMua/2-quy-trinh/tich-hop-app-request.ts::layNguoiTheoDoiTuAppRequest`,
+ * hàm bỏ qua mọi phần tử không có `id`). Trùng khớp với `TaggedUser` nên gửi thẳng được, không
+ * phải nắn lại hình dạng.
+ *
+ * `id` chính là uid trong `users` của App Tổng — thứ DUY NHẤT có tác dụng thật bên Thu mua
+ * (quyền xem theo hồ sơ, tab "Tôi theo dõi", thông báo chuyển bước).
+ */
+export type ThuMuaNguoiTheoDoi = { id: string; name: string; username: string };
+
 export type ThuMuaPayload = {
   requestCode: string;
   requestId: string;
@@ -65,7 +78,58 @@ export type ThuMuaPayload = {
   phongBan: string;
   vatTu: ThuMuaVatTu[];
   taiLieuDinhKem?: ThuMuaTaiLieuDinhKem[];
+  /** Vắng mặt = không có ai theo dõi. Thu mua tự tra chức danh từng người từ danh bạ App Tổng. */
+  nguoiTheoDoi?: ThuMuaNguoiTheoDoi[];
 };
+
+/**
+ * Lọc danh sách người theo dõi trước khi gửi sang Thu mua.
+ *
+ * 🔴 VÌ SAO CẦN LỌC chứ không gửi thẳng `request.followers`:
+ *
+ * ① BỎ NHÓM. `TaggedUser` có `kind: "group"` — khi đó `id` là mã NHÓM, không phải uid người.
+ *    Gửi sang là bên Thu mua dựng một "người theo dõi" mang mã nhóm: không ai nhận được thông
+ *    báo, không ai được mở hồ sơ, mà giao diện vẫn bày ra một dòng như thể có người. Hiện
+ *    `followers` chỉ chứa người (`kind` để trống), nhưng trường này tồn tại nên chặn sẵn.
+ *
+ * ② BỎ PHẦN TỬ THIẾU `id`. Bên Thu mua cũng bỏ, nhưng lọc từ đây thì gói tin sạch và
+ *    người đọc log không phải đoán vì sao số người hai bên lệch nhau.
+ *
+ * ③ BỎ TRÙNG THEO `id`, GIỮ NGƯỜI ĐẦU. Cùng một người xuất hiện hai lần là bên Thu mua có hai
+ *    dòng y hệt, mà thao tác gỡ người theo dõi lại lọc theo uid nên gỡ một phát mất cả hai —
+ *    người dùng tưởng app hỏng.
+ *
+ * ④ CHỈ LẤY BA TRƯỜNG. `TaggedUser` còn `avatarInitial`, `title`, `kind` — Thu mua không dùng,
+ *    gửi thừa chỉ làm gói tin nặng thêm và tạo ràng buộc giả giữa hai app.
+ *
+ * ⚠️ KHÔNG NÉM LỖI. Dữ liệu lạ chỉ được làm mất người theo dõi, KHÔNG được làm hỏng cả lượt
+ * đồng bộ đề nghị — cùng nguyên tắc với cửa tiếp nhận bên Thu mua.
+ */
+export function layNguoiTheoDoiGuiSangThuMua(nguon: unknown): ThuMuaNguoiTheoDoi[] {
+  if (!Array.isArray(nguon)) return [];
+
+  const ra: ThuMuaNguoiTheoDoi[] = [];
+  const daCo = new Set<string>();
+
+  for (const phanTu of nguon) {
+    if (phanTu === null || typeof phanTu !== "object" || Array.isArray(phanTu)) continue;
+    const o = phanTu as { id?: unknown; name?: unknown; username?: unknown; kind?: unknown };
+
+    if (o.kind === "group") continue;
+
+    const id = typeof o.id === "string" ? o.id.trim() : "";
+    if (!id || daCo.has(id)) continue;
+    daCo.add(id);
+
+    ra.push({
+      id,
+      name: typeof o.name === "string" ? o.name.trim() : "",
+      username: typeof o.username === "string" ? o.username.trim() : "",
+    });
+  }
+
+  return ra;
+}
 
 /** Cùng logic tải tệp đính kèm với `qlkctr-sync.ts` — xem chú thích ở đó. */
 async function layTaiLieuDinhKem(request: RequestInstance): Promise<ThuMuaTaiLieuDinhKem[]> {
@@ -132,6 +196,7 @@ export async function trichXuatPayloadThuMua(request: RequestInstance): Promise<
   const congTrinhChuoi = titleField ? String(request.values[titleField.id] ?? "").trim() || undefined : undefined;
 
   const taiLieuDinhKem = await layTaiLieuDinhKem(request);
+  const nguoiTheoDoi = layNguoiTheoDoiGuiSangThuMua(request.followers);
 
   return {
     requestCode: request.code,
@@ -146,6 +211,7 @@ export async function trichXuatPayloadThuMua(request: RequestInstance): Promise<
     phongBan,
     vatTu,
     ...(taiLieuDinhKem.length > 0 ? { taiLieuDinhKem } : {}),
+    ...(nguoiTheoDoi.length > 0 ? { nguoiTheoDoi } : {}),
   };
 }
 
