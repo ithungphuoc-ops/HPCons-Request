@@ -762,6 +762,24 @@ export type NotificationCategory =
 
 export type NotificationSettings = Record<NotificationCategory, boolean>;
 
+/**
+ * 3 loại thông báo trong 6 loại ở trên hiện CÓ email thật đi kèm (xem
+ * lib/server/notification-emails.ts) — "mentioned"/"manager_bypassed"/
+ * "approver_followup" chưa có đường gửi email nào nên không đưa vào đây,
+ * tránh dựng công tắc không có tác dụng gì.
+ */
+export type EmailNotifyCategory = "approver_pending" | "own_decided" | "following";
+
+/**
+ * Công tắc email THEO TỪNG NHÓM đề xuất, RIÊNG của 1 user — Sếp chốt
+ * 21/09/2026: "để người dùng tự quyết", tách biệt với `notificationRules.
+ * emailNotify` (Admin nhóm bật/tắt CẢ NHÓM dùng email hay không — vẫn giữ
+ * làm lớp trên, xem lib/server/notification-emails.ts). Thiếu key (nhóm/
+ * loại user chưa từng cấu hình) = coi như BẬT, giữ đúng hành vi hiện tại
+ * cho người chưa đụng vào cài đặt mới này.
+ */
+export type NotificationEmailByGroup = Record<string, Partial<Record<EmailNotifyCategory, boolean>>>;
+
 export interface GroupHistoryChange {
   field: string;
   before: string;

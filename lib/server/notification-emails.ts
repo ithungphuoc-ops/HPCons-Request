@@ -2,7 +2,7 @@ import "server-only";
 import { canApproverAct } from "@/lib/approval-logic";
 import { buildRequestEmailHtml, escapeHtml, resolveUserEmail, sendMail } from "@/lib/server/mailer";
 import { DEFAULT_GROUP_NOTIFICATION_RULES } from "@/lib/types";
-import type { GroupNotificationRules, RequestInstance, TaggedUser } from "@/lib/types";
+import type { EmailNotifyCategory, GroupNotificationRules, RequestInstance, TaggedUser } from "@/lib/types";
 
 /** Chỉ cần đúng field `notificationRules` — nhận cả `ProposalGroup` đầy đủ
  * lẫn 1 object rút gọn (vd đọc trực tiếp từ Firestore doc trong route quyết
@@ -47,15 +47,22 @@ function escapedRequestLabel(request: RequestInstance): string {
   return `<b>"${name}"</b> (mã ${code})`;
 }
 
-async function sendToUid(uid: string, subject: string, html: string) {
+async function sendToUid(
+  uid: string,
+  subject: string,
+  html: string,
+  emailCategory: { groupId: string | null; category: EmailNotifyCategory },
+) {
   try {
-    const email = await resolveUserEmail(uid);
+    const email = await resolveUserEmail(uid, emailCategory);
     if (!email) {
-      // Đường bỏ qua thứ hai (sau "thiếu cấu hình SMTP"): người này không có
-      // email trong danh bạ App Tổng. Trước đây `return` im lặng — nhìn log
-      // không tài nào biết vì sao đúng một người không nhận được mail trong
-      // khi những người khác nhận bình thường.
-      console.warn(`[mailer] BỎ QUA gửi email cho uid ${uid}: danh bạ App Tổng không có email.`);
+      // 2 lý do có thể (không phân biệt được ở đây, resolveUserEmail() gộp
+      // chung để chỉ đọc 1 lần users/{uid}): (a) danh bạ App Tổng không có
+      // email, hoặc (b) chính người này đã tự tắt loại thông báo này cho
+      // đúng nhóm này (công tắc riêng, Sếp chốt 21/09/2026) — trường hợp (b)
+      // là CHỦ Ý của người dùng, không phải lỗi, nhưng vẫn log ở mức thông
+      // tin để không lặp lại bài học "im lặng khó dò" của lỗi thiếu email cũ.
+      console.warn(`[mailer] BỎ QUA gửi email cho uid ${uid}: thiếu email trong danh bạ, hoặc người này đã tự tắt loại thông báo này cho nhóm hiện tại.`);
       return;
     }
     await sendMail({ to: email, subject, html });
@@ -81,7 +88,9 @@ export async function notifyPendingApprovers(request: RequestInstance, group: Gr
     requestId: request.id,
     ctaLabel: "Xem đề xuất",
   });
-  await Promise.all(targetUids.map((uid) => sendToUid(uid, subject, html)));
+  await Promise.all(
+    targetUids.map((uid) => sendToUid(uid, subject, html, { groupId: request.groupId, category: "approver_pending" })),
+  );
 }
 
 /** Gọi khi đề xuất vừa hoàn tất (approved/rejected) — báo cho người tạo,
@@ -102,7 +111,7 @@ export async function notifySubmitterResult(request: RequestInstance, group: Gro
     requestId: request.id,
     ctaLabel: "Xem đề xuất",
   });
-  await sendToUid(request.submittedBy.uid, subject, html);
+  await sendToUid(request.submittedBy.uid, subject, html, { groupId: request.groupId, category: "own_decided" });
 }
 
 /** Gọi lúc gửi đề xuất lần đầu — báo người theo dõi biết có đề xuất mới
@@ -122,7 +131,9 @@ export async function notifyFollowersSubmitted(followers: TaggedUser[], request:
     requestId: request.id,
     ctaLabel: "Xem đề xuất",
   });
-  await Promise.all(followers.map((f) => sendToUid(f.id, subject, html)));
+  await Promise.all(
+    followers.map((f) => sendToUid(f.id, subject, html, { groupId: request.groupId, category: "following" })),
+  );
 }
 
 /** Gọi khi đề xuất vừa được chấp thuận HOÀN TOÀN — báo người theo dõi. */
@@ -137,5 +148,7 @@ export async function notifyFollowersFullyApproved(request: RequestInstance, gro
     requestId: request.id,
     ctaLabel: "Xem đề xuất",
   });
-  await Promise.all(request.followers.map((f) => sendToUid(f.id, subject, html)));
+  await Promise.all(
+    request.followers.map((f) => sendToUid(f.id, subject, html, { groupId: request.groupId, category: "following" })),
+  );
 }
