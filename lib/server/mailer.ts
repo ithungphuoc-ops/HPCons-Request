@@ -2,6 +2,7 @@ import "server-only";
 import nodemailer from "nodemailer";
 import { getHpcoreDb } from "@/lib/hpcore";
 import { CURRENT_APP_HOST } from "@/lib/constants";
+import type { EmailNotifyCategory } from "@/lib/types";
 
 /**
  * Gửi email thông báo thật — Sếp chốt 24/08/2026 cần làm. Dùng Nodemailer +
@@ -103,12 +104,31 @@ export async function sendMail(params: { to: string; subject: string; html: stri
 }
 
 /** Tra email thật của 1 uid từ users/{uid} của app tổng (hpcore) — cùng
- * collection/field `email` đã dùng ở `/api/directory`, `/api/directory/managers`. */
-export async function resolveUserEmail(uid: string): Promise<string | null> {
+ * collection/field `email` đã dùng ở `/api/directory`, `/api/directory/managers`.
+ *
+ * Kèm luôn kiểm tra công tắc email THEO TỪNG NHÓM của chính người này (Sếp
+ * chốt 21/09/2026, xem `NotificationEmailByGroup` trong lib/types.ts) — đọc
+ * CHUNG 1 lần cùng document `users/{uid}` thay vì đọc riêng lần nữa, giữ
+ * đúng số lượt đọc Firestore như trước khi có công tắc này. Thiếu cấu hình
+ * (nhóm/loại user chưa từng tắt) = coi như BẬT, không đổi hành vi cũ.
+ * `groupId` là `null` (đề xuất trực tiếp, không thuộc nhóm nào) thì bỏ qua
+ * hẳn bước kiểm tra này — không có khái niệm "công tắc theo nhóm" để áp.
+ */
+export async function resolveUserEmail(
+  uid: string,
+  emailPreferenceCheck?: { groupId: string | null; category: EmailNotifyCategory },
+): Promise<string | null> {
   try {
     const snap = await getHpcoreDb().collection("users").doc(uid).get();
-    const email = (snap.data()?.email as string | undefined)?.trim();
-    return email || null;
+    const data = snap.data();
+    const email = (data?.email as string | undefined)?.trim();
+    if (!email) return null;
+    const groupId = emailPreferenceCheck?.groupId;
+    if (emailPreferenceCheck && groupId) {
+      const pref = data?.notificationEmailByGroup?.[groupId]?.[emailPreferenceCheck.category];
+      if (pref === false) return null; // Người này đã tự tắt loại thông báo này cho đúng nhóm này
+    }
+    return email;
   } catch (error) {
     // Nuốt lỗi thì đúng (không được làm hỏng luồng duyệt), nhưng nuốt IM LẶNG
     // thì sai — đây là một trong hai đường làm email biến mất không dấu vết.
