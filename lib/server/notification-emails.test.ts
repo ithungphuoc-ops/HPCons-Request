@@ -67,8 +67,8 @@ describe("notifyPendingApprovers — chỉ gửi khi bật cờ, đúng người
     await notifyPendingApprovers(baseRequest(), {
       notificationRules: { sequentialTurnBasedNotify: true, perStepBlockNotify: true, emailNotify: true },
     });
-    expect(resolveUserEmailMock).toHaveBeenCalledWith("uA");
-    expect(resolveUserEmailMock).not.toHaveBeenCalledWith("uB");
+    expect(resolveUserEmailMock).toHaveBeenCalledWith("uA", { groupId: "g1", category: "approver_pending" });
+    expect(resolveUserEmailMock).not.toHaveBeenCalledWith("uB", { groupId: "g1", category: "approver_pending" });
     expect(sendMailMock).toHaveBeenCalledTimes(1);
   });
 
@@ -87,8 +87,8 @@ describe("notifyPendingApprovers — chỉ gửi khi bật cờ, đúng người
     await notifyPendingApprovers(baseRequest({ approvalFlow: "concurrent" }), {
       notificationRules: { sequentialTurnBasedNotify: true, perStepBlockNotify: true, emailNotify: true },
     });
-    expect(resolveUserEmailMock).toHaveBeenCalledWith("uA");
-    expect(resolveUserEmailMock).toHaveBeenCalledWith("uB");
+    expect(resolveUserEmailMock).toHaveBeenCalledWith("uA", { groupId: "g1", category: "approver_pending" });
+    expect(resolveUserEmailMock).toHaveBeenCalledWith("uB", { groupId: "g1", category: "approver_pending" });
     expect(sendMailMock).toHaveBeenCalledTimes(2);
   });
 });
@@ -108,7 +108,7 @@ describe("notifySubmitterResult — báo người tạo khi xong, không phụ t
     await notifySubmitterResult(baseRequest({ status: "approved" }), {
       notificationRules: { sequentialTurnBasedNotify: false, perStepBlockNotify: false, emailNotify: true },
     });
-    expect(resolveUserEmailMock).toHaveBeenCalledWith("submitter");
+    expect(resolveUserEmailMock).toHaveBeenCalledWith("submitter", { groupId: "g1", category: "own_decided" });
     expect(sendMailMock).toHaveBeenCalledTimes(1);
   });
 });
