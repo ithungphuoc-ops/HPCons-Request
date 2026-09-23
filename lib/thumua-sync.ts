@@ -78,9 +78,70 @@ export type ThuMuaPayload = {
   phongBan: string;
   vatTu: ThuMuaVatTu[];
   taiLieuDinhKem?: ThuMuaTaiLieuDinhKem[];
-  /** Vắng mặt = không có ai theo dõi. Thu mua tự tra chức danh từng người từ danh bạ App Tổng. */
+  /**
+   * LUÔN GỬI, kể cả khi rỗng. Thu mua tự tra chức danh từng người từ danh bạ App Tổng.
+   *
+   * 🔴 MẢNG RỖNG KHÁC HẲN VẮNG MẶT (đổi 23/09/2026). Rỗng = "đã xét, hồ sơ này không có ai
+   * theo dõi"; vắng mặt = "app này không nói gì". Trước đây bỏ hẳn trường khi rỗng, nên Thu
+   * mua không phân biệt được và phải đọc ngược sang Firestore của app này để tự kiểm — chính
+   * là lượt đọc đang hỏng vì thiếu khoá. Gửi mảng rỗng là họ biết ngay khỏi phải hỏi.
+   */
   nguoiTheoDoi?: ThuMuaNguoiTheoDoi[];
+  /**
+   * Người đề nghị tự khai trên biểu mẫu: `"cong_trinh"` hay `"phong_ban"`.
+   *
+   * 🔴 VÌ SAO THÊM (23/09/2026): trước đây Thu mua phải **tự đọc sang Firestore của app này**
+   * để lấy trường đó, và việc ấy cần một khoá Admin của project `hpcons-request` đặt bên Thu
+   * mua. Khoá đó chưa từng được cấp — log Thu mua báo *"Thiếu
+   * APP_REQUEST_FIREBASE_SERVICE_ACCOUNT"* mỗi lần nhận đề nghị, và họ phải rơi về phép suy
+   * "mã hợp đồng rỗng thì là hồ sơ phòng ban".
+   *
+   * Gửi thẳng ở đây rẻ hơn hẳn: app này đã cầm sẵn `fieldsSnapshot` + `values`, không tốn
+   * lượt đọc nào, và **không phải cấp cho Thu mua quyền đọc toàn bộ dữ liệu đề xuất**. Phía
+   * Thu mua đã chừa sẵn đường này (nhánh ① trong `app/api/app-request/de-nghi-moi/route.ts`).
+   *
+   * ⚠️ Vắng mặt khi người dùng bỏ trống ô, hoặc biểu mẫu không có ô đó. Thu mua tự rơi về
+   * phép suy dự phòng — ĐỪNG đoán bừa rồi gửi sang.
+   */
+  loaiDeNghi?: "cong_trinh" | "phong_ban";
 };
+
+/**
+ * Đọc ô "Lựa chọn đề nghị" trên biểu mẫu → `"cong_trinh"` | `"phong_ban"`.
+ *
+ * 🔴 TÌM THEO `options`, TUYỆT ĐỐI KHÔNG THEO MÃ TRƯỜNG. Mã trường là UUID và **đổi theo từng
+ * đời biểu mẫu** — phía Thu mua đã đo ba mã khác nhau cho cùng một ô. Viết cứng một mã là hôm
+ * nào phát hành biểu mẫu mới thì đọc hụt trong im lặng, không một dòng báo lỗi. Nên phải đi
+ * tìm ô nào có `options` chứa ĐỦ CẢ HAI nhãn "Đề nghị công trình" và "Đề nghị phòng ban".
+ *
+ * ⚠️ TRẢ `undefined` CHO MỌI CA KHÔNG CHẮC — không có ô, người dùng bỏ trống, giá trị lạ.
+ * Thu mua rơi về phép suy dự phòng của họ. Đoán bừa rồi gửi sang là tệ hơn không gửi: bên kia
+ * coi trường này là "người khai tự nhận", tin tuyệt đối, kể cả khi mâu thuẫn với mã hợp đồng.
+ */
+export function layLoaiDeNghiGuiSangThuMua(
+  fields: readonly { id: string; options?: string[] }[],
+  values: Record<string, unknown>,
+): "cong_trinh" | "phong_ban" | undefined {
+  for (const f of fields) {
+    const ops = Array.isArray(f.options) ? f.options.map(String) : [];
+    const laOLuaChon =
+      ops.some((x) => /đề nghị\s*công trình/i.test(x)) &&
+      ops.some((x) => /đề nghị\s*phòng ban/i.test(x));
+    if (!laOLuaChon) continue;
+
+    const v = values[f.id];
+    if (typeof v !== "string") return undefined;
+    const chuan = v.trim().toLowerCase();
+    /* Chuỗi chứa CẢ HAI nhãn là ca mập mờ — không đoán. */
+    const coCT = /công\s*trình/.test(chuan);
+    const coPB = /phòng\s*ban/.test(chuan);
+    if (coCT && coPB) return undefined;
+    if (coCT) return "cong_trinh";
+    if (coPB) return "phong_ban";
+    return undefined;
+  }
+  return undefined;
+}
 
 /**
  * Lọc danh sách người theo dõi trước khi gửi sang Thu mua.
@@ -197,6 +258,7 @@ export async function trichXuatPayloadThuMua(request: RequestInstance): Promise<
 
   const taiLieuDinhKem = await layTaiLieuDinhKem(request);
   const nguoiTheoDoi = layNguoiTheoDoiGuiSangThuMua(request.followers);
+  const loaiDeNghi = layLoaiDeNghiGuiSangThuMua(request.fieldsSnapshot, request.values);
 
   return {
     requestCode: request.code,
@@ -211,7 +273,9 @@ export async function trichXuatPayloadThuMua(request: RequestInstance): Promise<
     phongBan,
     vatTu,
     ...(taiLieuDinhKem.length > 0 ? { taiLieuDinhKem } : {}),
-    ...(nguoiTheoDoi.length > 0 ? { nguoiTheoDoi } : {}),
+    /* Gửi cả khi rỗng — xem chú thích ở khai báo trường. */
+    nguoiTheoDoi,
+    ...(loaiDeNghi ? { loaiDeNghi } : {}),
   };
 }
 
