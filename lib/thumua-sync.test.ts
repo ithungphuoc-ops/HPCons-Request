@@ -15,8 +15,12 @@ vi.mock("@/lib/firebase/admin", () => ({
   adminDb: { collection: () => ({ doc: () => ({ update: updateMock }) }) },
 }));
 
-const { trichXuatPayloadThuMua, retryThuMuaSyncNeuLoi, layNguoiTheoDoiGuiSangThuMua } =
-  await import("./thumua-sync");
+const {
+  trichXuatPayloadThuMua,
+  retryThuMuaSyncNeuLoi,
+  layNguoiTheoDoiGuiSangThuMua,
+  layLoaiDeNghiGuiSangThuMua,
+} = await import("./thumua-sync");
 
 function baseRequest(overrides: Partial<RequestInstance>): RequestInstance {
   return {
@@ -240,5 +244,59 @@ describe("layNguoiTheoDoiGuiSangThuMua", () => {
   it("cắt khoảng trắng thừa quanh id và tên", () => {
     const ra = layNguoiTheoDoiGuiSangThuMua([{ id: " u1 ", name: " Tên  ", username: " nick " }]);
     expect(ra[0]).toEqual({ id: "u1", name: "Tên", username: "nick" });
+  });
+});
+
+describe("layLoaiDeNghiGuiSangThuMua", () => {
+  /* Nhãn lấy đúng như biểu mẫu thật; mã trường cố ý là UUID khác nhau ở mỗi ca để chứng minh
+     hàm KHÔNG dựa vào mã. Phía Thu mua đã đo ba mã khác nhau cho cùng một ô. */
+  const oLuaChon = (id: string) => ({
+    id,
+    options: ["Đề nghị công trình", "Đề nghị phòng ban"],
+  });
+
+  it("đọc được 'Đề nghị công trình'", () => {
+    expect(
+      layLoaiDeNghiGuiSangThuMua([oLuaChon("e08076bf")], { e08076bf: "Đề nghị công trình" }),
+    ).toBe("cong_trinh");
+  });
+
+  it("đọc được 'Đề nghị phòng ban'", () => {
+    expect(
+      layLoaiDeNghiGuiSangThuMua([oLuaChon("12cb9ca6")], { "12cb9ca6": "Đề nghị phòng ban" }),
+    ).toBe("phong_ban");
+  });
+
+  it("tìm ô theo options, KHÔNG theo mã trường — mã đổi theo từng đời biểu mẫu", () => {
+    const fields = [
+      { id: "khac-1", options: ["Gấp", "Bình thường"] },
+      oLuaChon("79590aee"),
+    ];
+    expect(layLoaiDeNghiGuiSangThuMua(fields, { "79590aee": "Đề nghị phòng ban" })).toBe(
+      "phong_ban",
+    );
+  });
+
+  it("bỏ trống → undefined, để Thu mua rơi về phép suy dự phòng của họ", () => {
+    expect(layLoaiDeNghiGuiSangThuMua([oLuaChon("a")], { a: "" })).toBeUndefined();
+    expect(layLoaiDeNghiGuiSangThuMua([oLuaChon("a")], {})).toBeUndefined();
+  });
+
+  it("biểu mẫu không có ô đó → undefined, không đoán bừa", () => {
+    expect(
+      layLoaiDeNghiGuiSangThuMua([{ id: "x", options: ["Gấp", "Bình thường"] }], { x: "Gấp" }),
+    ).toBeUndefined();
+  });
+
+  it("chuỗi chứa CẢ HAI nhãn là ca mập mờ → undefined", () => {
+    expect(
+      layLoaiDeNghiGuiSangThuMua([oLuaChon("a")], { a: "Đề nghị công trình / Đề nghị phòng ban" }),
+    ).toBeUndefined();
+  });
+
+  it("không phân biệt hoa thường và dấu cách thừa", () => {
+    expect(layLoaiDeNghiGuiSangThuMua([oLuaChon("a")], { a: "  ĐỀ NGHỊ  CÔNG TRÌNH  " })).toBe(
+      "cong_trinh",
+    );
   });
 });
