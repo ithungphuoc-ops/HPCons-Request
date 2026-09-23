@@ -106,41 +106,60 @@ export type ThuMuaPayload = {
   loaiDeNghi?: "cong_trinh" | "phong_ban";
 };
 
+/** Chuẩn hoá nhãn để so sánh: bỏ dấu cách thừa, không phân biệt hoa thường. */
+function chuanNhan(x: string): string {
+  return x.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
 /**
  * Đọc ô "Lựa chọn đề nghị" trên biểu mẫu → `"cong_trinh"` | `"phong_ban"`.
  *
- * 🔴 TÌM THEO `options`, TUYỆT ĐỐI KHÔNG THEO MÃ TRƯỜNG. Mã trường là UUID và **đổi theo từng
- * đời biểu mẫu** — phía Thu mua đã đo ba mã khác nhau cho cùng một ô. Viết cứng một mã là hôm
- * nào phát hành biểu mẫu mới thì đọc hụt trong im lặng, không một dòng báo lỗi. Nên phải đi
- * tìm ô nào có `options` chứa ĐỦ CẢ HAI nhãn "Đề nghị công trình" và "Đề nghị phòng ban".
+ * 🔴 TÌM Ô THEO `options`, TUYỆT ĐỐI KHÔNG THEO MÃ TRƯỜNG. Mã là UUID và **đổi theo từng đời
+ * biểu mẫu** — phía Thu mua đã đo ba mã khác nhau cho cùng một ô. Viết cứng một mã là hôm nào
+ * phát hành biểu mẫu mới thì đọc hụt trong im lặng, không một dòng báo lỗi.
  *
- * ⚠️ TRẢ `undefined` CHO MỌI CA KHÔNG CHẮC — không có ô, người dùng bỏ trống, giá trị lạ.
- * Thu mua rơi về phép suy dự phòng của họ. Đoán bừa rồi gửi sang là tệ hơn không gửi: bên kia
- * coi trường này là "người khai tự nhận", tin tuyệt đối, kể cả khi mâu thuẫn với mã hợp đồng.
+ * 🔴 NHƯNG ĐỐI CHIẾU GIÁ TRỊ THÌ PHẢI SO BẰNG VỚI ĐÚNG NHÃN, không "chứa cụm từ"
+ * (CodeRabbit chỉ ra ở PR #39). Bản đầu dùng `/công\s*trình/.test(...)`, nên một lựa chọn thứ
+ * ba như *"Không phải công trình"* cũng ra `"cong_trinh"` — mà Thu mua coi trường này là lời
+ * khai của người dùng và **tin tuyệt đối, kể cả khi mâu thuẫn với mã hợp đồng**. Gửi sai còn
+ * tệ hơn không gửi.
+ *
+ * 🔴 XÉT HẾT MỌI Ô KHỚP, KHÔNG DỪNG Ở Ô ĐẦU (cũng CodeRabbit, PR #39). Biểu mẫu không ép ô
+ * loại này là duy nhất; dừng ở ô đầu thì một ô bỏ trống đứng trước sẽ che mất lựa chọn thật ở
+ * ô sau, và hai ô chọn khác nhau lại được phân xử bằng thứ tự — thứ không ai kiểm soát.
+ * Bỏ qua ô để trống, và **mâu thuẫn thì trả `undefined`**.
+ *
+ * ⚠️ `undefined` = "app này không biết chắc". Thu mua rơi về phép suy dự phòng của họ
+ * (mã hợp đồng rỗng thì là hồ sơ phòng ban) — đúng thứ họ vẫn làm trước khi có trường này.
  */
 export function layLoaiDeNghiGuiSangThuMua(
   fields: readonly { id: string; options?: string[] }[],
   values: Record<string, unknown>,
 ): "cong_trinh" | "phong_ban" | undefined {
+  const daThay = new Set<"cong_trinh" | "phong_ban">();
+
   for (const f of fields) {
     const ops = Array.isArray(f.options) ? f.options.map(String) : [];
-    const laOLuaChon =
-      ops.some((x) => /đề nghị\s*công trình/i.test(x)) &&
-      ops.some((x) => /đề nghị\s*phòng ban/i.test(x));
-    if (!laOLuaChon) continue;
+
+    /* Nhận diện ô: khớp đúng nhãn trước, rơi về "bắt đầu bằng" để chịu được nhãn có thêm phần
+       giải thích. Neo `^` loại được nhãn phủ định kiểu "Không phải đề nghị công trình". */
+    const timNhan = (re: RegExp, chuan: string) =>
+      ops.find((x) => chuanNhan(x) === chuan) ?? ops.find((x) => re.test(chuanNhan(x)));
+    const nhanCT = timNhan(/^đề nghị\s*công trình/, "đề nghị công trình");
+    const nhanPB = timNhan(/^đề nghị\s*phòng ban/, "đề nghị phòng ban");
+    if (!nhanCT || !nhanPB) continue; // không phải ô cần tìm
 
     const v = values[f.id];
-    if (typeof v !== "string") return undefined;
-    const chuan = v.trim().toLowerCase();
-    /* Chuỗi chứa CẢ HAI nhãn là ca mập mờ — không đoán. */
-    const coCT = /công\s*trình/.test(chuan);
-    const coPB = /phòng\s*ban/.test(chuan);
-    if (coCT && coPB) return undefined;
-    if (coCT) return "cong_trinh";
-    if (coPB) return "phong_ban";
-    return undefined;
+    if (typeof v !== "string" || !v.trim()) continue; // người dùng bỏ trống → bỏ qua ô này
+
+    const chon = chuanNhan(v);
+    if (chon === chuanNhan(nhanCT)) daThay.add("cong_trinh");
+    else if (chon === chuanNhan(nhanPB)) daThay.add("phong_ban");
+    else return undefined; // chọn một lựa chọn khác trong cùng ô → không suy diễn
   }
-  return undefined;
+
+  /* 0 ô có giá trị → không biết. 2 loại khác nhau → mâu thuẫn, cũng không biết. */
+  return daThay.size === 1 ? [...daThay][0] : undefined;
 }
 
 /**

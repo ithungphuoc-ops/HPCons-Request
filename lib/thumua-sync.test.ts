@@ -299,4 +299,58 @@ describe("layLoaiDeNghiGuiSangThuMua", () => {
       "cong_trinh",
     );
   });
+
+  /* ── Hai ca CodeRabbit chỉ ra ở PR #39. Cả hai đều LÀM HỎNG bản đầu của hàm này. ── */
+
+  it("lựa chọn thứ ba KHÔNG được suy thành công trình — 'Không phải công trình'", () => {
+    const o = {
+      id: "a",
+      options: ["Đề nghị công trình", "Đề nghị phòng ban", "Không phải công trình"],
+    };
+    expect(layLoaiDeNghiGuiSangThuMua([o], { a: "Không phải công trình" })).toBeUndefined();
+  });
+
+  it("nhãn phủ định không bị nhận nhầm thành ô lựa chọn", () => {
+    const o = {
+      id: "a",
+      options: ["Không phải đề nghị công trình", "Đề nghị công trình", "Đề nghị phòng ban"],
+    };
+    expect(layLoaiDeNghiGuiSangThuMua([o], { a: "Đề nghị công trình" })).toBe("cong_trinh");
+  });
+
+  it("ô bỏ trống đứng TRƯỚC không che mất lựa chọn ở ô sau", () => {
+    const fields = [
+      { id: "truoc", options: ["Đề nghị công trình", "Đề nghị phòng ban"] },
+      { id: "sau", options: ["Đề nghị công trình", "Đề nghị phòng ban"] },
+    ];
+    expect(layLoaiDeNghiGuiSangThuMua(fields, { truoc: "", sau: "Đề nghị phòng ban" })).toBe(
+      "phong_ban",
+    );
+  });
+
+  it("hai ô chọn khác nhau = mâu thuẫn → undefined, không phân xử bằng thứ tự", () => {
+    const fields = [
+      { id: "mot", options: ["Đề nghị công trình", "Đề nghị phòng ban"] },
+      { id: "hai", options: ["Đề nghị công trình", "Đề nghị phòng ban"] },
+    ];
+    expect(
+      layLoaiDeNghiGuiSangThuMua(fields, {
+        mot: "Đề nghị công trình",
+        hai: "Đề nghị phòng ban",
+      }),
+    ).toBeUndefined();
+  });
+
+  it("hai ô cùng chọn một loại thì vẫn ra loại đó", () => {
+    const fields = [
+      { id: "mot", options: ["Đề nghị công trình", "Đề nghị phòng ban"] },
+      { id: "hai", options: ["Đề nghị công trình", "Đề nghị phòng ban"] },
+    ];
+    expect(
+      layLoaiDeNghiGuiSangThuMua(fields, {
+        mot: "Đề nghị công trình",
+        hai: "Đề nghị công trình",
+      }),
+    ).toBe("cong_trinh");
+  });
 });
