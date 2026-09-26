@@ -10,6 +10,7 @@ import {
   canView,
   computeDeadline,
   findBlockedDateLeadTimeFields,
+  findInvalidContractCodeFields,
   findInvalidTableRows,
   findMissingRequiredFields,
   generateGroupRequestCode,
@@ -188,6 +189,19 @@ export async function PATCH(
               resolveDateLeadTimeNumbers(blockedDates[0].dateLeadTimeRule).blockDays,
             ),
             blockedFields: blockedDates.map((f) => ({ id: f.id, name: f.name })),
+          },
+          { status: 400 },
+        );
+      }
+
+      // Ràng buộc Số Hợp Đồng CĐT — cùng chặn ở gửi từ nháp, xem
+      // app/api/requests/route.ts (tạo mới) cho lý do đầy đủ.
+      const invalidCodes = await findInvalidContractCodeFields(group.fields, values);
+      if (invalidCodes.length > 0) {
+        return NextResponse.json(
+          {
+            error: `Chưa đúng số hợp đồng nào trong hệ thống Công nợ: ${invalidCodes.map((f) => f.name).join(", ")}.`,
+            invalidFields: invalidCodes.map((f) => ({ id: f.id, name: f.name })),
           },
           { status: 400 },
         );

@@ -22,11 +22,23 @@ vi.mock("@/lib/hpcore", () => ({
   }),
 }));
 
+// findInvalidContractCodeFields gọi loadContractCodeSuggestions() — mock danh
+// sách hợp đồng giả cố định, đủ để test luật khớp/không khớp mà không cần
+// Firestore thật của app Công nợ.
+const mockContracts = [
+  { code: "01/2026/HĐXD-HPCS", project: "HOWELL" },
+  { code: "02/2026/HĐXD-HPCS", project: "CHENKAI-PS" },
+];
+vi.mock("@/lib/congno", () => ({
+  loadContractCodeSuggestions: async () => mockContracts,
+}));
+
 const {
   resolveApproverStepsDetailed,
   resolveApproverSteps,
   resolveInitialSlaHours,
   recomputeDeadlineForNextStep,
+  findInvalidContractCodeFields,
   MissingApproverError,
 } = await import("./requests");
 
@@ -262,5 +274,60 @@ describe("recomputeDeadlineForNextStep — tính lại deadline khi qua bước 
       now,
     });
     expect(result).toBe(new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString());
+  });
+});
+
+function contractCodeField(overrides: Partial<import("@/lib/types").ProposalField> = {}) {
+  return {
+    id: "f1",
+    name: "Số Hợp Đồng CĐT",
+    dataType: "short_text" as const,
+    required: false,
+    order: 0,
+    contractCodeLookup: true,
+    ...overrides,
+  };
+}
+
+describe("findInvalidContractCodeFields", () => {
+  it("giá trị khớp đúng 1 hợp đồng thật → không báo lỗi", async () => {
+    const fields = [contractCodeField()];
+    const result = await findInvalidContractCodeFields(fields, { f1: "01/2026/HĐXD-HPCS" });
+    expect(result).toHaveLength(0);
+  });
+
+  it("giá trị không khớp hợp đồng nào → báo lỗi đúng field", async () => {
+    const fields = [contractCodeField()];
+    const result = await findInvalidContractCodeFields(fields, { f1: "SO-BAY-VU" });
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("f1");
+  });
+
+  it("field không bật contractCodeLookup → bỏ qua dù giá trị sai", async () => {
+    const fields = [contractCodeField({ contractCodeLookup: false })];
+    const result = await findInvalidContractCodeFields(fields, { f1: "SO-BAY-VU" });
+    expect(result).toHaveLength(0);
+  });
+
+  it("giá trị rỗng (kể cả required) → bỏ qua, không phải lỗi của luật này", async () => {
+    const fields = [contractCodeField({ required: true })];
+    const result = await findInvalidContractCodeFields(fields, { f1: "" });
+    expect(result).toHaveLength(0);
+  });
+
+  it("field bị ẩn (visibleWhen không thoả) → bỏ qua dù giá trị sai", async () => {
+    const fields = [
+      contractCodeField({
+        visibleWhen: { conjunction: "all", rules: [{ fieldCode: "khac", operator: "equals", value: "x" }] },
+      }),
+    ];
+    const result = await findInvalidContractCodeFields(fields, { f1: "SO-BAY-VU" });
+    expect(result).toHaveLength(0);
+  });
+
+  it("giá trị không phải string (client gửi sai kiểu) → coi là không khớp", async () => {
+    const fields = [contractCodeField()];
+    const result = await findInvalidContractCodeFields(fields, { f1: 12345 });
+    expect(result).toHaveLength(1);
   });
 });

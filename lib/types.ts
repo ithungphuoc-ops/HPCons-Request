@@ -97,6 +97,20 @@ export interface ProposalField {
    * GET /api/groups/[id]/field-suggestions.
    */
   suggestFromHistory?: boolean;
+  /**
+   * Chỉ cho field kiểu short_text: bật thì ô nhập BẮT BUỘC khớp đúng 1 Số Hợp
+   * Đồng CĐT thật, đọc từ app Công nợ (congno.hpcore.vn, project Firestore
+   * riêng "hpcons-congno", collection `contracts`) — khác hẳn
+   * `suggestFromHistory` (chỉ gợi ý mềm, vẫn cho gõ tự do): field này ÉP
+   * BUỘC, gửi chính thức mà không khớp sẽ bị chặn (xem
+   * `findInvalidContractCodeFields` trong lib/server/requests.ts). Cờ đặt
+   * TRÊN TỪNG FIELD cụ thể (Sếp chốt 26/09/2026, "Cách 2" — không đoán theo
+   * tên field, tránh Admin đổi tên field là mất tác dụng mà không biết vì
+   * sao). "Tên công trình" và mọi field khác KHÔNG bị ảnh hưởng gì — không có
+   * liên kết/tự động điền chéo giữa 2 field, xem design.md của change
+   * add-contract-code-lookup.
+   */
+  contractCodeLookup?: boolean;
 }
 
 /**

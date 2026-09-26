@@ -45,6 +45,9 @@ const dateLeadTimeEligibleTypes: FieldDataType[] = ["date", "datetime"];
 /** Chỉ field văn bản ngắn mới bật được "gợi ý từ lịch sử" (paragraph để văn
  * bản dài, gợi ý cả đoạn văn không hợp lý — Sếp chốt 17/09/2026). */
 const suggestFromHistoryEligibleTypes: FieldDataType[] = ["short_text"];
+/** Chỉ field văn bản ngắn mới bật được ràng buộc Số Hợp Đồng CĐT (cùng lý do
+ * suggestFromHistoryEligibleTypes) — xem openspec/changes/add-contract-code-lookup. */
+const contractCodeLookupEligibleTypes: FieldDataType[] = ["short_text"];
 /** Admin tự gõ 2 mốc (Sếp chốt "phương án C" 13/09/2026) — không còn danh sách cứng. */
 
 export default function AddFieldModal() {
@@ -71,6 +74,7 @@ export default function AddFieldModal() {
   const [computedBranches, setComputedBranches] = useState<ComputedTemplateBranch[] | null>(null);
   const [dateLeadTimeEnabled, setDateLeadTimeEnabled] = useState(false);
   const [suggestFromHistory, setSuggestFromHistory] = useState(false);
+  const [contractCodeLookup, setContractCodeLookup] = useState(false);
   // Giữ dạng chuỗi để người dùng xoá trắng ô mà không bị nhảy về 0; validate lúc lưu.
   const [dateLeadTimeBlockDays, setDateLeadTimeBlockDays] = useState(String(DATE_LEAD_TIME_DEFAULT_BLOCK_DAYS));
   const [dateLeadTimeStandardDays, setDateLeadTimeStandardDays] = useState(
@@ -124,6 +128,7 @@ export default function AddFieldModal() {
     setDateLeadTimeBlockDays(String(DATE_LEAD_TIME_DEFAULT_BLOCK_DAYS));
     setDateLeadTimeStandardDays(String(DATE_LEAD_TIME_DEFAULT_STANDARD_DAYS));
     setSuggestFromHistory(false);
+    setContractCodeLookup(false);
     setErrors({});
   };
 
@@ -145,6 +150,7 @@ export default function AddFieldModal() {
       setComputedBranches(editingField.computedFrom?.branches ?? null);
       setDateLeadTimeEnabled(editingField.dateLeadTimeRule?.enabled ?? false);
       setSuggestFromHistory(editingField.suggestFromHistory ?? false);
+      setContractCodeLookup(editingField.contractCodeLookup ?? false);
       // Trường ngày lưu trước 13/09/2026 chưa có blockDays -> điền mặc định 2.
       const leadTimeNums = resolveDateLeadTimeNumbers(editingField.dateLeadTimeRule);
       setDateLeadTimeBlockDays(String(leadTimeNums.blockDays));
@@ -239,6 +245,8 @@ export default function AddFieldModal() {
           : undefined,
       suggestFromHistory:
         suggestFromHistoryEligibleTypes.includes(dataType) && suggestFromHistory ? true : undefined,
+      contractCodeLookup:
+        contractCodeLookupEligibleTypes.includes(dataType) && contractCodeLookup ? true : undefined,
     };
 
     if (isEditMode && editingField) {
@@ -654,6 +662,24 @@ export default function AddFieldModal() {
             <p className="mt-1.5 text-[12px] text-gray-500">
               Hữu ích cho trường như &quot;Tên công trình&quot; — tránh mỗi lần một người gõ một kiểu khác nhau,
               khó đối chiếu về sau.
+            </p>
+          </Row>
+        )}
+
+        {contractCodeLookupEligibleTypes.includes(dataType) && (
+          <Row label="Ràng buộc Số Hợp Đồng CĐT">
+            <label className="flex items-center gap-2 text-[14px] text-gray-700">
+              <input
+                type="checkbox"
+                checked={contractCodeLookup}
+                onChange={(e) => setContractCodeLookup(e.target.checked)}
+              />
+              Bắt buộc khớp Số Hợp Đồng CĐT (app Công nợ)
+            </label>
+            <p className="mt-1.5 text-[12px] text-gray-500">
+              Khác với &quot;Gợi ý từ lịch sử&quot; ở trên (chỉ gợi ý mềm, vẫn cho gõ tự do): trường này ÉP BUỘC
+              phải chọn đúng 1 số hợp đồng có thật trong app Công nợ — gửi đề xuất chính thức với giá trị không
+              khớp sẽ bị chặn.
             </p>
           </Row>
         )}
