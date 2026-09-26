@@ -2,6 +2,7 @@ import "server-only";
 import { cert, getApps, initializeApp, type App } from "firebase-admin/app";
 import { getFirestore, type Firestore } from "firebase-admin/firestore";
 import { unstable_cache } from "next/cache";
+import { shortenCustomerName } from "./customer-name";
 
 /**
  * Đọc chéo app Công nợ (congno.hpcore.vn, project Firestore RIÊNG
@@ -55,10 +56,17 @@ export interface ContractCodeSuggestion {
    * chiếu tự phát hiện gõ nhầm Số Hợp Đồng CĐT (không phải dữ liệu tài
    * chính). Rỗng nếu app Công nợ chưa điền field `work` cho hợp đồng đó. */
   work: string;
-  /** "Tên CĐT" (Chủ Đầu Tư) — hiện ở cột phụ trong dropdown gợi ý lúc đang
-   * gõ (Sếp chốt 26/09/2026, thay cho `project` trước đó). Rỗng nếu app
-   * Công nợ chưa điền field `customerName` cho hợp đồng đó. */
+  /** "Tên CĐT" (Chủ Đầu Tư) — tên pháp nhân ĐẦY ĐỦ y nguyên trong Firestore
+   * app Công nợ (vd "CÔNG TY TNHH CÔNG NGHIỆP CHÍNH XÁC CHENKAI"). KHÔNG
+   * hiện trực tiếp field này ở dropdown gợi ý — dùng `customerNameShort`
+   * bên dưới (Sếp chốt 26/09/2026: tên đầy đủ quá dài, khó đối chiếu
+   * nhanh lúc đang gõ). Giữ lại field gốc phòng khi cần đối chiếu/debug. */
   customerName: string;
+  /** "Tên CĐT" rút gọn — bỏ các từ pháp nhân/mô tả ngành nghề chung chung
+   * (CÔNG TY, TNHH, CỔ PHẦN, CÔNG NGHIỆP, CHÍNH XÁC...) và hậu tố "VIỆT
+   * NAM", giữ nguyên phần tên thương hiệu còn lại — xem `shortenCustomerName`.
+   * Đây là giá trị hiện ở cột phụ dropdown gợi ý. */
+  customerNameShort: string;
 }
 
 /**
@@ -78,7 +86,8 @@ async function loadContractCodeSuggestionsUncached(): Promise<ContractCodeSugges
           : "";
     const work = typeof data.work === "string" ? data.work.trim() : "";
     const customerName = typeof data.customerName === "string" ? data.customerName.trim() : "";
-    return { code: String(data.code ?? "").trim(), project, work, customerName };
+    const customerNameShort = customerName ? shortenCustomerName(customerName) : "";
+    return { code: String(data.code ?? "").trim(), project, work, customerName, customerNameShort };
   }).filter((c) => c.code);
 }
 
