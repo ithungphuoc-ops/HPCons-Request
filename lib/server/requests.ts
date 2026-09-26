@@ -16,6 +16,7 @@ import {
 import { adminDb } from "@/lib/firebase/admin";
 import { evaluateConditionGroup, filterApplicableSteps } from "@/lib/server/conditions";
 import { getHpcoreDb } from "@/lib/hpcore";
+import { loadContractCodeSuggestions } from "@/lib/congno";
 import { canManageGroupsAtAppScope, type Role } from "@/lib/permissions";
 import {
   deserializeTableRows,
@@ -191,6 +192,39 @@ export function findBlockedDateLeadTimeFields(
     const days = countBusinessDaysBetween(now, target);
     const { blockDays, standardDays } = resolveDateLeadTimeNumbers(f.dateLeadTimeRule);
     return classifyDateLeadTime(days, standardDays, blockDays) === "blocked";
+  });
+}
+
+/**
+ * Field bật `contractCodeLookup` có giá trị KHÔNG khớp đúng 1 Số Hợp Đồng CĐT
+ * thật — dùng khi gửi chính thức (không dùng khi lưu nháp), cùng cách với
+ * `findBlockedDateLeadTimeFields`. Đọc LẠI dữ liệu hợp đồng thật tại thời
+ * điểm gửi (không tin danh sách phía trình duyệt) — cùng lý do đã ghi ở
+ * `findBlockedDateLeadTimeFields` (gọi thẳng API né qua validate trình
+ * duyệt). Field rỗng (kể cả field required — đã có `findMissingRequiredFields`
+ * xử lý riêng) hoặc field bị ẩn (visibleWhen không thoả) thì bỏ qua, không
+ * phải lỗi của luật này.
+ */
+export async function findInvalidContractCodeFields(
+  fields: ProposalField[],
+  values: Record<string, unknown>,
+): Promise<ProposalField[]> {
+  const targets = fields.filter((f) => {
+    if (!f.contractCodeLookup) return false;
+    if (f.visibleWhen && !evaluateConditionGroup(f.visibleWhen, values ?? {}, fields)) return false;
+    return !isEmptyValue(values?.[f.id]);
+  });
+  if (targets.length === 0) return [];
+
+  const contracts = await loadContractCodeSuggestions();
+  const codeSet = new Set(contracts.map((c) => c.code));
+
+  return targets.filter((f) => {
+    const raw = values?.[f.id];
+    // Không tin kiểu dữ liệu client gửi lên (xem findBlockedDateLeadTimeFields
+    // cho cùng lý do) — giá trị không phải string thì coi là không khớp.
+    if (typeof raw !== "string") return true;
+    return !codeSet.has(raw.trim());
   });
 }
 

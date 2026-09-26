@@ -12,6 +12,7 @@ import {
   canView,
   computeDeadline,
   findBlockedDateLeadTimeFields,
+  findInvalidContractCodeFields,
   findInvalidTableRows,
   findMissingRequiredFields,
   generateGroupRequestCode,
@@ -334,6 +335,22 @@ export async function POST(request: Request) {
                 resolveDateLeadTimeNumbers(blockedDates[0].dateLeadTimeRule).blockDays,
               ),
               blockedFields: blockedDates.map((f) => ({ id: f.id, name: f.name })),
+            },
+            { status: 400 },
+          );
+        }
+      }
+
+      // Ràng buộc Số Hợp Đồng CĐT (contractCodeLookup) — xem
+      // openspec/changes/add-contract-code-lookup. Đọc lại dữ liệu hợp đồng
+      // thật tại thời điểm gửi, không tin danh sách phía trình duyệt.
+      if (!isDraft) {
+        const invalidCodes = await findInvalidContractCodeFields(group.fields, body.values ?? {});
+        if (invalidCodes.length > 0) {
+          return NextResponse.json(
+            {
+              error: `Chưa đúng số hợp đồng nào trong hệ thống Công nợ: ${invalidCodes.map((f) => f.name).join(", ")}.`,
+              invalidFields: invalidCodes.map((f) => ({ id: f.id, name: f.name })),
             },
             { status: 400 },
           );

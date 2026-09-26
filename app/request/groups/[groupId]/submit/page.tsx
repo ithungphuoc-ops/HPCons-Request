@@ -1110,6 +1110,19 @@ function FieldControl({
   const tableFileInputRef = useRef<HTMLInputElement>(null);
   switch (field.dataType) {
     case "short_text":
+      // contractCodeLookup ưu tiên hơn suggestFromHistory nếu Admin lỡ bật cả
+      // 2 trên cùng field (ràng buộc cứng quan trọng hơn gợi ý mềm).
+      if (field.contractCodeLookup && !readOnlyComputed) {
+        return (
+          <ShortTextWithContractCodeLookup
+            groupId={groupId}
+            fieldId={field.id}
+            value={(value as string) ?? ""}
+            placeholder={field.placeholder}
+            onChange={onChange}
+          />
+        );
+      }
       if (field.suggestFromHistory && !readOnlyComputed) {
         return (
           <ShortTextWithSuggestions
@@ -1705,6 +1718,82 @@ function ShortTextWithSuggestions({
           <option key={s} value={s} />
         ))}
       </datalist>
+    </>
+  );
+}
+
+/**
+ * Field bật `contractCodeLookup` — KHÁC `ShortTextWithSuggestions` ở chỗ ép
+ * buộc: gõ xong rời khỏi ô mà không khớp đúng 1 Số Hợp Đồng CĐT thật thì báo
+ * lỗi ngay tại chỗ. Đây CHỈ là hỗ trợ trải nghiệm — hàng rào thật nằm ở
+ * `findInvalidContractCodeFields` phía máy chủ (lib/server/requests.ts), gọi
+ * lúc gửi chính thức, không tin danh sách đã tải ở đây.
+ */
+function ShortTextWithContractCodeLookup({
+  groupId,
+  fieldId,
+  value,
+  placeholder,
+  onChange,
+}: {
+  groupId: string;
+  fieldId: string;
+  value: string;
+  placeholder?: string;
+  onChange: (value: string) => void;
+}) {
+  const [suggestions, setSuggestions] = useState<{ code: string; project: string }[]>([]);
+  const [mismatch, setMismatch] = useState(false);
+  const listId = `field-contract-${fieldId}`;
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/groups/${groupId}/contract-code-suggestions?fieldId=${fieldId}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { suggestions?: { code: string; project: string }[] } | null) => {
+        if (!cancelled) setSuggestions(data?.suggestions ?? []);
+      })
+      .catch(() => {
+        // Lỗi tải danh sách không chặn nhập liệu ngay — validate thật vẫn
+        // chạy ở máy chủ lúc gửi chính thức.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [groupId, fieldId]);
+
+  return (
+    <>
+      <input
+        className={mismatch ? `${inputClass} border-red-400 focus:border-red-500` : inputClass}
+        list={listId}
+        value={value}
+        placeholder={placeholder ?? "Gõ số hợp đồng…"}
+        onChange={(e) => {
+          setMismatch(false);
+          onChange(e.target.value);
+        }}
+        onBlur={() => {
+          const v = value.trim();
+          if (!v) {
+            setMismatch(false);
+            return;
+          }
+          setMismatch(!suggestions.some((s) => s.code === v));
+        }}
+      />
+      <datalist id={listId}>
+        {suggestions.map((s) => (
+          <option key={s.code} value={s.code}>
+            {s.project}
+          </option>
+        ))}
+      </datalist>
+      {mismatch && (
+        <p className="mt-1 text-[12px] text-red-600">
+          Chưa đúng số hợp đồng nào trong hệ thống Công nợ — chọn 1 dòng trong gợi ý.
+        </p>
+      )}
     </>
   );
 }
