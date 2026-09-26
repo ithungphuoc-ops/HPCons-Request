@@ -1749,7 +1749,7 @@ function ShortTextWithContractCodeLookup({
   // giá trị không rỗng bị đánh dấu sai là không khớp).
   const [loaded, setLoaded] = useState(false);
   const [mismatch, setMismatch] = useState(false);
-  const listId = `field-contract-${fieldId}`;
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -1775,18 +1775,42 @@ function ShortTextWithContractCodeLookup({
   // chốt 26/09/2026). Chỉ hiện khi giá trị khớp CHÍNH XÁC 1 hợp đồng thật.
   const matchedWork = suggestions.find((s) => s.code === value.trim())?.work;
 
+  // Combobox TỰ LỌC — thẻ <datalist> gốc của trình duyệt lọc rất lỏng lẻo
+  // (Chrome/Edge coi khớp nếu chứa từng phần bất kỳ đâu, không ưu tiên khớp
+  // đầu chuỗi) — Sếp phản hồi thật: gõ "02/2026" vẫn thấy "01-05/2026/..."
+  // hiện lên. Tự lọc + sắp xếp để kiểm soát đúng, ưu tiên mã BẮT ĐẦU bằng
+  // đúng những gì đang gõ lên trước.
+  const query = value.trim().toLowerCase();
+  const filtered = (query
+    ? suggestions.filter(
+        (s) => s.code.toLowerCase().includes(query) || s.project.toLowerCase().includes(query),
+      )
+    : suggestions
+  )
+    .slice()
+    .sort((a, b) => {
+      const aStarts = a.code.toLowerCase().startsWith(query) ? 0 : 1;
+      const bStarts = b.code.toLowerCase().startsWith(query) ? 0 : 1;
+      if (aStarts !== bStarts) return aStarts - bStarts;
+      return a.code.localeCompare(b.code);
+    })
+    .slice(0, 30);
+
   return (
-    <>
+    <div className="relative">
       <input
         className={mismatch ? `${inputClass} border-red-400 focus:border-red-500` : inputClass}
-        list={listId}
         value={value}
         placeholder={placeholder ?? "Gõ số hợp đồng…"}
+        autoComplete="off"
         onChange={(e) => {
           setMismatch(false);
+          setOpen(true);
           onChange(e.target.value);
         }}
+        onFocus={() => setOpen(true)}
         onBlur={() => {
+          setOpen(false);
           const v = value.trim();
           if (!v || !loaded) {
             setMismatch(false);
@@ -1795,24 +1819,38 @@ function ShortTextWithContractCodeLookup({
           setMismatch(!suggestions.some((s) => s.code === v));
         }}
       />
+      {open && filtered.length > 0 && (
+        <ul className="absolute left-0 right-0 top-full z-20 mt-1 max-h-56 overflow-y-auto rounded-[3px] border border-gray-200 bg-white py-1 shadow-lg">
+          {filtered.map((s) => (
+            <li
+              key={s.code}
+              // onMouseDown (không phải onClick) + preventDefault — giữ focus
+              // ô nhập, tránh onBlur chạy TRƯỚC khi kịp ghi nhận lựa chọn.
+              onMouseDown={(e) => {
+                e.preventDefault();
+                onChange(s.code);
+                setMismatch(false);
+                setOpen(false);
+              }}
+              className="flex cursor-pointer items-center justify-between gap-3 px-3 py-1.5 text-[14px] hover:bg-gray-50"
+            >
+              <span className="text-gray-800">{s.code}</span>
+              <span className="text-[12px] text-gray-400">{s.project}</span>
+            </li>
+          ))}
+        </ul>
+      )}
       {matchedWork && (
         <p className="mt-1 text-[12px] text-gray-600">
           <span className="font-medium text-gray-500">Hạng mục:</span> {matchedWork}
         </p>
       )}
-      <datalist id={listId}>
-        {suggestions.map((s) => (
-          <option key={s.code} value={s.code}>
-            {s.project}
-          </option>
-        ))}
-      </datalist>
       {mismatch && (
         <p className="mt-1 text-[12px] text-red-600">
           Chưa đúng số hợp đồng nào trong hệ thống Công nợ — chọn 1 dòng trong gợi ý.
         </p>
       )}
-    </>
+    </div>
   );
 }
 
