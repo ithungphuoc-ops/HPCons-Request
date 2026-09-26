@@ -1743,6 +1743,11 @@ function ShortTextWithContractCodeLookup({
   onChange: (value: string) => void;
 }) {
   const [suggestions, setSuggestions] = useState<{ code: string; project: string; work: string }[]>([]);
+  // Chỉ true SAU KHI đã tải xong (thành công hay lỗi đều tính) — tránh báo
+  // "không khớp" SAI khi người dùng rời khỏi ô trước lúc danh sách tải kịp,
+  // hoặc khi API lỗi (CodeRabbit PR #41: suggestions rỗng ban đầu khiến MỌI
+  // giá trị không rỗng bị đánh dấu sai là không khớp).
+  const [loaded, setLoaded] = useState(false);
   const [mismatch, setMismatch] = useState(false);
   const listId = `field-contract-${fieldId}`;
 
@@ -1756,6 +1761,9 @@ function ShortTextWithContractCodeLookup({
       .catch(() => {
         // Lỗi tải danh sách không chặn nhập liệu ngay — validate thật vẫn
         // chạy ở máy chủ lúc gửi chính thức.
+      })
+      .finally(() => {
+        if (!cancelled) setLoaded(true);
       });
     return () => {
       cancelled = true;
@@ -1780,7 +1788,7 @@ function ShortTextWithContractCodeLookup({
         }}
         onBlur={() => {
           const v = value.trim();
-          if (!v) {
+          if (!v || !loaded) {
             setMismatch(false);
             return;
           }

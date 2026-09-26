@@ -1,6 +1,7 @@
 import "server-only";
 import { cert, getApps, initializeApp, type App } from "firebase-admin/app";
 import { getFirestore, type Firestore } from "firebase-admin/firestore";
+import { unstable_cache } from "next/cache";
 
 /**
  * Đọc chéo app Công nợ (congno.hpcore.vn, project Firestore RIÊNG
@@ -60,7 +61,7 @@ export interface ContractCodeSuggestion {
  * chung cho cả route gợi ý (client) và validate chặn gửi (server), tránh 2
  * nơi tự đọc/tự map field khác nhau rồi lệch nhau.
  */
-export async function loadContractCodeSuggestions(): Promise<ContractCodeSuggestion[]> {
+async function loadContractCodeSuggestionsUncached(): Promise<ContractCodeSuggestion[]> {
   const snap = await getCongNoDb().collection("contracts").get();
   return snap.docs.map((d) => {
     const data = d.data();
@@ -74,3 +75,18 @@ export async function loadContractCodeSuggestions(): Promise<ContractCodeSuggest
     return { code: String(data.code ?? "").trim(), project, work };
   }).filter((c) => c.code);
 }
+
+/**
+ * Cache 5 phút — dùng CHUNG cho cả route gợi ý (client gõ tìm) LẪN validate
+ * chặn gửi (server, lúc gửi chính thức). Trước đó validate tự đọc thẳng
+ * Firestore mỗi lần gửi đề xuất (không qua cache) — CodeRabbit PR #41 chỉ ra
+ * đây là điểm tốn lượt đọc không cần thiết, trong khi route gợi ý đã cache
+ * đúng dữ liệu này rồi. Chấp nhận độ trễ tối đa 5 phút giữa lúc thêm hợp đồng
+ * mới ở app Công nợ và lúc gửi đề xuất thấy được mã đó — cùng đánh đổi đã
+ * chấp nhận cho route gợi ý (xem design.md Decision #3).
+ */
+export const loadContractCodeSuggestions = unstable_cache(
+  loadContractCodeSuggestionsUncached,
+  ["contract-code-suggestions"],
+  { revalidate: 300 },
+);

@@ -224,7 +224,11 @@ export async function findInvalidContractCodeFields(
     // Không tin kiểu dữ liệu client gửi lên (xem findBlockedDateLeadTimeFields
     // cho cùng lý do) — giá trị không phải string thì coi là không khớp.
     if (typeof raw !== "string") return true;
-    return !codeSet.has(raw.trim());
+    // KHÔNG trim trước khi so — giá trị được LƯU vào request là `raw` nguyên
+    // văn (không bị trim ở đâu khác), nên phải so đúng CHÍNH giá trị đó với
+    // tập mã hợp lệ để tránh vênh: "01/2026/HĐXD-HPCS " (thừa khoảng trắng)
+    // pass validate nhưng giá trị lưu lại không khớp mã thật (CodeRabbit PR #41).
+    return !codeSet.has(raw);
   });
 }
 

@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { unstable_cache } from "next/cache";
 import { adminDb } from "@/lib/firebase/admin";
 import { apiErrorResponse } from "@/lib/http";
 import { isWithinUsedForScope } from "@/lib/permissions";
 import { requireSession } from "@/lib/session";
-import { loadContractCodeSuggestions, type ContractCodeSuggestion } from "@/lib/congno";
+import { loadContractCodeSuggestions } from "@/lib/congno";
 import type { ProposalGroup } from "@/lib/types";
 
 /**
@@ -15,15 +14,11 @@ import type { ProposalGroup } from "@/lib/types";
  * quyền XEM đề xuất — chỉ cần đã đăng nhập + nằm trong phạm vi "Sử dụng cho"
  * của nhóm + field đúng có bật cờ.
  *
- * Cache 5 phút (dài hơn field-suggestions 60s cố ý — dữ liệu hợp đồng đổi rất
- * ít so với lịch sử đề xuất, xem design.md Decision #3).
+ * `loadContractCodeSuggestions` (lib/congno.ts) đã tự cache 5 phút — dùng
+ * CHUNG với hàm validate chặn gửi (lib/server/requests.ts), không tự cache
+ * riêng ở đây nữa (trước đó có 2 lớp cache trùng key, CodeRabbit PR #41 chỉ
+ * ra validate KHÔNG qua cache nào cả — gộp về đúng 1 nguồn).
  */
-const loadSuggestionsCached = unstable_cache(
-  async (): Promise<ContractCodeSuggestion[]> => loadContractCodeSuggestions(),
-  ["contract-code-suggestions"],
-  { revalidate: 300 },
-);
-
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await requireSession();
@@ -54,7 +49,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       );
     }
 
-    const suggestions = await loadSuggestionsCached();
+    const suggestions = await loadContractCodeSuggestions();
     return NextResponse.json({ suggestions });
   } catch (error) {
     // Thiếu CONGNO_FIREBASE_SERVICE_ACCOUNT hoặc lỗi kết nối app Công nợ —
