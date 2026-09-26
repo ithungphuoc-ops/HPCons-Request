@@ -4,12 +4,12 @@ import { useParams } from "next/navigation";
 import { useState } from "react";
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, arrayMove, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import { FileSpreadsheet, Pencil, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, FileSpreadsheet, Pencil, Plus, Trash2 } from "lucide-react";
 import { useRequestContext } from "@/context/RequestContext";
 import FieldListItem from "@/components/request/FieldListItem";
 import RequireAdminRole from "@/components/request/RequireAdminRole";
 import ApprovalTimeFieldModal from "@/components/request/modals/ApprovalTimeFieldModal";
-import { fieldDataTypeLabels, type ApprovalTimeField } from "@/lib/types";
+import { computedFieldEligibleTypes, fieldDataTypeLabels, type ApprovalTimeField } from "@/lib/types";
 
 const DECISION_ACTION_LABELS: Record<ApprovalTimeField["decisionAction"], string> = {
   approve: "Chấp thuận",
@@ -61,6 +61,24 @@ function ProposalFormPageInner() {
 
   const sortedFields = [...group.fields].sort((a, b) => a.order - b.order);
 
+  // Nhắc nhở nếu có trường tên đúng "Tên đề xuất" nhưng CHƯA bật "Tự động ghép
+  // giá trị" (computedFrom) — phát hiện 06/09/2026: Sếp hay quên quay lại bấm
+  // "Sửa trường dữ liệu" sau khi thêm trường này ở nhóm mới, khiến trường vẫn
+  // ở dạng gõ tay thay vì tự khoá + tự tính như các nhóm đã cấu hình đúng. Chỉ
+  // NHẮC (không tự bật hộ) — Admin vẫn phải tự vào điền mẫu chuỗi, vì hệ thống
+  // không biết trước nên ghép từ những trường nào.
+  //
+  // Chỉ nhắc khi field ĐANG ở loại dữ liệu cho phép cấu hình (short_text/
+  // paragraph, xem computedFieldEligibleTypes) — nhắc cho field kiểu khác
+  // (vd date/single_choice) sẽ sai vì AddFieldModal không cho bật ở loại đó,
+  // Admin bấm vào cũng không thấy phần cấu hình đó (CodeRabbit phát hiện).
+  const tenDeXuatField = sortedFields.find(
+    (f) =>
+      f.name.trim().toLowerCase() === "tên đề xuất" &&
+      computedFieldEligibleTypes.includes(f.dataType),
+  );
+  const showTenDeXuatReminder = !!tenDeXuatField && !tenDeXuatField.computedFrom;
+
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
@@ -111,6 +129,24 @@ function ProposalFormPageInner() {
           <Plus size={15} /> Thêm
         </button>
       </div>
+
+      {showTenDeXuatReminder && (
+        <div className="mb-3 flex items-start gap-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-700">
+          <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+          <p>
+            Chưa thiết lập tự động ghép cho <b>&quot;Tên đề xuất&quot;</b> — trường này đang cho gõ tay tự do, sẽ
+            không tự khoá và ghép từ các trường khác như các nhóm đã cấu hình.{" "}
+            <button
+              type="button"
+              onClick={() => handleEdit(tenDeXuatField!)}
+              className="font-medium underline underline-offset-2 hover:text-amber-900"
+            >
+              Bấm vào đây để cấu hình ngay
+            </button>
+            .
+          </p>
+        </div>
+      )}
 
       <div className="overflow-hidden rounded-[3px] border border-[var(--color-border)]">
         {sortedFields.length === 0 ? (

@@ -234,6 +234,16 @@ export const fieldDataTypeLabels: Record<FieldDataType, string> = {
 };
 
 /**
+ * Chỉ field văn bản mới cấu hình được "tự động ghép giá trị từ trường khác"
+ * (ProposalField.computedFrom) — dùng CHUNG giữa `AddFieldModal.tsx` (quyết
+ * định có hiện phần cấu hình + có tự gợi ý bật hay không) và trang cấu hình
+ * nhóm (quyết định có hiện banner nhắc "chưa thiết lập" hay không), để 2 nơi
+ * không lệch nhau nếu sau này thêm/bớt loại field được phép (CodeRabbit phát
+ * hiện risk lệch khi mỗi nơi tự định nghĩa 1 danh sách riêng).
+ */
+export const computedFieldEligibleTypes: FieldDataType[] = ["short_text", "paragraph"];
+
+/**
  * Một rule con dựa trên giá trị 1 field của đề xuất — dùng chung cho field
  * hiển thị theo điều kiện (ProposalField.visibleWhen), bước duyệt có điều
  * kiện (ApproverStepDef.condition), và người theo dõi theo điều kiện
