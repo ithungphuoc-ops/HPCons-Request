@@ -1729,7 +1729,13 @@ function ShortTextWithSuggestions({
  * `findInvalidContractCodeFields` phía máy chủ (lib/server/requests.ts), gọi
  * lúc gửi chính thức, không tin danh sách đã tải ở đây.
  */
-type ContractSuggestion = { code: string; project: string; work: string; customerName: string };
+type ContractSuggestion = {
+  code: string;
+  project: string;
+  work: string;
+  customerName: string;
+  customerNameShort: string;
+};
 type ContractSuggestionResponse = { suggestions?: ContractSuggestion[] };
 
 function ShortTextWithContractCodeLookup({
@@ -1784,15 +1790,15 @@ function ShortTextWithContractCodeLookup({
   // hiện lên. Tự lọc + sắp xếp để kiểm soát đúng, ưu tiên mã BẮT ĐẦU bằng
   // đúng những gì đang gõ lên trước.
   //
-  // Cột phụ hiển thị "Tên CĐT" (customerName), KHÔNG PHẢI "Tên công trình"
-  // (project) — chốt cuối cùng 26/09/2026: dữ liệu `customerName` bên app
-  // Công nợ ĐÃ được nhập rút gọn sẵn (vd "CHENKAI", "SHUN HING" — không phải
-  // tên pháp nhân đầy đủ), nên ngắn gọn tương đương `project`, không dài như
-  // giả định lúc đầu.
+  // Cột phụ hiển thị "Tên CĐT" RÚT GỌN (customerNameShort) — chốt cuối cùng
+  // 26/09/2026: `customerName` gốc bên app Công nợ là tên PHÁP NHÂN ĐẦY ĐỦ
+  // (vd "CÔNG TY TNHH CÔNG NGHIỆP CHÍNH XÁC CHENKAI"), quá dài để đối chiếu
+  // nhanh lúc đang gõ — server tự rút gọn (xem `shortenCustomerName` trong
+  // lib/congno.ts) trước khi trả về, KHÔNG hiện `customerName` đầy đủ ở đây.
   const query = value.trim().toLowerCase();
   const filtered = (query
     ? suggestions.filter(
-        (s) => s.code.toLowerCase().includes(query) || s.customerName.toLowerCase().includes(query),
+        (s) => s.code.toLowerCase().includes(query) || s.customerNameShort.toLowerCase().includes(query),
       )
     : suggestions
   )
@@ -1844,7 +1850,7 @@ function ShortTextWithContractCodeLookup({
               className="flex cursor-pointer items-center justify-between gap-3 px-3 py-1.5 text-[14px] hover:bg-gray-50"
             >
               <span className="text-gray-800">{s.code}</span>
-              <span className="text-[12px] text-gray-400">{s.customerName}</span>
+              <span className="text-[12px] text-gray-400">{s.customerNameShort}</span>
             </li>
           ))}
         </ul>
