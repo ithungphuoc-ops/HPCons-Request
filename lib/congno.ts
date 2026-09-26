@@ -11,12 +11,13 @@ import { unstable_cache } from "next/cache";
  * ghi nào trong file này) — dùng đúng mẫu đã có ở lib/hpcore.ts (đọc chéo
  * app tổng), chỉ khác project/biến môi trường.
  *
- * 🔴 CHỈ đọc collection "contracts" và CHỈ forward `code`/`group`/`name`/`work`
- * ra ngoài file này (xem app/api/groups/[id]/contract-code-suggestions/route.ts)
- * — `work` ("hạng mục", mô tả công việc) được Sếp chốt cho lộ ra để người làm
- * đề nghị đối chiếu tự phát hiện gõ nhầm Số Hợp Đồng CĐT (26/09/2026). Dữ liệu
- * TÀI CHÍNH (`totalAfterTax`, `customerName`...) của app Công nợ vẫn KHÔNG
- * được lộ ra bất kỳ đâu trong base-request-app.
+ * 🔴 CHỈ đọc collection "contracts" và CHỈ forward `code`/`group`/`name`/`work`/
+ * `customerName` ra ngoài file này (xem
+ * app/api/groups/[id]/contract-code-suggestions/route.ts) — `work` ("hạng
+ * mục") và `customerName` ("Tên CĐT", hiện ở cột phụ trong dropdown gợi ý)
+ * được Sếp chốt cho lộ ra (26/09/2026) để người làm đề nghị đối chiếu, tự
+ * phát hiện gõ nhầm Số Hợp Đồng CĐT. Dữ liệu TÀI CHÍNH (`totalAfterTax`...)
+ * của app Công nợ vẫn KHÔNG được lộ ra bất kỳ đâu trong base-request-app.
  */
 
 const APP_NAME = "congno";
@@ -54,12 +55,16 @@ export interface ContractCodeSuggestion {
    * chiếu tự phát hiện gõ nhầm Số Hợp Đồng CĐT (không phải dữ liệu tài
    * chính). Rỗng nếu app Công nợ chưa điền field `work` cho hợp đồng đó. */
   work: string;
+  /** "Tên CĐT" (Chủ Đầu Tư) — hiện ở cột phụ trong dropdown gợi ý lúc đang
+   * gõ (Sếp chốt 26/09/2026, thay cho `project` trước đó). Rỗng nếu app
+   * Công nợ chưa điền field `customerName` cho hợp đồng đó. */
+  customerName: string;
 }
 
 /**
- * Danh sách Số Hợp Đồng CĐT thật, CHỈ 3 field `code`+`project`+`work` — dùng
- * chung cho cả route gợi ý (client) và validate chặn gửi (server), tránh 2
- * nơi tự đọc/tự map field khác nhau rồi lệch nhau.
+ * Danh sách Số Hợp Đồng CĐT thật, CHỈ 4 field `code`+`project`+`work`+
+ * `customerName` — dùng chung cho cả route gợi ý (client) và validate chặn
+ * gửi (server), tránh 2 nơi tự đọc/tự map field khác nhau rồi lệch nhau.
  */
 async function loadContractCodeSuggestionsUncached(): Promise<ContractCodeSuggestion[]> {
   const snap = await getCongNoDb().collection("contracts").get();
@@ -72,7 +77,8 @@ async function loadContractCodeSuggestionsUncached(): Promise<ContractCodeSugges
           ? data.name.trim()
           : "";
     const work = typeof data.work === "string" ? data.work.trim() : "";
-    return { code: String(data.code ?? "").trim(), project, work };
+    const customerName = typeof data.customerName === "string" ? data.customerName.trim() : "";
+    return { code: String(data.code ?? "").trim(), project, work, customerName };
   }).filter((c) => c.code);
 }
 

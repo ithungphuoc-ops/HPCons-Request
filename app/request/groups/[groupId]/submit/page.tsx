@@ -1729,6 +1729,9 @@ function ShortTextWithSuggestions({
  * `findInvalidContractCodeFields` phía máy chủ (lib/server/requests.ts), gọi
  * lúc gửi chính thức, không tin danh sách đã tải ở đây.
  */
+type ContractSuggestion = { code: string; project: string; work: string; customerName: string };
+type ContractSuggestionResponse = { suggestions?: ContractSuggestion[] };
+
 function ShortTextWithContractCodeLookup({
   groupId,
   fieldId,
@@ -1742,7 +1745,7 @@ function ShortTextWithContractCodeLookup({
   placeholder?: string;
   onChange: (value: string) => void;
 }) {
-  const [suggestions, setSuggestions] = useState<{ code: string; project: string; work: string }[]>([]);
+  const [suggestions, setSuggestions] = useState<ContractSuggestion[]>([]);
   // Chỉ true SAU KHI đã tải xong (thành công hay lỗi đều tính) — tránh báo
   // "không khớp" SAI khi người dùng rời khỏi ô trước lúc danh sách tải kịp,
   // hoặc khi API lỗi (CodeRabbit PR #41: suggestions rỗng ban đầu khiến MỌI
@@ -1755,7 +1758,7 @@ function ShortTextWithContractCodeLookup({
     let cancelled = false;
     fetch(`/api/groups/${groupId}/contract-code-suggestions?fieldId=${fieldId}`)
       .then((res) => (res.ok ? res.json() : null))
-      .then((data: { suggestions?: { code: string; project: string; work: string }[] } | null) => {
+      .then((data: ContractSuggestionResponse | null) => {
         if (!cancelled) setSuggestions(data?.suggestions ?? []);
       })
       .catch(() => {
@@ -1783,7 +1786,7 @@ function ShortTextWithContractCodeLookup({
   const query = value.trim().toLowerCase();
   const filtered = (query
     ? suggestions.filter(
-        (s) => s.code.toLowerCase().includes(query) || s.project.toLowerCase().includes(query),
+        (s) => s.code.toLowerCase().includes(query) || s.customerName.toLowerCase().includes(query),
       )
     : suggestions
   )
@@ -1835,7 +1838,7 @@ function ShortTextWithContractCodeLookup({
               className="flex cursor-pointer items-center justify-between gap-3 px-3 py-1.5 text-[14px] hover:bg-gray-50"
             >
               <span className="text-gray-800">{s.code}</span>
-              <span className="text-[12px] text-gray-400">{s.project}</span>
+              <span className="text-[12px] text-gray-400">{s.customerName}</span>
             </li>
           ))}
         </ul>
