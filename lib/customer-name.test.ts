@@ -29,4 +29,23 @@ describe("shortenCustomerName", () => {
   it("chuỗi rỗng trả về rỗng", () => {
     expect(shortenCustomerName("")).toBe("");
   });
+
+  // 11 tên CĐT thật (đọc trực tiếp Firestore project "hpcons-congno",
+  // collection "contracts", 26/09/2026 — 20 hợp đồng, 11 tên khác nhau) —
+  // khoá lại đúng bảng đối chiếu để không tái diễn lỗi hậu tố "(VIETNAM)".
+  it.each([
+    ["CÔNG TY TNHH CÔNG NGHIỆP CHÍNH XÁC CHENKAI", "CHENKAI"],
+    ["CÔNG TY TNHH CƠ KHÍ JIANGDONG (VIETNAM)", "JIANGDONG"],
+    ["CÔNG TY TNHH GIANT MANUFACTURING VIỆT NAM", "GIANT MANUFACTURING"],
+    ["CÔNG TY TNHH GOLDEN VIETNAMTEX", "GOLDEN VIETNAMTEX"],
+    ["CÔNG TY TNHH HOWELL TECHNOLOGY (VIET NAM)", "HOWELL TECHNOLOGY"],
+    ["CÔNG TY TNHH MỘT THÀNH VIÊN CHIEN YI", "CHIEN YI"],
+    ["CÔNG TY TNHH MTV RUN YAO", "RUN YAO"],
+    ["CÔNG TY TNHH RTI (VIỆT NAM)", "RTI"],
+    ["CÔNG TY TNHH SHUN HING (VIETNAM)", "SHUN HING"],
+    ["CÔNG TY TNHH TSWEN HOEI VIỆT NAM", "TSWEN HOEI"],
+    ["HP CONS", "HP CONS"],
+  ])("dữ liệu thật: %s -> %s", (full, short) => {
+    expect(shortenCustomerName(full)).toBe(short);
+  });
 });
