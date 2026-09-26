@@ -1784,14 +1784,15 @@ function ShortTextWithContractCodeLookup({
   // hiện lên. Tự lọc + sắp xếp để kiểm soát đúng, ưu tiên mã BẮT ĐẦU bằng
   // đúng những gì đang gõ lên trước.
   //
-  // Cột phụ hiển thị "Tên công trình" (project), KHÔNG PHẢI "Tên CĐT"
-  // (customerName) — Sếp đổi ý lại 26/09/2026 (thử "Tên CĐT" ở PR #43 xong
-  // thấy dài, tên chủ đầu tư là cả pháp nhân công ty): tên công trình ngắn
-  // gọn hơn, dễ đọc trong dropdown hơn.
+  // Cột phụ hiển thị "Tên CĐT" (customerName), KHÔNG PHẢI "Tên công trình"
+  // (project) — chốt cuối cùng 26/09/2026: dữ liệu `customerName` bên app
+  // Công nợ ĐÃ được nhập rút gọn sẵn (vd "CHENKAI", "SHUN HING" — không phải
+  // tên pháp nhân đầy đủ), nên ngắn gọn tương đương `project`, không dài như
+  // giả định lúc đầu.
   const query = value.trim().toLowerCase();
   const filtered = (query
     ? suggestions.filter(
-        (s) => s.code.toLowerCase().includes(query) || s.project.toLowerCase().includes(query),
+        (s) => s.code.toLowerCase().includes(query) || s.customerName.toLowerCase().includes(query),
       )
     : suggestions
   )
@@ -1843,7 +1844,7 @@ function ShortTextWithContractCodeLookup({
               className="flex cursor-pointer items-center justify-between gap-3 px-3 py-1.5 text-[14px] hover:bg-gray-50"
             >
               <span className="text-gray-800">{s.code}</span>
-              <span className="text-[12px] text-gray-400">{s.project}</span>
+              <span className="text-[12px] text-gray-400">{s.customerName}</span>
             </li>
           ))}
         </ul>
