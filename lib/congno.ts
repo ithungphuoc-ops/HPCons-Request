@@ -10,10 +10,12 @@ import { getFirestore, type Firestore } from "firebase-admin/firestore";
  * ghi nào trong file này) — dùng đúng mẫu đã có ở lib/hpcore.ts (đọc chéo
  * app tổng), chỉ khác project/biến môi trường.
  *
- * 🔴 CHỈ đọc collection "contracts" và CHỈ forward `code`/`group`/`name` ra
- * ngoài file này (xem app/api/groups/[id]/contract-code-suggestions/route.ts)
- * — dữ liệu tài chính (`totalAfterTax`, `customerName`, `work`...) của app
- * Công nợ KHÔNG được lộ ra bất kỳ đâu trong base-request-app.
+ * 🔴 CHỈ đọc collection "contracts" và CHỈ forward `code`/`group`/`name`/`work`
+ * ra ngoài file này (xem app/api/groups/[id]/contract-code-suggestions/route.ts)
+ * — `work` ("hạng mục", mô tả công việc) được Sếp chốt cho lộ ra để người làm
+ * đề nghị đối chiếu tự phát hiện gõ nhầm Số Hợp Đồng CĐT (26/09/2026). Dữ liệu
+ * TÀI CHÍNH (`totalAfterTax`, `customerName`...) của app Công nợ vẫn KHÔNG
+ * được lộ ra bất kỳ đâu trong base-request-app.
  */
 
 const APP_NAME = "congno";
@@ -47,12 +49,16 @@ export function getCongNoDb(): Firestore {
 export interface ContractCodeSuggestion {
   code: string;
   project: string;
+  /** "Hạng mục" — mô tả công việc của hợp đồng, để người làm đề nghị đối
+   * chiếu tự phát hiện gõ nhầm Số Hợp Đồng CĐT (không phải dữ liệu tài
+   * chính). Rỗng nếu app Công nợ chưa điền field `work` cho hợp đồng đó. */
+  work: string;
 }
 
 /**
- * Danh sách Số Hợp Đồng CĐT thật, CHỈ 2 field `code`+`project` — dùng chung
- * cho cả route gợi ý (client) và validate chặn gửi (server), tránh 2 nơi tự
- * đọc/tự map field khác nhau rồi lệch nhau.
+ * Danh sách Số Hợp Đồng CĐT thật, CHỈ 3 field `code`+`project`+`work` — dùng
+ * chung cho cả route gợi ý (client) và validate chặn gửi (server), tránh 2
+ * nơi tự đọc/tự map field khác nhau rồi lệch nhau.
  */
 export async function loadContractCodeSuggestions(): Promise<ContractCodeSuggestion[]> {
   const snap = await getCongNoDb().collection("contracts").get();
@@ -64,6 +70,7 @@ export async function loadContractCodeSuggestions(): Promise<ContractCodeSuggest
         : typeof data.name === "string"
           ? data.name.trim()
           : "";
-    return { code: String(data.code ?? "").trim(), project };
+    const work = typeof data.work === "string" ? data.work.trim() : "";
+    return { code: String(data.code ?? "").trim(), project, work };
   }).filter((c) => c.code);
 }

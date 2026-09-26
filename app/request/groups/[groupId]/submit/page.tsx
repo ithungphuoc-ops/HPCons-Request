@@ -1742,7 +1742,7 @@ function ShortTextWithContractCodeLookup({
   placeholder?: string;
   onChange: (value: string) => void;
 }) {
-  const [suggestions, setSuggestions] = useState<{ code: string; project: string }[]>([]);
+  const [suggestions, setSuggestions] = useState<{ code: string; project: string; work: string }[]>([]);
   const [mismatch, setMismatch] = useState(false);
   const listId = `field-contract-${fieldId}`;
 
@@ -1750,7 +1750,7 @@ function ShortTextWithContractCodeLookup({
     let cancelled = false;
     fetch(`/api/groups/${groupId}/contract-code-suggestions?fieldId=${fieldId}`)
       .then((res) => (res.ok ? res.json() : null))
-      .then((data: { suggestions?: { code: string; project: string }[] } | null) => {
+      .then((data: { suggestions?: { code: string; project: string; work: string }[] } | null) => {
         if (!cancelled) setSuggestions(data?.suggestions ?? []);
       })
       .catch(() => {
@@ -1761,6 +1761,11 @@ function ShortTextWithContractCodeLookup({
       cancelled = true;
     };
   }, [groupId, fieldId]);
+
+  // Hạng mục (mô tả công việc) của ĐÚNG hợp đồng đang chọn — để người làm đề
+  // nghị tự đối chiếu, phát hiện gõ nhầm số hợp đồng của 1 hạng mục khác (Sếp
+  // chốt 26/09/2026). Chỉ hiện khi giá trị khớp CHÍNH XÁC 1 hợp đồng thật.
+  const matchedWork = suggestions.find((s) => s.code === value.trim())?.work;
 
   return (
     <>
@@ -1782,6 +1787,11 @@ function ShortTextWithContractCodeLookup({
           setMismatch(!suggestions.some((s) => s.code === v));
         }}
       />
+      {matchedWork && (
+        <p className="mt-1 text-[12px] text-gray-600">
+          <span className="font-medium text-gray-500">Hạng mục:</span> {matchedWork}
+        </p>
+      )}
       <datalist id={listId}>
         {suggestions.map((s) => (
           <option key={s.code} value={s.code}>

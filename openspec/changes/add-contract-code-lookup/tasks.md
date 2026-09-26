@@ -40,5 +40,14 @@
 
 ## 8. CẦN SẾP LÀM (ngoài code)
 
-- [ ] 8.1 Cấp `CONGNO_FIREBASE_SERVICE_ACCOUNT` (service account JSON project "hpcons-congno") — thêm vào Vercel (Production + Preview)
-- [ ] 8.2 Sau khi có key: vào 1 nhóm đề xuất thật, bật công tắc "Bắt buộc khớp Số Hợp Đồng CĐT" cho field "Số Hợp Đồng CĐT", thử gửi đề xuất thật với mã đúng/mã sai để xác nhận hành vi thật trên production
+- [x] 8.1 Cấp `CONGNO_FIREBASE_SERVICE_ACCOUNT` (service account JSON project "hpcons-congno" — xác nhận đúng project qua Firestore Console thật, KHÁC project ghi trong comment cũ) — đã thêm vào Vercel (Production + Preview) 26/09/2026
+- [ ] 8.2 Vào 1 nhóm đề xuất thật, bật công tắc "Bắt buộc khớp Số Hợp Đồng CĐT" cho field "Số Hợp Đồng CĐT", thử gửi đề xuất thật với mã đúng/mã sai để xác nhận hành vi thật trên production (bao gồm cả dòng "Hạng mục" ở mục 9 bên dưới)
+
+## 9. Hiện "Hạng mục" để đối chiếu, chống gõ nhầm số hợp đồng (bổ sung 26/09/2026)
+
+Sếp phản hồi qua ảnh chụp thật: muốn khi chọn đúng Số Hợp Đồng CĐT thì tự hiện "hạng mục" (mô tả công việc, field `work` của app Công nợ) để người làm đề nghị tự đối chiếu — phát hiện trường hợp đang làm đề nghị cho 1 hạng mục nhưng lỡ gõ nhầm số hợp đồng của hạng mục khác. Tra cứu đơn giản (không cần AI/Gemini) — mở rộng trực tiếp cơ chế đã có, không phải tính năng mới tách biệt.
+
+- [x] 9.1 Mở rộng `ContractCodeSuggestion`/`loadContractCodeSuggestions()` trong `lib/congno.ts` thêm field `work` (đọc từ `contracts.work`, rỗng nếu chưa điền) — route gợi ý tự động có thêm field này vì dùng chung hàm
+- [x] 9.2 Sửa component `ShortTextWithContractCodeLookup`: khi giá trị khớp đúng 1 hợp đồng trong danh sách đã tải, hiện dòng "Hạng mục: <work>" ngay dưới ô — KHÔNG hiện nếu `work` rỗng
+- [x] 9.3 Cập nhật specs (`contract-code-lookup/spec.md`) thêm 2 scenario mới (hiện hạng mục khi khớp, không hiện khi hạng mục rỗng)
+- [x] 9.4 `npm run build` + `npm run test` lại sau khi mở rộng, xác nhận vẫn sạch/pass

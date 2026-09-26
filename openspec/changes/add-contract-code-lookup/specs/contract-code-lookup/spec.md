@@ -11,12 +11,20 @@ Hệ thống SHALL cho phép Admin/Owner bật/tắt cờ `contractCodeLookup` t
 - **WHEN** Admin cấu hình 1 field không phải kiểu "Văn bản ngắn" (vd "Một lựa chọn", "Ngày")
 - **THEN** hệ thống KHÔNG hiện công tắc "Bắt buộc khớp Số Hợp Đồng CĐT"
 
-### Requirement: Gợi ý từ danh sách hợp đồng thật, không lộ dữ liệu nhạy cảm
-Hệ thống SHALL cung cấp gợi ý (danh sách Số Hợp Đồng CĐT) cho field đã bật `contractCodeLookup`, đọc từ collection `contracts` của project Firestore riêng của app Công nợ ("hpcons-congno"). Phản hồi SHALL CHỈ chứa `code` và `project` (tên dự án) của mỗi hợp đồng — KHÔNG chứa bất kỳ field nào khác (số tiền hợp đồng, tên chủ đầu tư, mô tả công việc...).
+### Requirement: Gợi ý từ danh sách hợp đồng thật, không lộ dữ liệu tài chính
+Hệ thống SHALL cung cấp gợi ý (danh sách Số Hợp Đồng CĐT) cho field đã bật `contractCodeLookup`, đọc từ collection `contracts` của project Firestore riêng của app Công nợ ("hpcons-congno"). Phản hồi SHALL CHỈ chứa `code`, `project` (tên dự án) và `work` ("hạng mục" — mô tả công việc) của mỗi hợp đồng — KHÔNG chứa bất kỳ field tài chính/nhạy cảm nào khác (số tiền hợp đồng, tên chủ đầu tư...).
 
 #### Scenario: Lấy gợi ý cho field đã bật cờ
 - **WHEN** người dùng mở form gửi đề xuất có field bật `contractCodeLookup`
-- **THEN** hệ thống trả về danh sách hợp đồng thật (mỗi phần tử chỉ có `code` và `project`) để hiện gợi ý
+- **THEN** hệ thống trả về danh sách hợp đồng thật (mỗi phần tử có `code`, `project`, `work`) để hiện gợi ý
+
+#### Scenario: Hiện hạng mục để đối chiếu, phát hiện gõ nhầm số hợp đồng
+- **WHEN** người dùng chọn/gõ đúng 1 Số Hợp Đồng CĐT thật khớp trong danh sách gợi ý
+- **THEN** hệ thống hiện ngay "Hạng mục" (`work`) của đúng hợp đồng đó ngay dưới ô nhập, để người dùng tự đối chiếu có đang nhầm số hợp đồng của 1 hạng mục khác không
+
+#### Scenario: Hợp đồng chưa có sẵn hạng mục
+- **WHEN** hợp đồng khớp đúng nhưng field `work` rỗng/chưa điền bên app Công nợ
+- **THEN** hệ thống KHÔNG hiện dòng "Hạng mục" (không hiện dòng trống gây hiểu nhầm)
 
 #### Scenario: Gọi cho field chưa bật cờ
 - **WHEN** có request gọi thẳng route gợi ý với `fieldId` của 1 field KHÔNG bật `contractCodeLookup` (hoặc không tồn tại)
