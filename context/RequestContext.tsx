@@ -94,6 +94,19 @@ export function RequestProvider({ children }: { children: React.ReactNode }) {
   );
   const [editingField, setEditingField] = useState<ProposalField | null>(null);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  // Chị Nhung phản hồi thật 29/09/2026: sửa cấu hình nhóm/trường xong tự
+  // "quay lại như cũ" mà không rõ vì sao — đọc code phát hiện máy chủ CÓ từ
+  // chối lưu (validate lỗi rõ ràng, xem app/api/groups/[id]/route.ts) nhưng
+  // updateGroup không hề bắt lỗi, còn updateField/addField/removeField chỉ
+  // âm thầm revert không báo gì. Banner lỗi dùng CHUNG này để mọi hàm sửa
+  // nhóm/trường đều báo được, không phải sửa lại 15+ nơi đang gọi updateGroup.
+  const [errorToast, setErrorToast] = useState<string | null>(null);
+  const showError = useCallback((message: string) => setErrorToast(message), []);
+  useEffect(() => {
+    if (!errorToast) return;
+    const timer = setTimeout(() => setErrorToast(null), 8000);
+    return () => clearTimeout(timer);
+  }, [errorToast]);
 
   const refetchGroups = useCallback(async () => {
     const res = await fetch("/api/groups");
@@ -208,20 +221,36 @@ export function RequestProvider({ children }: { children: React.ReactNode }) {
 
   const updateGroup = useCallback(
     (groupId: string, patch: Partial<ProposalGroup>) => {
-      mutateGroup(groupId, (g) => ({ ...g, ...patch }));
+      let previous: ProposalGroup | null = null;
+      mutateGroup(groupId, (g) => {
+        previous = g;
+        return { ...g, ...patch };
+      });
       reportActivity({
         action: "Sửa cấu hình nhóm đề xuất",
         entityType: "proposal_group",
         entityId: groupId,
         detail: `Cập nhật: ${Object.keys(patch).join(", ")}`,
       });
-      patchGroupRequest(groupId, patch).then((group) => {
-        // Đồng bộ lại giá trị thật từ server (ví dụ category đã được chuẩn hoá).
-        mutateGroup(groupId, () => group);
-        if (patch.category) refetchGroups();
-      });
+      patchGroupRequest(groupId, patch)
+        .then((group) => {
+          // Đồng bộ lại giá trị thật từ server (ví dụ category đã được chuẩn hoá).
+          mutateGroup(groupId, () => group);
+          if (patch.category) refetchGroups();
+        })
+        .catch((err) => {
+          // TRƯỚC ĐÂY: không có .catch() nào cả — máy chủ từ chối lưu (validate
+          // lỗi, xem app/api/groups/[id]/route.ts) mà không ai biết, giao diện
+          // vẫn hiện bản đã sửa cho tới lần load lại mới "tự quay về như cũ",
+          // trông như thao tác không lưu được (chị Nhung phản hồi 29/09/2026).
+          if (previous) {
+            const revertTo = previous;
+            mutateGroup(groupId, () => revertTo);
+          }
+          showError(err instanceof Error ? err.message : "Không thể lưu thay đổi, vui lòng thử lại.");
+        });
     },
-    [mutateGroup, refetchGroups],
+    [mutateGroup, refetchGroups, showError],
   );
 
   const duplicateGroup = useCallback(
@@ -307,11 +336,12 @@ export function RequestProvider({ children }: { children: React.ReactNode }) {
       mutateGroup(groupId, (g) => ({ ...g, fields: orderedFields }));
       setAddFieldModalGroupId(null);
       reportActivity({ action: "Thêm trường tuỳ chỉnh", entityType: "proposal_field", entityId: newField.id, detail: `Nhóm ${groupId}: thêm trường "${field.name}"` });
-      patchGroupRequest(groupId, { fields: orderedFields }).catch(() => {
+      patchGroupRequest(groupId, { fields: orderedFields }).catch((err) => {
         mutateGroup(groupId, (g) => ({ ...g, fields: group.fields }));
+        showError(err instanceof Error ? err.message : "Không thể thêm trường, vui lòng thử lại.");
       });
     },
-    [getGroupById, mutateGroup],
+    [getGroupById, mutateGroup, showError],
   );
 
   const updateField = useCallback(
@@ -326,11 +356,12 @@ export function RequestProvider({ children }: { children: React.ReactNode }) {
       setAddFieldModalGroupId(null);
       setEditingField(null);
       reportActivity({ action: "Sửa trường tuỳ chỉnh", entityType: "proposal_field", entityId: fieldId, detail: `Nhóm ${groupId}: sửa trường "${patch.name}"` });
-      patchGroupRequest(groupId, { fields: nextFields }).catch(() => {
+      patchGroupRequest(groupId, { fields: nextFields }).catch((err) => {
         mutateGroup(groupId, (g) => ({ ...g, fields: group.fields }));
+        showError(err instanceof Error ? err.message : "Không thể lưu trường vừa sửa, vui lòng thử lại.");
       });
     },
-    [getGroupById, mutateGroup],
+    [getGroupById, mutateGroup, showError],
   );
 
   const removeField = useCallback(
@@ -342,11 +373,12 @@ export function RequestProvider({ children }: { children: React.ReactNode }) {
 
       mutateGroup(groupId, (g) => ({ ...g, fields: nextFields }));
       reportActivity({ action: "Xoá trường tuỳ chỉnh", entityType: "proposal_field", entityId: fieldId, detail: `Nhóm ${groupId}: xoá trường "${removed?.name ?? fieldId}"` });
-      patchGroupRequest(groupId, { fields: nextFields }).catch(() => {
+      patchGroupRequest(groupId, { fields: nextFields }).catch((err) => {
         mutateGroup(groupId, (g) => ({ ...g, fields: group.fields }));
+        showError(err instanceof Error ? err.message : "Không thể xoá trường, vui lòng thử lại.");
       });
     },
-    [getGroupById, mutateGroup],
+    [getGroupById, mutateGroup, showError],
   );
 
   const reorderFields = useCallback(
@@ -362,11 +394,12 @@ export function RequestProvider({ children }: { children: React.ReactNode }) {
         .filter((f): f is ProposalField => f !== null);
 
       mutateGroup(groupId, (g) => ({ ...g, fields: reordered }));
-      patchGroupRequest(groupId, { fields: reordered }).catch(() => {
+      patchGroupRequest(groupId, { fields: reordered }).catch((err) => {
         mutateGroup(groupId, (g) => ({ ...g, fields: group.fields }));
+        showError(err instanceof Error ? err.message : "Không thể lưu lại thứ tự trường, vui lòng thử lại.");
       });
     },
-    [getGroupById, mutateGroup],
+    [getGroupById, mutateGroup, showError],
   );
 
   const filteredCategoryGroups = useMemo(() => {
@@ -429,7 +462,24 @@ export function RequestProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <RequestContext.Provider value={value}>{children}</RequestContext.Provider>
+    <RequestContext.Provider value={value}>
+      {children}
+      {errorToast && (
+        <div className="fixed bottom-4 right-4 z-[100] max-w-sm rounded-lg bg-[var(--color-danger-red)] px-4 py-3 text-[13px] text-white shadow-lg">
+          <div className="flex items-start gap-3">
+            <span className="flex-1 leading-snug">{errorToast}</span>
+            <button
+              type="button"
+              onClick={() => setErrorToast(null)}
+              aria-label="Đóng thông báo lỗi"
+              className="shrink-0 opacity-80 hover:opacity-100"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+    </RequestContext.Provider>
   );
 }
 
