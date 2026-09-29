@@ -8,7 +8,7 @@ import {
   useMemo,
   useState,
 } from "react";
-import type { CategoryGroup, ProposalField, ProposalGroup } from "@/lib/types";
+import type { CategoryGroup, ConditionGroup, ProposalField, ProposalGroup } from "@/lib/types";
 import { reportActivity } from "@/lib/reportActivity";
 
 export type StatusFilter = "all" | "active" | "closed";
@@ -81,6 +81,16 @@ async function patchGroupRequest(
   return group;
 }
 
+/** Bỏ mọi rule tham chiếu tới `code` khỏi 1 nhóm điều kiện — nhóm rỗng rule
+ *  vẫn là ConditionGroup hợp lệ (luôn thoả mãn, xem evaluateConditionGroup),
+ *  không cần trả về undefined. Dùng khi xoá 1 trường để dọn sạch mọi điều
+ *  kiện đang phụ thuộc vào nó ở NƠI KHÁC, tránh máy chủ từ chối lưu vì "tham
+ *  chiếu tới trường không tồn tại" (Sếp chốt 29/09/2026: tự động dọn thay vì
+ *  bắt tự vào sửa tay từng trường phụ thuộc). */
+function stripFieldCodeFromCondition(condition: ConditionGroup, code: string): ConditionGroup {
+  return { ...condition, rules: condition.rules.filter((r) => r.fieldCode !== code) };
+}
+
 export function RequestProvider({ children }: { children: React.ReactNode }) {
   const [categoryGroups, setCategoryGroups] = useState<CategoryGroup[]>([]);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -98,15 +108,13 @@ export function RequestProvider({ children }: { children: React.ReactNode }) {
   // "quay lại như cũ" mà không rõ vì sao — đọc code phát hiện máy chủ CÓ từ
   // chối lưu (validate lỗi rõ ràng, xem app/api/groups/[id]/route.ts) nhưng
   // updateGroup không hề bắt lỗi, còn updateField/addField/removeField chỉ
-  // âm thầm revert không báo gì. Banner lỗi dùng CHUNG này để mọi hàm sửa
+  // âm thầm revert không báo gì. Hộp lỗi dùng CHUNG này để mọi hàm sửa
   // nhóm/trường đều báo được, không phải sửa lại 15+ nơi đang gọi updateGroup.
+  // Nằm GIỮA màn hình (Sếp chốt lại 29/09/2026: banner góc dưới-phải trước
+  // đó dễ bị bỏ lỡ) — không tự ẩn, phải bấm "Đã hiểu" mới đóng, vì nội dung
+  // lỗi thật (vd tên trường tham chiếu) thường dài, cần thời gian đọc kỹ.
   const [errorToast, setErrorToast] = useState<string | null>(null);
   const showError = useCallback((message: string) => setErrorToast(message), []);
-  useEffect(() => {
-    if (!errorToast) return;
-    const timer = setTimeout(() => setErrorToast(null), 8000);
-    return () => clearTimeout(timer);
-  }, [errorToast]);
 
   const refetchGroups = useCallback(async () => {
     const res = await fetch("/api/groups");
@@ -369,12 +377,52 @@ export function RequestProvider({ children }: { children: React.ReactNode }) {
       const group = getGroupById(groupId);
       if (!group) return;
       const removed = group.fields.find((f) => f.id === fieldId);
-      const nextFields = group.fields.filter((f) => f.id !== fieldId);
+      const removedCode = removed?.code;
 
-      mutateGroup(groupId, (g) => ({ ...g, fields: nextFields }));
+      // Dọn sạch mọi "Điều kiện hiển thị"/"điều kiện duyệt"/"điều kiện theo
+      // dõi" đang tham chiếu tới mã trường vừa xoá — Sếp chốt 29/09/2026: xoá
+      // 1 trường mà trường khác đang phụ thuộc vào nó (qua điều kiện) trước
+      // đây bị máy chủ TỪ CHỐI lưu (đúng, để không làm 3 field kia biến mất
+      // vĩnh viễn khỏi form) nhưng không ai biết cách gỡ — tự động bỏ rule
+      // tham chiếu tới mã đã xoá (nhóm điều kiện rỗng rule = luôn hiển thị,
+      // xem evaluateConditionGroup) thay vì bắt tự vào sửa tay từng nơi.
+      const nextFields = group.fields
+        .filter((f) => f.id !== fieldId)
+        .map((f) =>
+          removedCode && f.visibleWhen
+            ? { ...f, visibleWhen: stripFieldCodeFromCondition(f.visibleWhen, removedCode) }
+            : f,
+        );
+      const nextApproverSteps = removedCode
+        ? group.approverSteps.map((s) =>
+            s.condition ? { ...s, condition: stripFieldCodeFromCondition(s.condition, removedCode) } : s,
+          )
+        : group.approverSteps;
+      const nextFollowersConditional = removedCode
+        ? group.followersConditional?.map((fc) => ({
+            ...fc,
+            condition: stripFieldCodeFromCondition(fc.condition, removedCode),
+          }))
+        : group.followersConditional;
+
+      mutateGroup(groupId, (g) => ({
+        ...g,
+        fields: nextFields,
+        approverSteps: nextApproverSteps,
+        followersConditional: nextFollowersConditional,
+      }));
       reportActivity({ action: "Xoá trường tuỳ chỉnh", entityType: "proposal_field", entityId: fieldId, detail: `Nhóm ${groupId}: xoá trường "${removed?.name ?? fieldId}"` });
-      patchGroupRequest(groupId, { fields: nextFields }).catch((err) => {
-        mutateGroup(groupId, (g) => ({ ...g, fields: group.fields }));
+      patchGroupRequest(groupId, {
+        fields: nextFields,
+        approverSteps: nextApproverSteps,
+        followersConditional: nextFollowersConditional,
+      }).catch((err) => {
+        mutateGroup(groupId, (g) => ({
+          ...g,
+          fields: group.fields,
+          approverSteps: group.approverSteps,
+          followersConditional: group.followersConditional,
+        }));
         showError(err instanceof Error ? err.message : "Không thể xoá trường, vui lòng thử lại.");
       });
     },
@@ -465,17 +513,36 @@ export function RequestProvider({ children }: { children: React.ReactNode }) {
     <RequestContext.Provider value={value}>
       {children}
       {errorToast && (
-        <div className="fixed bottom-4 right-4 z-[100] max-w-sm rounded-lg bg-[var(--color-danger-red)] px-4 py-3 text-[13px] text-white shadow-lg">
-          <div className="flex items-start gap-3">
-            <span className="flex-1 leading-snug">{errorToast}</span>
-            <button
-              type="button"
-              onClick={() => setErrorToast(null)}
-              aria-label="Đóng thông báo lỗi"
-              className="shrink-0 opacity-80 hover:opacity-100"
-            >
-              ✕
-            </button>
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setErrorToast(null)}
+          role="presentation"
+        >
+          <div
+            className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+            role="alertdialog"
+            aria-modal="true"
+            aria-label="Không thể lưu"
+          >
+            <div className="flex items-start gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-red-50 text-lg text-[var(--color-danger-red)]">
+                ⚠️
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[14px] font-semibold text-gray-900">Không thể lưu</p>
+                <p className="mt-1 whitespace-pre-line text-[13.5px] leading-relaxed text-gray-600">{errorToast}</p>
+              </div>
+            </div>
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setErrorToast(null)}
+                className="rounded-[3px] bg-[var(--color-action-blue)] px-4 py-1.5 text-[13px] font-medium text-white hover:brightness-95"
+              >
+                Đã hiểu
+              </button>
+            </div>
           </div>
         </div>
       )}

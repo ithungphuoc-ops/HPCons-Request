@@ -28,7 +28,7 @@ export default function ProposalFormPage() {
 
 function ProposalFormPageInner() {
   const params = useParams<{ groupId: string }>();
-  const { getGroupById, reorderFields, updateGroup, openAddFieldModal, openEditFieldModal } =
+  const { getGroupById, reorderFields, updateGroup, removeField, openAddFieldModal, openEditFieldModal } =
     useRequestContext();
   const group = getGroupById(params.groupId);
   const [approvalTimeModal, setApprovalTimeModal] = useState<{ editing: ApprovalTimeField | null } | null>(null);
@@ -83,10 +83,13 @@ function ProposalFormPageInner() {
     openEditFieldModal(group.id, field);
   };
 
+  // Dùng removeField() của context (KHÔNG tự lọc fields rồi gọi updateGroup
+  // như trước) — removeField tự dọn luôn mọi "Điều kiện hiển thị"/điều kiện
+  // duyệt/điều kiện theo dõi đang tham chiếu tới mã trường vừa xoá, tránh máy
+  // chủ từ chối lưu vì "tham chiếu tới trường không tồn tại" (Sếp phản hồi
+  // 29/09/2026, xem comment removeField trong context/RequestContext.tsx).
   const handleRemove = (fieldId: string) => {
-    updateGroup(group.id, {
-      fields: group.fields.filter((f) => f.id !== fieldId),
-    });
+    removeField(group.id, fieldId);
   };
 
   return (
@@ -127,6 +130,13 @@ function ProposalFormPageInner() {
                   onToggleRequired={handleToggleRequired}
                   onEdit={handleEdit}
                   onRemove={handleRemove}
+                  dependentFieldNames={
+                    field.code
+                      ? sortedFields
+                          .filter((f) => f.id !== field.id && f.visibleWhen?.rules.some((r) => r.fieldCode === field.code))
+                          .map((f) => f.name)
+                      : []
+                  }
                 />
               ))}
             </SortableContext>

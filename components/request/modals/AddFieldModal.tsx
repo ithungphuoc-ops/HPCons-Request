@@ -111,6 +111,25 @@ export default function AddFieldModal() {
     [group, editingField],
   );
 
+  // Xem trước mã trường SẼ được gán khi tạo mới (Sếp phản hồi 29/09/2026: gõ
+  // "Tên trường" xong phải tắt-mở lại (chuyển sang chế độ sửa) mới thấy được
+  // mã trường server đã gán — giờ hiện luôn lúc đang gõ). Chỉ dùng ở chế độ
+  // TẠO MỚI — chế độ SỬA đã có ô "Mã trường" riêng cho tự tay đổi (xem dưới),
+  // không cần tính lại. Đồng bộ ĐÚNG thuật toán server dùng thật
+  // (ensureFieldCodes trong lib/print-template.ts): slug từ tên, thêm hậu tố
+  // _2/_3... nếu trùng mã trường khác đã có trong nhóm.
+  const previewCode = useMemo(() => {
+    const base = slugifyFieldName(name) || "truong";
+    if (!existingCodes.has(base)) return base;
+    let suffix = 2;
+    let candidate = `${base}_${suffix}`;
+    while (existingCodes.has(candidate)) {
+      suffix += 1;
+      candidate = `${base}_${suffix}`;
+    }
+    return candidate;
+  }, [name, existingCodes]);
+
   const resetForm = () => {
     setName("");
     setCode("");
@@ -284,7 +303,7 @@ export default function AddFieldModal() {
           {errors.name && <p className="mt-1 text-[12px] text-[var(--color-danger-red)]">{errors.name}</p>}
         </Row>
 
-        {isEditMode && (
+        {isEditMode ? (
           <Row label="Mã trường" required>
             <input
               className={`${inputClass} font-mono`}
@@ -297,6 +316,17 @@ export default function AddFieldModal() {
               trong mẫu in — không đổi khi sửa tên hiển thị ở trên, chỉ đổi khi Sếp tự sửa ở đây.
             </p>
             {errors.code && <p className="mt-1 text-[12px] text-[var(--color-danger-red)]">{errors.code}</p>}
+          </Row>
+        ) : (
+          <Row label="Mã trường">
+            <p className={`${inputClass} flex items-center bg-gray-50 font-mono text-gray-500`}>
+              {previewCode}
+            </p>
+            <p className="mt-1 text-[12px] text-gray-400">
+              Tự sinh từ tên trường ở trên — dùng làm thẻ{" "}
+              <code className="rounded bg-gray-100 px-1 py-0.5">{"${" + previewCode + "}"}</code> trong mẫu in. Sửa được
+              sau khi tạo (vào &quot;Sửa trường&quot;).
+            </p>
           </Row>
         )}
 
