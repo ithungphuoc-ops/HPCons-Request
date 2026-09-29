@@ -11,9 +11,19 @@ interface FieldListItemProps {
   onToggleRequired: (fieldId: string, required: boolean) => void;
   onEdit: (field: ProposalField) => void;
   onRemove: (fieldId: string) => void;
+  /** Tên các trường khác đang có "Điều kiện hiển thị" phụ thuộc vào trường
+   * này (qua mã trường) — nơi gọi tự tính (xem form/page.tsx). Rỗng = không
+   * ai phụ thuộc, hiện đúng lời nhắc cũ. */
+  dependentFieldNames?: string[];
 }
 
-export default function FieldListItem({ field, onToggleRequired, onEdit, onRemove }: FieldListItemProps) {
+export default function FieldListItem({
+  field,
+  onToggleRequired,
+  onEdit,
+  onRemove,
+  dependentFieldNames = [],
+}: FieldListItemProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: field.id,
   });
@@ -34,7 +44,12 @@ export default function FieldListItem({ field, onToggleRequired, onEdit, onRemov
   };
 
   const handleRemove = () => {
-    if (window.confirm(`Xóa trường "${field.name}"? Dữ liệu đã nhập ở trường này trên các đề xuất cũ sẽ không còn hiển thị.`)) {
+    const base = `Xóa trường "${field.name}"? Dữ liệu đã nhập ở trường này trên các đề xuất cũ sẽ không còn hiển thị.`;
+    const message =
+      dependentFieldNames.length > 0
+        ? `${base}\n\n"${dependentFieldNames.join('", "')}" đang chỉ hiện ra khi trường này có giá trị nhất định (Điều kiện hiển thị) — xoá xong, (các) trường đó sẽ LUÔN hiện ra, không còn phân biệt điều kiện nữa.`
+        : base;
+    if (window.confirm(message)) {
       onRemove(field.id);
     }
   };
