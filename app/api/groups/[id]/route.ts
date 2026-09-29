@@ -209,3 +209,53 @@ export async function PATCH(
     return apiErrorResponse(error);
   }
 }
+
+/**
+ * Xoá hẳn 1 nhóm đề xuất — CHỈ khi nhóm đang "Đang tạm đóng" (Sếp chốt
+ * 29/09/2026: tránh xoá nhầm 1 nhóm còn đang cho phép gửi đề xuất thật).
+ * KHÔNG kiểm tra lại ở client — máy chủ tự kiểm tra lại trạng thái mới nhất,
+ * không tin trạng thái client đang hiển thị (có thể đã cũ nếu 2 tab cùng mở).
+ *
+ * Chỉ xoá document định nghĩa nhóm — KHÔNG đụng tới các đề xuất đã gửi trước
+ * đó (vẫn xem được qua "Tất cả đề xuất hệ thống"), giữ đúng phạm vi Sếp yêu
+ * cầu (chỉ nói về xoá NHÓM, không nói gì về xoá đề xuất cũ).
+ */
+export async function DELETE(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    const session = await requireWriteAccess();
+    const { id } = await params;
+
+    const ref = adminDb.collection("groups").doc(id);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      return NextResponse.json(
+        { error: "Không tìm thấy nhóm đề xuất." },
+        { status: 404 },
+      );
+    }
+    const group = snap.data() as Omit<ProposalGroup, "id">;
+
+    if (group.status !== "closed") {
+      return NextResponse.json(
+        { error: "Nhóm đang khả dụng — chỉ được xoá khi nhóm đang tạm đóng." },
+        { status: 400 },
+      );
+    }
+
+    await ref.delete();
+    await recordGroupHistory({
+      groupId: id,
+      groupName: group.name,
+      actor: session.name,
+      action: "Xoá nhóm đề xuất",
+      changes: [{ field: "Nhóm đề xuất", before: group.name, after: "Đã xoá" }],
+    });
+
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    return apiErrorResponse(error);
+  }
+}

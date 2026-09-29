@@ -24,6 +24,9 @@ interface RequestContextValue {
   toggleCategoryCollapsed: (categoryId: string) => void;
   toggleGroupStatus: (groupId: string) => Promise<void>;
   toggleGroupPinned: (groupId: string) => void;
+  /** Xoá hẳn 1 nhóm đề xuất — máy chủ tự chặn nếu nhóm đang "Đang khả dụng",
+   *  ném lỗi để nơi gọi tự hiện thông báo (xem GroupRow). */
+  deleteGroup: (groupId: string) => Promise<void>;
   createGroupOpen: boolean;
   openCreateGroup: () => void;
   closeCreateGroup: () => void;
@@ -259,6 +262,22 @@ export function RequestProvider({ children }: { children: React.ReactNode }) {
     [getGroupById, refetchGroups],
   );
 
+  const deleteGroup = useCallback(
+    async (groupId: string) => {
+      const groupName = getGroupById(groupId)?.name ?? groupId;
+      const res = await fetch(`/api/groups/${groupId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}) as { error?: string });
+        throw new Error(body.error ?? "Không thể xoá nhóm đề xuất.");
+      }
+      setCategoryGroups((prev) =>
+        prev.map((cat) => ({ ...cat, groups: cat.groups.filter((g) => g.id !== groupId) })),
+      );
+      reportActivity({ action: "Xoá nhóm đề xuất", entityType: "proposal_group", entityId: groupId, detail: `Xoá nhóm "${groupName}"` });
+    },
+    [getGroupById],
+  );
+
   const addField = useCallback(
     (
       groupId: string,
@@ -386,6 +405,7 @@ export function RequestProvider({ children }: { children: React.ReactNode }) {
     getGroupById,
     updateGroup,
     duplicateGroup,
+    deleteGroup,
     addField,
     updateField,
     removeField,

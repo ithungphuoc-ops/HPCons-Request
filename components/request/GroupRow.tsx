@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { Pencil, Send, Star } from "lucide-react";
+import { Pencil, Send, Star, Trash2 } from "lucide-react";
 import { useRequestContext } from "@/context/RequestContext";
 import { approvalFlowLabels, type ProposalGroup } from "@/lib/types";
 
@@ -17,9 +17,11 @@ export default function GroupRow({
   selected: boolean;
   onToggleSelect: (id: string) => void;
 }) {
-  const { toggleGroupStatus, toggleGroupPinned } = useRequestContext();
+  const { toggleGroupStatus, toggleGroupPinned, deleteGroup } = useRequestContext();
   const [toggling, setToggling] = useState(false);
   const [toggleError, setToggleError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const handleToggleStatus = async () => {
     setToggling(true);
@@ -33,8 +35,34 @@ export default function GroupRow({
     }
   };
 
+  const handleDelete = async () => {
+    setDeleteError(null);
+    // Chặn ngay ở client cho phản hồi tức thời — máy chủ VẪN tự kiểm tra lại
+    // (không tin trạng thái client, có thể lệch nếu 2 tab cùng mở), xem DELETE
+    // trong app/api/groups/[id]/route.ts.
+    if (group.status !== "closed") {
+      setDeleteError("Nhóm đang khả dụng — chỉ được xoá khi nhóm đang tạm đóng.");
+      return;
+    }
+    if (
+      !window.confirm(
+        `Xoá hẳn nhóm "${group.name}"? Không thể khôi phục lại. Các đề xuất đã gửi trước đó vẫn còn, chỉ mất liên kết tới nhóm này.`,
+      )
+    ) {
+      return;
+    }
+    setDeleting(true);
+    try {
+      await deleteGroup(group.id);
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Không thể xoá nhóm đề xuất.");
+      setDeleting(false);
+    }
+  };
+
   return (
-    <div className="flex min-h-[48px] items-center gap-3 border-b border-gray-100 px-4 py-2 text-[14px] last:border-0 hover:bg-gray-50">
+    <div className="flex flex-col border-b border-gray-100 last:border-0 hover:bg-gray-50">
+    <div className="flex min-h-[48px] items-center gap-3 px-4 py-2 text-[14px]">
       <input
         type="checkbox"
         checked={selected}
@@ -111,6 +139,21 @@ export default function GroupRow({
       >
         <Pencil size={15} />
       </Link>
+
+      <button
+        type="button"
+        onClick={handleDelete}
+        disabled={deleting}
+        aria-label={`Xoá nhóm ${group.name}`}
+        title={group.status === "active" ? "Chỉ xoá được khi nhóm đang tạm đóng" : "Xoá nhóm đề xuất"}
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded text-gray-400 hover:bg-red-50 hover:text-[var(--color-danger-red)] disabled:opacity-60"
+      >
+        <Trash2 size={15} />
+      </button>
+    </div>
+    {deleteError && (
+      <p className="px-4 pb-2 text-[12px] text-[var(--color-danger-red)]">{deleteError}</p>
+    )}
     </div>
   );
 }
