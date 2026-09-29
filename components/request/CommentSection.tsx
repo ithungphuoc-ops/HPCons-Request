@@ -13,6 +13,8 @@ import {
   MAX_DIRECT_UPLOAD_FILE_SIZE_LABEL,
 } from "@/lib/constants";
 import { uploadAttachments } from "@/lib/upload-client";
+import Avatar from "@/components/request/Avatar";
+import { useAvatarsByUids } from "@/lib/useAvatarsByUids";
 
 /** Hạn sửa/xóa của tác giả — PHẢI khớp `AUTHOR_EDIT_WINDOW_MS` phía server
  * (app/api/requests/[id]/comments/[commentId]/route.ts). Đây chỉ để ẩn/hiện
@@ -120,6 +122,13 @@ export default function CommentSection({
       : directory;
     return pool.slice(0, 8);
   }, [mentionQuery, directory]);
+
+  // Ảnh đại diện THẬT cho tác giả từng bình luận + gợi ý @mention đang hiện —
+  // nhóm/phòng ban (kind "group") không có ảnh, bỏ qua để đỡ tốn 1 lượt tra.
+  const avatars = useAvatarsByUids([
+    ...comments.map((c) => c.authorUid),
+    ...suggestions.filter((u) => u.kind !== "group").map((u) => u.id),
+  ]);
 
   // Đồng bộ lại nếu component cha tải lại đề xuất (vd sau khi duyệt/chuyển tiếp).
   useEffect(() => {
@@ -333,9 +342,13 @@ export default function CommentSection({
 
     return (
       <div key={comment.id} className="flex items-start gap-2">
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-400 text-[12px] font-semibold text-white">
-          {comment.avatarInitial}
-        </span>
+        <Avatar
+          url={avatars[comment.authorUid]}
+          initial={comment.avatarInitial}
+          name={comment.authorName}
+          size={28}
+          fallbackClassName="bg-gray-400 font-semibold text-white"
+        />
         <div className="min-w-0 flex-1 rounded bg-gray-50 px-3 py-2">
           {editing ? (
             <div className="flex items-start gap-2">
@@ -480,13 +493,15 @@ export default function CommentSection({
                   i === highlighted ? "bg-gray-50" : ""
                 }`}
               >
-                <span
-                  className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[12px] font-semibold text-white ${
+                <Avatar
+                  url={u.kind === "group" ? null : avatars[u.id]}
+                  initial={u.avatarInitial}
+                  name={u.name}
+                  size={24}
+                  fallbackClassName={`font-semibold text-white ${
                     u.kind === "group" ? "bg-teal-500" : "bg-[var(--color-action-blue)]"
                   }`}
-                >
-                  {u.avatarInitial}
-                </span>
+                />
                 <span>
                   {u.name} <span className="text-gray-400">@{u.username}</span>
                   {u.kind === "group" && (

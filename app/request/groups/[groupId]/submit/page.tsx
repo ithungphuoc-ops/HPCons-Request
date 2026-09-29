@@ -41,6 +41,8 @@ import {
   resolveDateLeadTimeNumbers,
 } from "@/lib/date-lead-time";
 import TagUserInput from "@/components/shared/TagUserInput";
+import Avatar from "@/components/request/Avatar";
+import { useAvatarsByUids } from "@/lib/useAvatarsByUids";
 import DatePicker from "@/components/ui/DatePicker";
 import Modal from "@/components/shared/Modal";
 import { useCurrentSession } from "@/lib/useCurrentSession";
@@ -138,6 +140,12 @@ export default function SubmitRequestPage() {
     () => (approverPreview.status === "ok" ? computeManagerFlowNumbers(approverPreview.steps) : new Map()),
     [approverPreview],
   );
+  // Ảnh đại diện THẬT cho badge "quản lý trực tiếp"/người duyệt cố định đã
+  // auto-resolve hoặc đã chọn tay (displayUser trong bảng người duyệt bên dưới).
+  const approverBadgeAvatars = useAvatarsByUids([
+    ...(approverPreview.status === "ok" ? approverPreview.steps.map((s) => s.user?.id ?? "") : []),
+    ...Object.values(managerOverrides).map((u) => u.id),
+  ]);
 
   useEffect(() => {
     if (!draftId) return;
@@ -762,9 +770,13 @@ export default function SubmitRequestPage() {
                       <div className="flex items-center gap-2">
                         <span className="flex items-center gap-1.5 rounded-full bg-gray-100 py-0.5 pl-1 pr-2.5 text-[12px] text-gray-700">
                           {displayUser && (
-                            <span className="flex h-4 w-4 items-center justify-center rounded-full bg-[var(--color-action-blue)] text-[9px] font-semibold text-white">
-                              {displayUser.avatarInitial}
-                            </span>
+                            <Avatar
+                              url={approverBadgeAvatars[displayUser.id]}
+                              initial={displayUser.avatarInitial}
+                              name={displayUser.name}
+                              size={16}
+                              fallbackClassName="bg-[var(--color-action-blue)] font-semibold text-white"
+                            />
                           )}
                           {displayUser?.name ?? "—"}
                         </span>
@@ -814,9 +826,13 @@ export default function SubmitRequestPage() {
                         <div className="flex items-center gap-2">
                           <span className="flex items-center gap-1.5 rounded-full bg-gray-100 py-0.5 pl-1 pr-2.5 text-[12px] text-gray-700">
                             {displayUser && (
-                              <span className="flex h-4 w-4 items-center justify-center rounded-full bg-[var(--color-action-blue)] text-[9px] font-semibold text-white">
-                                {displayUser.avatarInitial}
-                              </span>
+                              <Avatar
+                                url={approverBadgeAvatars[displayUser.id]}
+                                initial={displayUser.avatarInitial}
+                                name={displayUser.name}
+                                size={16}
+                                fallbackClassName="bg-[var(--color-action-blue)] font-semibold text-white"
+                              />
                             )}
                             {displayUser?.name ?? "—"}
                           </span>
