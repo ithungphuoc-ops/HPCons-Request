@@ -43,6 +43,8 @@ import ApproveConfirmModal from "@/components/request/ApproveConfirmModal";
 import AddFollowerModal from "@/components/request/modals/AddFollowerModal";
 import FilePreviewModal from "@/components/request/FilePreviewModal";
 import CommentSection from "@/components/request/CommentSection";
+import AvatarWithCard from "@/components/request/AvatarWithCard";
+import { useAvatarProfilesByUids } from "@/lib/useAvatarProfilesByUids";
 import { canApproverAct } from "@/lib/approval-logic";
 import { useCurrentSession } from "@/lib/useCurrentSession";
 import { fieldDataTypeLabels } from "@/lib/types";
@@ -223,6 +225,13 @@ export default function RequestDetailView({
   // cần chờ tải lại cả trang (xem khu vực "Bổ sung sau duyệt", change
   // add-post-approval-supplement).
   const [history, setHistory] = useState<RequestHistoryEntry[]>(request.history);
+
+  // Ảnh đại diện + chức danh THẬT cho "Người xét duyệt"/"Người theo dõi" —
+  // nhóm/phòng ban (kind "group") không có, bỏ qua để đỡ tốn 1 lượt tra.
+  const avatarProfiles = useAvatarProfilesByUids([
+    ...request.approversSnapshot.map((a) => a.id),
+    ...followers.filter((f) => f.kind !== "group").map((f) => f.id),
+  ]);
 
   useEffect(() => {
     setBookmarked(currentUid !== null && (request.bookmarkedByUids ?? []).includes(currentUid));
@@ -1131,9 +1140,15 @@ export default function RequestDetailView({
                     isCurrentTurn ? "-mx-1.5 bg-blue-50/70 px-1.5 py-1" : ""
                   }`}
                 >
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-action-blue)] text-[12px] font-semibold text-white">
-                    {approver.avatarInitial}
-                  </span>
+                  <AvatarWithCard
+                    name={approver.name}
+                    username={approver.username}
+                    avatarInitial={approver.avatarInitial}
+                    kind={approver.kind}
+                    profile={avatarProfiles[approver.id]}
+                    size={24}
+                    fallbackClassName="bg-[var(--color-action-blue)] font-semibold text-white"
+                  />
                   <span className="min-w-0 flex-1 text-gray-700">
                     <span className="block truncate">{approver.name}</span>
                     {(stepMeta?.name || stepMeta?.slaHours) && (
@@ -1195,14 +1210,18 @@ export default function RequestDetailView({
           <div className="flex items-center">
             {followers.length === 0 && <span className="text-[12px] text-gray-400">Chưa có người theo dõi.</span>}
             {followers.map((f, i) => (
-              <span
+              <AvatarWithCard
                 key={f.id}
-                title={f.name}
+                name={f.name}
+                username={f.username}
+                avatarInitial={f.avatarInitial}
+                kind={f.kind}
+                profile={avatarProfiles[f.id] ?? { url: null, title: null }}
+                size={28}
                 style={{ marginLeft: i === 0 ? 0 : -9 }}
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-white bg-gray-400 text-[12px] font-semibold text-white"
-              >
-                {f.avatarInitial}
-              </span>
+                avatarClassName="border-2 border-white"
+                fallbackClassName="bg-gray-400 font-semibold text-white"
+              />
             ))}
             {currentUid && (
               <button

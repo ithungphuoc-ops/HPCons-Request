@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import HighlightMatch, { normalizeSearch } from "@/components/shared/HighlightMatch";
 import { X } from "lucide-react";
 import type { TaggedUser } from "@/lib/types";
+import Avatar from "@/components/request/Avatar";
+import { useAvatarsByUids } from "@/lib/useAvatarsByUids";
 
 
 interface TagUserInputProps {
@@ -85,6 +87,12 @@ export default function TagUserInput({
   // được truyền, ngược lại danh bạ tải qua API như trước.
   const effectiveDirectory = candidates ?? directory;
 
+  // Ảnh đại diện THẬT cho cả thẻ đã chọn lẫn danh sách gợi ý đang hiện —
+  // nhóm/phòng ban (kind "group") không có ảnh, bỏ qua để đỡ tốn 1 lượt tra.
+  const avatars = useAvatarsByUids(
+    [...value, ...results].filter((u) => u.kind !== "group").map((u) => u.id),
+  );
+
   useEffect(() => {
     const term = normalizeSearch(query.replace("@", "").trim());
     if (!term) {
@@ -141,13 +149,15 @@ export default function TagUserInput({
             key={u.id}
             className="flex items-center gap-1 rounded-full bg-gray-100 py-0.5 pl-1 pr-1.5 text-[12px] text-gray-700"
           >
-            <span
-              className={`flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-semibold text-white ${
+            <Avatar
+              url={u.kind === "group" ? null : avatars[u.id]}
+              initial={u.avatarInitial}
+              name={u.name}
+              size={16}
+              fallbackClassName={`font-semibold text-white ${
                 u.kind === "group" ? "bg-teal-500" : "bg-[var(--color-action-blue)]"
               }`}
-            >
-              {u.avatarInitial}
-            </span>
+            />
             <span>
               {u.name}
               {u.title && <span className="ml-1 text-gray-400">· {u.title}</span>}
@@ -193,13 +203,15 @@ export default function TagUserInput({
               onClick={() => selectUser(u)}
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-[14px] hover:bg-gray-50"
             >
-              <span
-                className={`flex h-6 w-6 items-center justify-center rounded-full text-[12px] font-semibold text-white ${
+              <Avatar
+                url={u.kind === "group" ? null : avatars[u.id]}
+                initial={u.avatarInitial}
+                name={u.name}
+                size={24}
+                fallbackClassName={`font-semibold text-white ${
                   u.kind === "group" ? "bg-teal-500" : "bg-[var(--color-action-blue)]"
                 }`}
-              >
-                {u.avatarInitial}
-              </span>
+              />
               <span>
                 <HighlightMatch text={u.name} query={query.replace("@", "").trim()} />{" "}
                 <span className="text-gray-400">@<HighlightMatch text={u.username} query={query.replace("@", "").trim()} /></span>
