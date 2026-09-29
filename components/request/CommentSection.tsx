@@ -5,6 +5,7 @@ import { doc, onSnapshot } from "firebase/firestore";
 import { signInWithCustomToken } from "firebase/auth";
 import { Check, Paperclip, Pencil, Send, Trash2, X } from "lucide-react";
 import { getFirebaseAuth, getFirebaseFirestore } from "@/lib/firebase/client";
+import { useRequestContext } from "@/context/RequestContext";
 import FilePreviewModal from "@/components/request/FilePreviewModal";
 import type { RequestAttachment, RequestComment, TaggedUser } from "@/lib/types";
 import {
@@ -73,6 +74,7 @@ export default function CommentSection({
    * hướng 24/08/2026, xem design.md Decision #7). */
   isOwner: boolean;
 }) {
+  const { askConfirm } = useRequestContext();
   const [comments, setComments] = useState<RequestComment[]>(initialComments);
   const [text, setText] = useState("");
   const [posting, setPosting] = useState(false);
@@ -302,7 +304,7 @@ export default function CommentSection({
   };
 
   const removeComment = async (id: string) => {
-    if (!window.confirm("Xóa bình luận này?")) return;
+    if (!(await askConfirm("Xóa bình luận này?"))) return;
     try {
       const res = await fetch(`/api/requests/${requestId}/comments/${id}`, { method: "DELETE" });
       if (!res.ok) {

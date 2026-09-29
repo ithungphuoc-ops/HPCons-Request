@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getIsoWeekInfo } from "@/lib/iso-week";
 import { useRouter } from "next/navigation";
+import { useRequestContext } from "@/context/RequestContext";
 import {
   Check,
   CheckCircle2,
@@ -174,6 +175,7 @@ export default function RequestDetailView({
   onActed: () => void;
 }) {
   const router = useRouter();
+  const { askConfirm } = useRequestContext();
   const { isAdmin, session } = useCurrentSession();
   // Xóa bình luận đã khóa (quá 10 phút) CHỈ dành cho Owner — thu hẹp hơn
   // "Admin/Owner" (isAdmin) dùng cho các hành động quản lý khác trên trang
@@ -324,7 +326,7 @@ export default function RequestDetailView({
   };
 
   const deleteRequest = async () => {
-    if (!window.confirm("Xóa đề xuất này? Có thể khôi phục lại sau qua admin.")) return;
+    if (!(await askConfirm("Xóa đề xuất này? Có thể khôi phục lại sau qua admin."))) return;
     setMoreMenuOpen(false);
     setManaging(true);
     setActionError(null);

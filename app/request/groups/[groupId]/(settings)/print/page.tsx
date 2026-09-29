@@ -30,7 +30,7 @@ export default function PrintSettingsPage() {
 
 function PrintSettingsPageInner() {
   const params = useParams<{ groupId: string }>();
-  const { getGroupById, updateGroup, addField } = useRequestContext();
+  const { getGroupById, updateGroup, addField, askConfirm } = useRequestContext();
   const group = getGroupById(params.groupId);
   const [footerNote, setFooterNote] = useState(group?.printFooterNote ?? "");
   const [saved, setSaved] = useState(false);
@@ -184,7 +184,7 @@ function PrintSettingsPageInner() {
   };
 
   const removeTemplate = async (templateId: string, name: string) => {
-    if (!window.confirm(`Xoá mẫu in "${name}"? Lịch sử xuất file trước đó vẫn được giữ lại.`)) return;
+    if (!(await askConfirm(`Xoá mẫu in "${name}"? Lịch sử xuất file trước đó vẫn được giữ lại.`))) return;
     setBusyId(templateId);
     try {
       const res = await fetch(`/api/groups/${group.id}/print-templates/${templateId}`, {
