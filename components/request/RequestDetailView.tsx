@@ -1207,9 +1207,9 @@ export default function RequestDetailView({
           <h3 className="mb-3 flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide text-gray-500">
             <Eye size={13} /> Người theo dõi
           </h3>
-          <div className="flex items-center">
+          <div className="flex flex-wrap items-center gap-2">
             {followers.length === 0 && <span className="text-[12px] text-gray-400">Chưa có người theo dõi.</span>}
-            {followers.map((f, i) => (
+            {followers.map((f) => (
               <AvatarWithCard
                 key={f.id}
                 name={f.name}
@@ -1218,8 +1218,6 @@ export default function RequestDetailView({
                 kind={f.kind}
                 profile={avatarProfiles[f.id] ?? { url: null, title: null }}
                 size={28}
-                style={{ marginLeft: i === 0 ? 0 : -9 }}
-                avatarClassName="border-2 border-white"
                 fallbackClassName="bg-gray-400 font-semibold text-white"
               />
             ))}
@@ -1229,8 +1227,7 @@ export default function RequestDetailView({
                 onClick={() => setAddFollowerOpen(true)}
                 title="Thêm người theo dõi"
                 aria-label="Thêm người theo dõi"
-                style={{ marginLeft: followers.length === 0 ? 0 : -9 }}
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-white bg-gray-100 text-gray-500 hover:bg-gray-200"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-dashed border-gray-300 bg-gray-50 text-gray-500 hover:bg-gray-100"
               >
                 <Plus size={14} />
               </button>
