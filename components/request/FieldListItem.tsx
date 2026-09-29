@@ -5,6 +5,7 @@ import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { GripVertical, Pencil, Trash2, Zap } from "lucide-react";
 import { fieldDataTypeLabels, type ProposalField } from "@/lib/types";
+import { useRequestContext } from "@/context/RequestContext";
 
 interface FieldListItemProps {
   field: ProposalField;
@@ -27,6 +28,7 @@ export default function FieldListItem({
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: field.id,
   });
+  const { askConfirm } = useRequestContext();
   const [copied, setCopied] = useState(false);
 
   const style = {
@@ -43,13 +45,13 @@ export default function FieldListItem({
     setTimeout(() => setCopied(false), 1500);
   };
 
-  const handleRemove = () => {
+  const handleRemove = async () => {
     const base = `Xóa trường "${field.name}"? Dữ liệu đã nhập ở trường này trên các đề xuất cũ sẽ không còn hiển thị.`;
     const message =
       dependentFieldNames.length > 0
         ? `${base}\n\n"${dependentFieldNames.join('", "')}" đang chỉ hiện ra khi trường này có giá trị nhất định (Điều kiện hiển thị) — xoá xong, (các) trường đó sẽ LUÔN hiện ra, không còn phân biệt điều kiện nữa.`
         : base;
-    if (window.confirm(message)) {
+    if (await askConfirm(message)) {
       onRemove(field.id);
     }
   };

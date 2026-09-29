@@ -17,7 +17,7 @@ export default function GroupRow({
   selected: boolean;
   onToggleSelect: (id: string) => void;
 }) {
-  const { toggleGroupStatus, toggleGroupPinned, deleteGroup } = useRequestContext();
+  const { toggleGroupStatus, toggleGroupPinned, deleteGroup, askConfirm } = useRequestContext();
   const [toggling, setToggling] = useState(false);
   const [toggleError, setToggleError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -45,9 +45,9 @@ export default function GroupRow({
       return;
     }
     if (
-      !window.confirm(
+      !(await askConfirm(
         `Xoá hẳn nhóm "${group.name}"? Không thể khôi phục lại. Các đề xuất đã gửi trước đó vẫn còn, chỉ mất liên kết tới nhóm này.`,
-      )
+      ))
     ) {
       return;
     }

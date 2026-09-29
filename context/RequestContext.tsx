@@ -22,6 +22,10 @@ interface RequestContextValue {
   filteredCategoryGroups: CategoryGroup[];
   collapsedCategoryIds: Set<string>;
   toggleCategoryCollapsed: (categoryId: string) => void;
+  /** Hộp xác nhận dùng chung (thay window.confirm) — luôn hiện GIỮA màn
+   *  hình. `danger` (mặc định true) tô nút xác nhận màu đỏ cho hành động phá
+   *  huỷ; đặt false cho xác nhận thường (không nguy hiểm). */
+  askConfirm: (message: string, opts?: { danger?: boolean }) => Promise<boolean>;
   toggleGroupStatus: (groupId: string) => Promise<void>;
   toggleGroupPinned: (groupId: string) => void;
   /** Xoá hẳn 1 nhóm đề xuất — máy chủ tự chặn nếu nhóm đang "Đang khả dụng",
@@ -115,6 +119,30 @@ export function RequestProvider({ children }: { children: React.ReactNode }) {
   // lỗi thật (vd tên trường tham chiếu) thường dài, cần thời gian đọc kỹ.
   const [errorToast, setErrorToast] = useState<string | null>(null);
   const showError = useCallback((message: string) => setErrorToast(message), []);
+
+  // Hộp xác nhận dùng chung, thay TẤT CẢ window.confirm() rải rác khắp app
+  // (Sếp chốt 29/09/2026: window.confirm là hộp thoại CÓ SẴN của trình duyệt
+  // — không chỉnh được vị trí/giao diện, chỗ nào cũng khác nhau tuỳ trình
+  // duyệt; đổi sang tự vẽ để luôn nằm GIỮA màn hình như hộp báo lỗi ở trên).
+  // Trả về Promise<boolean> để thay 1-1 chỗ gọi `if (window.confirm(msg))`
+  // thành `if (await askConfirm(msg))`, không phải đổi cấu trúc if/else.
+  const [confirmDialog, setConfirmDialog] = useState<{
+    message: string;
+    danger: boolean;
+    resolve: (ok: boolean) => void;
+  } | null>(null);
+  const askConfirm = useCallback((message: string, opts?: { danger?: boolean }): Promise<boolean> => {
+    return new Promise((resolve) => {
+      setConfirmDialog({ message, danger: opts?.danger ?? true, resolve });
+    });
+  }, []);
+  const closeConfirmDialog = useCallback(
+    (ok: boolean) => {
+      confirmDialog?.resolve(ok);
+      setConfirmDialog(null);
+    },
+    [confirmDialog],
+  );
 
   const refetchGroups = useCallback(async () => {
     const res = await fetch("/api/groups");
@@ -477,6 +505,7 @@ export function RequestProvider({ children }: { children: React.ReactNode }) {
     filteredCategoryGroups,
     collapsedCategoryIds,
     toggleCategoryCollapsed,
+    askConfirm,
     toggleGroupStatus,
     toggleGroupPinned,
     createGroupOpen,
@@ -541,6 +570,40 @@ export function RequestProvider({ children }: { children: React.ReactNode }) {
                 className="rounded-[3px] bg-[var(--color-action-blue)] px-4 py-1.5 text-[13px] font-medium text-white hover:brightness-95"
               >
                 Đã hiểu
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {confirmDialog && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4"
+          onClick={() => closeConfirmDialog(false)}
+          role="presentation"
+        >
+          <div
+            className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+            role="alertdialog"
+            aria-modal="true"
+          >
+            <p className="whitespace-pre-line text-[13.5px] leading-relaxed text-gray-700">{confirmDialog.message}</p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => closeConfirmDialog(false)}
+                className="rounded-[3px] border border-[var(--color-border)] px-4 py-1.5 text-[13px] font-medium text-gray-600 hover:bg-gray-50"
+              >
+                Huỷ
+              </button>
+              <button
+                type="button"
+                onClick={() => closeConfirmDialog(true)}
+                className={`rounded-[3px] px-4 py-1.5 text-[13px] font-medium text-white hover:brightness-95 ${
+                  confirmDialog.danger ? "bg-[var(--color-danger-red)]" : "bg-[var(--color-action-blue)]"
+                }`}
+              >
+                {confirmDialog.danger ? "Xoá" : "Đồng ý"}
               </button>
             </div>
           </div>
