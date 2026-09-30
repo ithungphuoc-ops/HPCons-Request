@@ -86,9 +86,19 @@ export interface ExternalCodeSourceDef {
 
 ### Decision 4 — Khớp NHIỀU field mã (OR), không phải 1 field duy nhất
 
-`ExternalCodeRecord.codeValues: string[]` thay vì `code: string` đơn — với `subcontractors`, 1 bản ghi có thể góp 2 giá trị hợp lệ (`ma` và `mst`, nếu cả 2 đều có). Validate: giá trị field khớp nếu NẰM TRONG hợp của mọi `codeValues` của mọi record. Gợi ý dropdown: hiện TẤT CẢ giá trị (có thể 1 dòng "gợi ý" sinh ra 2 mục nếu bản ghi có cả `ma` và `mst` khác nhau, ghi rõ trong `display` mục nào đang gợi ý theo field gì để không gây nhầm — vd thêm 1 field phụ `matchedOn: "ma" | "mst"` vào record trả cho client biết đang gợi ý theo field nào).
+`ExternalCodeRecord.codeValues: string[]` thay vì `code: string` đơn — với `subcontractors`, 1 bản ghi có thể góp NHIỀU giá trị hợp lệ. Validate: giá trị field khớp nếu NẰM TRONG hợp của mọi `codeValues` của mọi record. Gợi ý dropdown: hiện TẤT CẢ giá trị (1 record có 3 `codeValues` sinh ra 3 dòng gợi ý riêng, cùng chung cột phụ `display` của record đó).
 
-**Rủi ro đã biết (không chặn lại vì xác suất thấp — xem Risks):** 2 nhà thầu phụ khác nhau trùng giá trị (MST công ty A = Mã NCC công ty B) → validate coi là khớp dù không đúng ý người gõ. Với 135 bản ghi hiện tại, chưa phát hiện trùng.
+**Cập nhật 30/09/2026 (dùng thật, group "7.0. Xét duyệt báo giá"):** `codeValues` của `congno_subcontractors` ban đầu chỉ có `[ma, mst]` — Sếp phản hồi field "Tên nhà thầu phụ đề xuất" cần chọn/gõ được THEO TÊN (không chỉ theo mã nội bộ), vì đây đúng là mục đích của field đó. Thêm `ten` vào `codeValues` (`[ma, mst, ten].filter(Boolean)`) — gõ/chọn theo tên giờ cũng khớp hợp lệ, và dòng gợi ý ứng với `ten` khi chọn sẽ ghi đúng TÊN vào giá trị field (không phải mã), đúng ý nghĩa field.
+
+**Rủi ro đã biết (không chặn lại vì xác suất thấp — xem Risks):** 2 nhà thầu phụ khác nhau trùng giá trị (MST công ty A = Mã NCC công ty B, hoặc trùng tên) → validate coi là khớp dù không đúng ý người gõ. Với 135 bản ghi hiện tại, chưa phát hiện trùng.
+
+### Decision 4b — Định dạng hiển thị KHÔNG được tổng quát hoá mù quáng (sửa lỗi 30/09/2026)
+
+Bản đầu của Decision 7 (bên dưới) nối TẤT CẢ field trong `display` bằng " · " cho MỌI nguồn — với `congno_contracts`, việc này VÔ TÌNH làm sai định dạng đã chốt riêng 26/09/2026 (trước đây dropdown CHỈ hiện `customerNameShort`, và dòng "khớp chính xác" CHỈ hiện "Hạng mục: …"; sau tổng quát hoá lại hiện gộp "HOWELL · Phát sinh… · HOWELL TECHNOLOGY" — Sếp phát hiện qua dùng thật, coi là bug).
+
+Sửa: thêm `DISPLAY_UI` (client, trong `submit/page.tsx`) — 1 `Partial<Record<ExternalCodeSourceId, {...}>>` cho phép TỪNG nguồn tự định nghĩa cách hiển thị cột phụ + dòng "khớp chính xác" riêng, RIÊNG `congno_contracts` được phục hồi đúng định dạng cũ; nguồn nào CHƯA khai báo (hiện là `congno_subcontractors`) vẫn rơi về cách nối chung chung (không mất tổng quát khi thêm nguồn mới, chỉ cần khai báo thêm khi có phản hồi cụ thể cần định dạng riêng — giống đúng cách `congno_contracts` vừa được thêm).
+
+**Bài học:** "không hard-code tên field" (Decision 7 gốc) là mục tiêu đúng cho phần AN TOÀN DỮ LIỆU (field nào được lộ ra — vẫn giữ nguyên, do server registry quyết định), nhưng KHÔNG nên áp dụng mù quáng cho phần TRÌNH BÀY/UX — trình bày vẫn cần được CURATE riêng khi có yêu cầu cụ thể, chỉ nguồn MỚI CHƯA có phản hồi gì mới dùng mặc định chung chung.
 
 ### Decision 5 — Loại `customers` khỏi phạm vi
 
@@ -140,4 +150,6 @@ Mọi nơi đọc (`findInvalidExternalCodeFields`, route suggestions, `AddField
 
 ## Open Questions
 
-Không còn — mọi quyết định cần thiết đã chốt qua 5 demo + trao đổi 29–30/09/2026 (nguồn cho phép, cách khớp nhiều field, loại `customers`, phạm vi ngoài đợt này, và UI Phương án B ở Decision 6). Sẵn sàng `apply`.
+Đã chốt phần lõi qua 5 demo + trao đổi 29–30/09/2026. Sau khi dùng thật (30/09/2026, group "7.0. Xét duyệt báo giá") phát sinh 1 nhu cầu MỚI, NGOÀI phạm vi change này — chưa thiết kế/code:
+
+- **Tự động điền field khác từ bản ghi đã khớp** — Sếp muốn: field "MST Nhà thầu phụ/ CCCD đội trưởng" tự điền theo giá trị `mst` của ĐÚNG bản ghi mà field "Tên nhà thầu phụ đề xuất" vừa khớp (không phải validate/gợi ý độc lập như hiện tại — đây là 1 field ĐỌC giá trị từ field KHÁC). Đã thử dùng `computedFrom`/`ComputedTemplateBranch` (cơ chế "tự động ghép giá trị" có sẵn, xem `components/request/modals/AddFieldModal.tsx`) nhưng KHÔNG hợp: `computedFrom` chỉ ghép CHUỖI từ giá trị các field đã có sẵn trong form, không có khái niệm "tra ngược 1 field trong bản ghi ngoài đã khớp ở field khác". Cần thiết kế riêng (khả năng: field B khai báo "lấy từ field A.display.mst khi A khớp"), đủ phức tạp để cần 1 change/demo mới, không làm chung với đợt này.

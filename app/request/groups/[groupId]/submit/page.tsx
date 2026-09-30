@@ -44,6 +44,7 @@ import TagUserInput from "@/components/shared/TagUserInput";
 import Avatar from "@/components/request/Avatar";
 import { useAvatarsByUids } from "@/lib/useAvatarsByUids";
 import { resolveExternalCodeSourceId } from "@/lib/external-code-source-labels";
+import type { ExternalCodeSourceId } from "@/lib/types";
 import DatePicker from "@/components/ui/DatePicker";
 import Modal from "@/components/shared/Modal";
 import { useCurrentSession } from "@/lib/useCurrentSession";
@@ -1141,16 +1142,20 @@ function FieldControl({
       // Admin lỡ bật cả 2 trên cùng field (ràng buộc cứng quan trọng hơn gợi
       // ý mềm). `resolveExternalCodeSourceId` đọc được cả field cũ
       // (contractCodeLookup) lẫn field mới (externalCodeLookup).
-      if (resolveExternalCodeSourceId(field) && !readOnlyComputed) {
-        return (
-          <ShortTextWithExternalCodeLookup
-            groupId={groupId}
-            fieldId={field.id}
-            value={(value as string) ?? ""}
-            placeholder={field.placeholder}
-            onChange={onChange}
-          />
-        );
+      {
+        const lookupSourceId = resolveExternalCodeSourceId(field);
+        if (lookupSourceId && !readOnlyComputed) {
+          return (
+            <ShortTextWithExternalCodeLookup
+              groupId={groupId}
+              fieldId={field.id}
+              sourceId={lookupSourceId}
+              value={(value as string) ?? ""}
+              placeholder={field.placeholder}
+              onChange={onChange}
+            />
+          );
+        }
       }
       if (field.suggestFromHistory && !readOnlyComputed) {
         return (
@@ -1759,25 +1764,48 @@ function ShortTextWithSuggestions({
  * lúc gửi chính thức, không tin danh sách đã tải ở đây.
  *
  * Tổng quát cho MỌI nguồn (thay `ShortTextWithContractCodeLookup` chỉ hỗ trợ
- * Số Hợp Đồng CĐT) — xem openspec/changes/add-external-code-lookup-picker
- * Decision #7. Không hard-code tên field nào của `display` — hiện TẤT CẢ cột
- * phụ server đã duyệt cho nguồn đó, nối bằng " · ".
+ * Số Hợp Đồng CĐT) — xem openspec/changes/add-external-code-lookup-picker.
+ *
+ * 🔴 Sếp phản hồi 30/09/2026 (dùng thật, group "7.0. Xét duyệt báo giá"):
+ * bản đầu nối TẤT CẢ field của `display` bằng " · " (Decision #7 gốc) đã LÀM
+ * SAI định dạng "Số Hợp Đồng CĐT" đã chốt riêng 26/09/2026 (trước đây CHỈ
+ * hiện `customerNameShort`, và dòng khớp chính xác CHỈ hiện "Hạng mục: …") —
+ * hiện thành "HOWELL · Phát sinh… · HOWELL TECHNOLOGY" sai định dạng cũ.
+ * `DISPLAY_UI` bên dưới phục hồi ĐÚNG định dạng riêng cho `congno_contracts`;
+ * nguồn nào chưa có định dạng riêng (hiện là `congno_subcontractors`) vẫn
+ * dùng cách nối chung chung như cũ, không mất tính tổng quát khi thêm nguồn
+ * mới sau này.
  */
 type ExternalCodeRecord = { codeValues: string[]; display: Record<string, string> };
 type ExternalCodeSuggestionResponse = { records?: ExternalCodeRecord[] };
 /** 1 dòng gợi ý = 1 mã cụ thể (1 record có thể góp NHIỀU dòng nếu có nhiều
- *  `codeValues`, vd nhà thầu phụ có cả `ma` lẫn `mst` — Decision #4). */
-type ExternalCodeSuggestionRow = { code: string; displayText: string };
+ *  `codeValues`, vd nhà thầu phụ có cả `ma`/`mst`/`ten` — Decision #4). */
+type ExternalCodeSuggestionRow = { code: string; displayText: string; matchedNote: string | null };
+
+function joinDisplay(display: Record<string, string>): string {
+  return Object.values(display).filter(Boolean).join(" · ");
+}
+
+const DISPLAY_UI: Partial<
+  Record<ExternalCodeSourceId, { secondary: (d: Record<string, string>) => string; matchedNote: (d: Record<string, string>) => string | null }>
+> = {
+  congno_contracts: {
+    secondary: (d) => d.customerNameShort || joinDisplay(d),
+    matchedNote: (d) => (d.work ? `Hạng mục: ${d.work}` : null),
+  },
+};
 
 function ShortTextWithExternalCodeLookup({
   groupId,
   fieldId,
+  sourceId,
   value,
   placeholder,
   onChange,
 }: {
   groupId: string;
   fieldId: string;
+  sourceId: ExternalCodeSourceId;
   value: string;
   placeholder?: string;
   onChange: (value: string) => void;
@@ -1810,17 +1838,24 @@ function ShortTextWithExternalCodeLookup({
     };
   }, [groupId, fieldId]);
 
-  // 1 dòng gợi ý / 1 mã cụ thể — record có 2 codeValues (vd ma + mst) sinh ra
-  // 2 dòng, cùng chung cột phụ (display) của record đó.
+  const ui = DISPLAY_UI[sourceId];
+
+  // 1 dòng gợi ý / 1 mã cụ thể — record có nhiều codeValues (vd nhà thầu phụ
+  // có cả ma/mst/ten) sinh ra nhiều dòng, cùng chung cột phụ (display) của
+  // record đó.
   const rows: ExternalCodeSuggestionRow[] = records.flatMap((r) =>
     r.codeValues
       .filter(Boolean)
-      .map((code) => ({ code, displayText: Object.values(r.display).filter(Boolean).join(" · ") })),
+      .map((code) => ({
+        code,
+        displayText: ui ? ui.secondary(r.display) : joinDisplay(r.display),
+        matchedNote: ui ? ui.matchedNote(r.display) : null,
+      })),
   );
 
   // Dòng phụ dưới ô nhập khi giá trị khớp CHÍNH XÁC 1 mã thật — để người làm
   // đề nghị tự đối chiếu, phát hiện gõ nhầm (Sếp chốt 26/09/2026 cho Số Hợp
-  // Đồng CĐT, áp dụng chung cho mọi nguồn).
+  // Đồng CĐT; nguồn chưa có `matchedNote` riêng thì hiện lại đúng cột phụ).
   const matchedRow = rows.find((r) => r.code === value.trim());
 
   // Combobox TỰ LỌC — thẻ <datalist> gốc của trình duyệt lọc rất lỏng lẻo
@@ -1888,8 +1923,8 @@ function ShortTextWithExternalCodeLookup({
           ))}
         </ul>
       )}
-      {matchedRow && (
-        <p className="mt-1 text-[12px] text-gray-600">{matchedRow.displayText}</p>
+      {matchedRow && (ui ? matchedRow.matchedNote : matchedRow.displayText) && (
+        <p className="mt-1 text-[12px] text-gray-600">{ui ? matchedRow.matchedNote : matchedRow.displayText}</p>
       )}
       {mismatch && (
         <p className="mt-1 text-[12px] text-red-600">

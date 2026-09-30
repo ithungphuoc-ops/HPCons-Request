@@ -47,8 +47,12 @@ const congnoSubcontractors: ExternalCodeSourceDef = {
   label: EXTERNAL_CODE_SOURCE_LABELS.congno_subcontractors,
   async loadRecords() {
     const subcontractors = await loadSubcontractorCodeSuggestions();
+    // Khớp theo `ma` HOẶC `mst` HOẶC `ten` (Sếp phản hồi 30/09/2026 sau khi
+    // dùng thật: field "Tên nhà thầu phụ đề xuất" cần chọn/gõ theo TÊN, không
+    // phải mã nội bộ — thêm `ten` vào codeValues để khớp/gợi ý được cả theo
+    // tên, không đổi field hiện phụ nào khác).
     return subcontractors.map((s) => ({
-      codeValues: [s.ma, s.mst].filter(Boolean),
+      codeValues: [s.ma, s.mst, s.ten].filter(Boolean),
       display: { ten: s.ten, mst: s.mst, diaChi: s.diaChi },
     }));
   },

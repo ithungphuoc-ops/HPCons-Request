@@ -366,6 +366,12 @@ describe("findInvalidExternalCodeFields", () => {
     expect(result).toHaveLength(0);
   });
 
+  it("khớp theo TÊN nhà thầu phụ (ten) → không báo lỗi (Sếp phản hồi 30/09/2026: field 'Tên nhà thầu phụ đề xuất' cần chọn/gõ theo tên, không chỉ theo mã)", async () => {
+    const fields = [subcontractorCodeField()];
+    const result = await findInvalidExternalCodeFields(fields, { f2: "Cơ khí Minh Phúc" });
+    expect(result).toHaveLength(0);
+  });
+
   it("mã nhà thầu phụ không tồn tại → báo lỗi đúng field", async () => {
     const fields = [subcontractorCodeField()];
     const result = await findInvalidExternalCodeFields(fields, { f2: "khong-ton-tai" });
