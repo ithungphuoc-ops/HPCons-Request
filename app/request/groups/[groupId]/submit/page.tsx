@@ -106,6 +106,15 @@ export default function SubmitRequestPage() {
   // draftId nào) — "pending" thì ẩn "Lưu nháp" (không còn khái niệm nháp ở
   // trạng thái này) và đổi nhãn nút chính, xem loadedStatus bên dưới.
   const [loadedStatus, setLoadedStatus] = useState<RequestInstance["status"] | null>(null);
+  // Chặn form tương tác được cho tới khi tải XONG dữ liệu nháp (nếu có
+  // draftId) — sửa bug thật (Sếp báo 30/09/2026): bấm "Nhân bản" xong vào
+  // sửa NGAY (RequestProvider không unmount giữa trang chi tiết → submit
+  // nên `group` đã sẵn có, KHÔNG bị chặn bởi `if (!group) return null`),
+  // thêm 1 người theo dõi trong lúc fetch nháp bên dưới CHƯA xong → fetch
+  // trả về sau, `setFollowers(data.request.followers ?? [])` ghi đè mất
+  // người vừa thêm mà không báo gì. Không có draftId (tạo mới hoàn toàn)
+  // thì true ngay từ đầu, không ảnh hưởng luồng cũ.
+  const [draftLoaded, setDraftLoaded] = useState(!draftId);
   const [values, setValues] = useState<FieldValues>({});
   const [followers, setFollowers] = useState<TaggedUser[]>(group?.followers ?? []);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -163,7 +172,8 @@ export default function SubmitRequestPage() {
         setFollowers(data.request.followers ?? []);
         setLoadedStatus(data.request.status);
       })
-      .catch(() => setSubmitError("Không tải được bản nháp."));
+      .catch(() => setSubmitError("Không tải được bản nháp."))
+      .finally(() => setDraftLoaded(true));
   }, [draftId]);
 
   // `group` (từ RequestContext) tải bất đồng bộ — lúc submit page mount lần
@@ -245,7 +255,7 @@ export default function SubmitRequestPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- group lấy theo id là đủ (fields đổi thì id không đổi nhưng lần render kế tiếp values đổi sẽ kéo effect chạy lại).
   }, [group?.id, values]);
 
-  if (!group) return null;
+  if (!group || !draftLoaded) return null;
 
   // Field có `visibleWhen` chỉ hiện khi điều kiện thoả mãn — vd 4 field
   // "Thiết bị..." chỉ hiện đúng 1 cái tuỳ "Nhóm đề xuất" đang chọn. Field ẩn
