@@ -1896,10 +1896,26 @@ function ShortTextWithExternalCodeLookup({
   // phím không đổi kết quả khớp) — so bằng JSON vì object mới tạo lại mỗi
   // render dù cùng nội dung.
   const matchedFieldsKey = matchedRow ? JSON.stringify(matchedRow.rawFields) : "null";
+  // CodeRabbit PR #57: trước khi `records` tải xong, `matchedRow` luôn
+  // undefined → key "null" → nếu gọi callback ngay thì field đích (vd "MST
+  // Nhà thầu phụ") bị xoá trắng giá trị đã có sẵn (mở nháp cũ, hoặc do người
+  // dùng tự gõ tay) chỉ vì component này CHƯA KỊP biết có khớp hay không. Chờ
+  // `loaded`, và bỏ qua ĐÚNG lần chạy đầu tiên sau khi tải xong (dù khớp hay
+  // không) để giữ nguyên giá trị ban đầu của field đích — chỉ đồng bộ lại từ
+  // lần thay đổi kết quả khớp tiếp theo trở đi (do người dùng gõ/đổi giá trị
+  // field này trong phiên đang mở).
+  const prevMatchKeyRef = useRef<string | null>(null);
   useEffect(() => {
+    if (!loaded) return;
+    if (prevMatchKeyRef.current === null) {
+      prevMatchKeyRef.current = matchedFieldsKey;
+      return;
+    }
+    if (prevMatchKeyRef.current === matchedFieldsKey) return;
+    prevMatchKeyRef.current = matchedFieldsKey;
     onMatchedFieldsChange?.(matchedFieldsKey === "null" ? null : (JSON.parse(matchedFieldsKey) as Record<string, string>));
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- chỉ cần chạy lại khi kết quả khớp THỰC SỰ đổi (matchedFieldsKey), không phải mọi lần onMatchedFieldsChange đổi tham chiếu.
-  }, [matchedFieldsKey]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- chỉ cần chạy lại khi kết quả khớp THỰC SỰ đổi (matchedFieldsKey) hoặc lúc vừa tải xong (loaded), không phải mọi lần onMatchedFieldsChange đổi tham chiếu.
+  }, [matchedFieldsKey, loaded]);
 
   // Combobox TỰ LỌC — thẻ <datalist> gốc của trình duyệt lọc rất lỏng lẻo
   // (Chrome/Edge coi khớp nếu chứa từng phần bất kỳ đâu, không ưu tiên khớp

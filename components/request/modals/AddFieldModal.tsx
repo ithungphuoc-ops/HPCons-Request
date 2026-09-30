@@ -346,9 +346,19 @@ export default function AddFieldModal() {
       contractCodeLookup: undefined,
       // Mâu thuẫn với `externalCodeLookup` trên CÙNG field — UI chỉ cho bật 1
       // trong 2 (checkbox mỗi bên tự tắt bên còn lại), nên không cần chặn lại
-      // ở đây, chỉ cần đọc đúng state của bên đang bật.
+      // ở đây. NHƯNG vẫn phải đối chiếu lại 2 giá trị đã chọn với danh sách
+      // HIỆN TẠI (CodeRabbit PR #57): field nguồn có thể đã bị xoá/đổi mất
+      // ràng buộc mã tham chiếu ngoài, hoặc đổi sang nguồn khác khiến
+      // `pullField` cũ không còn hợp lệ — dropdown lúc đó tự hiện placeholder
+      // nên Admin không thấy được vấn đề, nếu không chặn ở đây sẽ lưu nhầm 1
+      // cấu hình đã lỗi thời (field đích sẽ luôn bị điền rỗng khi gửi thật).
       autofillFromLookup:
-        externalCodeLookupEligibleTypes.includes(dataType) && autofillEnabled && autofillSourceFieldId && autofillPullField
+        externalCodeLookupEligibleTypes.includes(dataType) &&
+        autofillEnabled &&
+        autofillSourceFieldId &&
+        autofillPullField &&
+        autofillSourceOptions.some((f) => f.id === autofillSourceFieldId) &&
+        autofillPullFieldOptions.some((f) => f.key === autofillPullField)
           ? { sourceFieldId: autofillSourceFieldId, pullField: autofillPullField }
           : undefined,
     };
