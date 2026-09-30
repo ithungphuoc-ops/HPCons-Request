@@ -16,7 +16,11 @@ import {
 import { adminDb } from "@/lib/firebase/admin";
 import { evaluateConditionGroup, filterApplicableSteps } from "@/lib/server/conditions";
 import { getHpcoreDb } from "@/lib/hpcore";
-import { EXTERNAL_CODE_SOURCES, resolveExternalCodeLookup } from "@/lib/external-code-sources";
+import {
+  EXTERNAL_CODE_SOURCES,
+  resolveExternalCodeLookup,
+  type ExternalCodeRecord,
+} from "@/lib/external-code-sources";
 import { canManageGroupsAtAppScope, type Role } from "@/lib/permissions";
 import {
   deserializeTableRows,
@@ -32,6 +36,7 @@ import type {
   ApprovalFlowType,
   ApproverStepDef,
   ApproverStepMeta,
+  ExternalCodeSourceId,
   ProposalField,
   ProposalGroup,
   RequestInstance,
@@ -221,12 +226,15 @@ export async function findInvalidExternalCodeFields(
     });
   if (targets.length === 0) return [];
 
+  // Gom theo NGUỒN để chỉ tải `loadRecords()` 1 lần mỗi nguồn — nhưng field
+  // khớp theo field NÀO (`matchField`) vẫn xét riêng từng field, vì 2 field
+  // khác nhau có thể cùng 1 nguồn mà khớp theo 2 field khác nhau (vd 1 field
+  // khớp theo "ten", field khác khớp theo "mst" — Decision 4, 30/09/2026).
   const sourceIds = [...new Set(targets.map((t) => t.lookup!.sourceId))];
-  const codeSetBySource = new Map<string, Set<string>>();
+  const recordsBySource = new Map<ExternalCodeSourceId, ExternalCodeRecord[]>();
   await Promise.all(
     sourceIds.map(async (sourceId) => {
-      const records = await EXTERNAL_CODE_SOURCES[sourceId].loadRecords();
-      codeSetBySource.set(sourceId, new Set(records.flatMap((r) => r.codeValues)));
+      recordsBySource.set(sourceId, await EXTERNAL_CODE_SOURCES[sourceId].loadRecords());
     }),
   );
 
@@ -240,7 +248,8 @@ export async function findInvalidExternalCodeFields(
       // văn (không bị trim ở đâu khác), nên phải so đúng CHÍNH giá trị đó với
       // tập mã hợp lệ để tránh vênh: "01/2026/HĐXD-HPCS " (thừa khoảng trắng)
       // pass validate nhưng giá trị lưu lại không khớp mã thật (CodeRabbit PR #41).
-      return !codeSetBySource.get(lookup!.sourceId)!.has(raw);
+      const records = recordsBySource.get(lookup!.sourceId)!;
+      return !records.some((r) => r.fields[lookup!.matchField] === raw);
     })
     .map(({ field }) => field);
 }

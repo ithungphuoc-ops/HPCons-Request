@@ -43,7 +43,7 @@ import {
 import TagUserInput from "@/components/shared/TagUserInput";
 import Avatar from "@/components/request/Avatar";
 import { useAvatarsByUids } from "@/lib/useAvatarsByUids";
-import { resolveExternalCodeSourceId } from "@/lib/external-code-source-labels";
+import { resolveExternalCodeLookup } from "@/lib/external-code-source-labels";
 import DatePicker from "@/components/ui/DatePicker";
 import Modal from "@/components/shared/Modal";
 import { useCurrentSession } from "@/lib/useCurrentSession";
@@ -57,6 +57,7 @@ import {
   textareaClass,
 } from "@/components/shared/form-styles";
 import type {
+  ExternalCodeSourceId,
   FieldDataType,
   ProposalField,
   RequestAttachment,
@@ -641,6 +642,23 @@ export default function SubmitRequestPage() {
                   resolveComputedValue(field.computedFrom, values, group.fields) !== null
                 }
                 dateLeadTimeFlagged={!!urgentConfirmed[field.id]}
+                // Field KHÁC trong nhóm có bật "tự động điền" trỏ ĐÚNG field
+                // này (`autofillFromLookup.sourceFieldId === field.id`) sẽ tự
+                // cập nhật theo bản ghi field này vừa khớp/hết khớp — Sếp yêu
+                // cầu 30/09/2026 (vd "MST Nhà thầu phụ" tự điền theo "Tên nhà
+                // thầu phụ đề xuất"). Không có field nào trỏ tới thì không
+                // làm gì (mảng rỗng).
+                onAutofillMatch={(matchedFields) => {
+                  const targets = group.fields.filter(
+                    (f) => f.autofillFromLookup?.sourceFieldId === field.id,
+                  );
+                  for (const t of targets) {
+                    setFieldValue(
+                      t.id,
+                      matchedFields ? (matchedFields[t.autofillFromLookup!.pullField] ?? "") : "",
+                    );
+                  }
+                }}
               />
             ))}
 
@@ -1026,6 +1044,7 @@ function FieldRow({
   readOnlyComputed,
   dateLeadTimeFlagged,
   onTableColumnsChange,
+  onAutofillMatch,
 }: {
   field: ProposalField;
   /** Chỉ dùng cho field có `suggestFromHistory` — biết đúng nhóm để xin gợi ý. */
@@ -1035,6 +1054,11 @@ function FieldRow({
   onChange: (value: unknown) => void;
   /** true = field "tự tính" đang tính ra được giá trị → ô nhập chỉ đọc. */
   readOnlyComputed?: boolean;
+  /** Chỉ có ý nghĩa nếu field này có `externalCodeLookup` VÀ có ít nhất 1
+   * field khác trong nhóm khai `autofillFromLookup.sourceFieldId` trỏ tới nó
+   * — gọi lại mỗi khi field này khớp/hết khớp 1 bản ghi, để field kia tự điền
+   * theo (Sếp yêu cầu 30/09/2026, xem MainComponent nơi truyền prop này). */
+  onAutofillMatch?: (fields: Record<string, string> | null) => void;
   /** true = người gửi đã xác nhận "thật cần thiết" cho ngày gấp đang chọn ở
    * field này (dateLeadTimeRule) — đánh dấu màu + ghi chú (Sếp chốt 20/08/2026). */
   dateLeadTimeFlagged?: boolean;
@@ -1088,6 +1112,7 @@ function FieldRow({
           onChange={onChange}
           readOnlyComputed={readOnlyComputed}
           onTableColumnsChange={onTableColumnsChange}
+          onAutofillMatch={onAutofillMatch}
         />
         {field.helpText && <p className="mt-1 text-[12px] text-gray-400">{field.helpText}</p>}
         {readOnlyComputed && (
@@ -1125,6 +1150,7 @@ function FieldControl({
   onChange,
   readOnlyComputed,
   onTableColumnsChange,
+  onAutofillMatch,
 }: {
   field: ProposalField;
   groupId: string;
@@ -1132,20 +1158,25 @@ function FieldControl({
   onChange: (value: unknown) => void;
   readOnlyComputed?: boolean;
   onTableColumnsChange?: (columns: string[]) => void;
+  onAutofillMatch?: (fields: Record<string, string> | null) => void;
 }) {
   const [tableImportStatus, setTableImportStatus] = useState<string | null>(null);
   const tableFileInputRef = useRef<HTMLInputElement>(null);
   switch (field.dataType) {
-    case "short_text":
+    case "short_text": {
       // Ràng buộc mã tham chiếu ngoài ưu tiên hơn suggestFromHistory nếu
       // Admin lỡ bật cả 2 trên cùng field (ràng buộc cứng quan trọng hơn gợi
-      // ý mềm). `resolveExternalCodeSourceId` đọc được cả field cũ
+      // ý mềm). `resolveExternalCodeLookup` đọc được cả field cũ
       // (contractCodeLookup) lẫn field mới (externalCodeLookup).
-      if (resolveExternalCodeSourceId(field) && !readOnlyComputed) {
+      const lookup = resolveExternalCodeLookup(field);
+      if (lookup && !readOnlyComputed) {
         return (
           <ShortTextWithExternalCodeLookup
             groupId={groupId}
             fieldId={field.id}
+            sourceId={lookup.sourceId}
+            matchField={lookup.matchField}
+            onMatchedFieldsChange={onAutofillMatch}
             value={(value as string) ?? ""}
             placeholder={field.placeholder}
             onChange={onChange}
@@ -1173,6 +1204,7 @@ function FieldControl({
           readOnly={readOnlyComputed}
         />
       );
+    }
     case "paragraph":
       return (
         <textarea
@@ -1759,28 +1791,63 @@ function ShortTextWithSuggestions({
  * lúc gửi chính thức, không tin danh sách đã tải ở đây.
  *
  * Tổng quát cho MỌI nguồn (thay `ShortTextWithContractCodeLookup` chỉ hỗ trợ
- * Số Hợp Đồng CĐT) — xem openspec/changes/add-external-code-lookup-picker
- * Decision #7. Không hard-code tên field nào của `display` — hiện TẤT CẢ cột
- * phụ server đã duyệt cho nguồn đó, nối bằng " · ".
+ * Số Hợp Đồng CĐT) — xem openspec/changes/add-external-code-lookup-picker.
+ * `matchField` là field CỤ THỂ Admin đã chọn để khớp (Decision 4, 30/09/2026
+ * — thay bản đầu "khớp 1 trong nhiều field" từng làm sai định dạng hiển thị
+ * đã chốt riêng cho Số Hợp Đồng CĐT 26/09/2026 khi tổng quát hoá mù quáng).
+ * `SECONDARY_FIELD_BY_SOURCE`/`computeMatchedNote` bên dưới CURATE riêng cột
+ * phụ theo từng nguồn, không nối chung chung mọi field `fields` trả về.
  */
-type ExternalCodeRecord = { codeValues: string[]; display: Record<string, string> };
+type ExternalCodeRecord = { fields: Record<string, string> };
 type ExternalCodeSuggestionResponse = { records?: ExternalCodeRecord[] };
-/** 1 dòng gợi ý = 1 mã cụ thể (1 record có thể góp NHIỀU dòng nếu có nhiều
- *  `codeValues`, vd nhà thầu phụ có cả `ma` lẫn `mst` — Decision #4). */
-type ExternalCodeSuggestionRow = { code: string; displayText: string };
+type ExternalCodeSuggestionRow = {
+  code: string;
+  displayText: string;
+  matchedNote: string | null;
+  rawFields: Record<string, string>;
+};
+
+/** Cột phụ hiện trong dropdown gợi ý — 1 field CỐ ĐỊNH cho contracts (đúng
+ * định dạng đã chốt 26/09/2026); với subcontractors thì linh động theo
+ * `matchField` đang chọn (khớp theo mã thì hiện TÊN cho dễ nhận ra, khớp
+ * theo tên thì hiện MST) để luôn có thông tin hữu ích nhất, không lặp lại
+ * chính field vừa chọn làm mã. */
+function computeSecondary(sourceId: ExternalCodeSourceId, matchField: string, fields: Record<string, string>): string {
+  if (sourceId === "congno_contracts") return fields.customerNameShort || "";
+  const order = ["ten", "mst", "diaChi"].filter((k) => k !== matchField);
+  return order.map((k) => fields[k]).filter(Boolean).join(" · ");
+}
+
+/** Dòng phụ dưới ô nhập khi giá trị khớp CHÍNH XÁC 1 bản ghi — để người làm
+ * đề nghị tự đối chiếu, phát hiện gõ nhầm (Sếp chốt 26/09/2026 cho Số Hợp
+ * Đồng CĐT, áp dụng chung cho mọi nguồn với nội dung curate riêng). */
+function computeMatchedNote(sourceId: ExternalCodeSourceId, matchField: string, fields: Record<string, string>): string | null {
+  if (sourceId === "congno_contracts") return fields.work ? `Hạng mục: ${fields.work}` : null;
+  const labels: Record<string, string> = { ma: "Mã NCC", ten: "Tên nhà cung cấp", tenVietTat: "Tên viết tắt", mst: "MST/CCCD", diaChi: "Địa chỉ" };
+  const parts = ["ten", "mst", "diaChi"]
+    .filter((k) => k !== matchField && fields[k])
+    .map((k) => `${labels[k]}: ${fields[k]}`);
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
 
 function ShortTextWithExternalCodeLookup({
   groupId,
   fieldId,
+  sourceId,
+  matchField,
   value,
   placeholder,
   onChange,
+  onMatchedFieldsChange,
 }: {
   groupId: string;
   fieldId: string;
+  sourceId: ExternalCodeSourceId;
+  matchField: string;
   value: string;
   placeholder?: string;
   onChange: (value: string) => void;
+  onMatchedFieldsChange?: (fields: Record<string, string> | null) => void;
 }) {
   const [records, setRecords] = useState<ExternalCodeRecord[]>([]);
   // Chỉ true SAU KHI đã tải xong (thành công hay lỗi đều tính) — tránh báo
@@ -1810,18 +1877,45 @@ function ShortTextWithExternalCodeLookup({
     };
   }, [groupId, fieldId]);
 
-  // 1 dòng gợi ý / 1 mã cụ thể — record có 2 codeValues (vd ma + mst) sinh ra
-  // 2 dòng, cùng chung cột phụ (display) của record đó.
-  const rows: ExternalCodeSuggestionRow[] = records.flatMap((r) =>
-    r.codeValues
-      .filter(Boolean)
-      .map((code) => ({ code, displayText: Object.values(r.display).filter(Boolean).join(" · ") })),
-  );
+  // ĐÚNG 1 dòng gợi ý / 1 bản ghi — mã hiện = giá trị field `matchField` Admin
+  // đã chọn (khác bản trước 30/09/2026 sinh nhiều dòng/bản ghi vì thử khớp
+  // nhiều field cùng lúc).
+  const rows: ExternalCodeSuggestionRow[] = records
+    .map((r) => ({
+      code: r.fields[matchField] ?? "",
+      displayText: computeSecondary(sourceId, matchField, r.fields),
+      matchedNote: computeMatchedNote(sourceId, matchField, r.fields),
+      rawFields: r.fields,
+    }))
+    .filter((r) => r.code);
 
-  // Dòng phụ dưới ô nhập khi giá trị khớp CHÍNH XÁC 1 mã thật — để người làm
-  // đề nghị tự đối chiếu, phát hiện gõ nhầm (Sếp chốt 26/09/2026 cho Số Hợp
-  // Đồng CĐT, áp dụng chung cho mọi nguồn).
   const matchedRow = rows.find((r) => r.code === value.trim());
+
+  // Báo cho field KHÁC (nếu có) đang "tự động điền" theo field này — chỉ gọi
+  // khi bản ghi khớp THỰC SỰ đổi (tránh vòng lặp set state vô ích mỗi lần gõ
+  // phím không đổi kết quả khớp) — so bằng JSON vì object mới tạo lại mỗi
+  // render dù cùng nội dung.
+  const matchedFieldsKey = matchedRow ? JSON.stringify(matchedRow.rawFields) : "null";
+  // CodeRabbit PR #57: trước khi `records` tải xong, `matchedRow` luôn
+  // undefined → key "null" → nếu gọi callback ngay thì field đích (vd "MST
+  // Nhà thầu phụ") bị xoá trắng giá trị đã có sẵn (mở nháp cũ, hoặc do người
+  // dùng tự gõ tay) chỉ vì component này CHƯA KỊP biết có khớp hay không. Chờ
+  // `loaded`, và bỏ qua ĐÚNG lần chạy đầu tiên sau khi tải xong (dù khớp hay
+  // không) để giữ nguyên giá trị ban đầu của field đích — chỉ đồng bộ lại từ
+  // lần thay đổi kết quả khớp tiếp theo trở đi (do người dùng gõ/đổi giá trị
+  // field này trong phiên đang mở).
+  const prevMatchKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!loaded) return;
+    if (prevMatchKeyRef.current === null) {
+      prevMatchKeyRef.current = matchedFieldsKey;
+      return;
+    }
+    if (prevMatchKeyRef.current === matchedFieldsKey) return;
+    prevMatchKeyRef.current = matchedFieldsKey;
+    onMatchedFieldsChange?.(matchedFieldsKey === "null" ? null : (JSON.parse(matchedFieldsKey) as Record<string, string>));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- chỉ cần chạy lại khi kết quả khớp THỰC SỰ đổi (matchedFieldsKey) hoặc lúc vừa tải xong (loaded), không phải mọi lần onMatchedFieldsChange đổi tham chiếu.
+  }, [matchedFieldsKey, loaded]);
 
   // Combobox TỰ LỌC — thẻ <datalist> gốc của trình duyệt lọc rất lỏng lẻo
   // (Chrome/Edge coi khớp nếu chứa từng phần bất kỳ đâu, không ưu tiên khớp
@@ -1888,8 +1982,8 @@ function ShortTextWithExternalCodeLookup({
           ))}
         </ul>
       )}
-      {matchedRow && (
-        <p className="mt-1 text-[12px] text-gray-600">{matchedRow.displayText}</p>
+      {matchedRow?.matchedNote && (
+        <p className="mt-1 text-[12px] text-gray-600">{matchedRow.matchedNote}</p>
       )}
       {mismatch && (
         <p className="mt-1 text-[12px] text-red-600">

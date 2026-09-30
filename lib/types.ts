@@ -122,6 +122,19 @@ export interface ProposalField {
    * xem `resolveExternalCodeLookup()` để đọc đúng cả field cũ lẫn field mới.
    */
   externalCodeLookup?: ExternalCodeLookupConfig;
+  /**
+   * Chỉ cho field kiểu short_text: field này KHÔNG tự validate gì — nó THỤ
+   * ĐỘNG nhận giá trị từ field KHÁC (`sourceFieldId`, phải là field có bật
+   * `externalCodeLookup`/`contractCodeLookup`) mỗi khi field đó khớp CHÍNH
+   * XÁC 1 bản ghi thật, lấy đúng field `pullField` của bản ghi đó (Sếp yêu
+   * cầu 30/09/2026: field "MST Nhà thầu phụ" tự điền theo nhà thầu vừa chọn ở
+   * field "Tên nhà thầu phụ đề xuất" — KHÔNG dùng `computedFrom` vì cơ chế đó
+   * chỉ ghép chuỗi từ field TRONG form, không tra được bản ghi ngoài). Vẫn
+   * cho SỬA TAY đè lên giá trị đã tự điền (Sếp chốt: phòng khi Công nợ thiếu
+   * dữ liệu, không khoá cứng field). Mâu thuẫn với `externalCodeLookup` trên
+   * CÙNG field — UI chỉ cho bật 1 trong 2.
+   */
+  autofillFromLookup?: AutofillFromLookupConfig;
 }
 
 /** Nguồn dữ liệu ngoài đã đăng ký sẵn cho ràng buộc mã tham chiếu — CHỈ đúng
@@ -131,6 +144,19 @@ export type ExternalCodeSourceId = "congno_contracts" | "congno_subcontractors";
 
 export interface ExternalCodeLookupConfig {
   sourceId: ExternalCodeSourceId;
+  /** ĐÚNG 1 field của nguồn dùng để khớp/gợi ý — Admin chọn tường minh (Sếp
+   * chốt 30/09/2026, thay cho bản đầu "khớp 1 trong nhiều field" dễ gây
+   * nhầm). Giá trị hợp lệ tra theo `EXTERNAL_CODE_SOURCE_FIELDS[sourceId]`
+   * (lib/external-code-source-labels.ts). */
+  matchField: string;
+}
+
+export interface AutofillFromLookupConfig {
+  /** id field khác (CÙNG nhóm) đang có ràng buộc mã tham chiếu ngoài. */
+  sourceFieldId: string;
+  /** Field nào của bản ghi mà `sourceFieldId` vừa khớp sẽ được lấy làm giá
+   * trị field này. */
+  pullField: string;
 }
 
 /**

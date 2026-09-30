@@ -31,9 +31,9 @@ const mockContracts = [
   { code: "02/2026/HĐXD-HPCS", project: "CHENKAI-PS", work: "", customerName: "", customerNameShort: "" },
 ];
 const mockSubcontractors = [
-  { ma: "4001094696", mst: "4001094696", ten: "Comin An An Hòa", diaChi: "" },
+  { ma: "4001094696", mst: "4001094696", ten: "Comin An An Hòa", tenVietTat: "An An Hòa", diaChi: "" },
   // Nhà thầu tự thêm lúc Ký kết — chỉ có mst, không có ma.
-  { ma: "", mst: "0317927805", ten: "Cơ khí Minh Phúc", diaChi: "" },
+  { ma: "", mst: "0317927805", ten: "Cơ khí Minh Phúc", tenVietTat: "", diaChi: "" },
 ];
 vi.mock("@/lib/congno", () => ({
   loadContractCodeSuggestions: async () => mockContracts,
@@ -300,14 +300,17 @@ function contractCodeField(overrides: Partial<import("@/lib/types").ProposalFiel
   };
 }
 
-function subcontractorCodeField(overrides: Partial<import("@/lib/types").ProposalField> = {}) {
+function subcontractorCodeField(
+  matchField: "ma" | "mst" | "ten" | "tenVietTat",
+  overrides: Partial<import("@/lib/types").ProposalField> = {},
+) {
   return {
     id: "f2",
     name: "Mã nhà thầu phụ",
     dataType: "short_text" as const,
     required: false,
     order: 0,
-    externalCodeLookup: { sourceId: "congno_subcontractors" as const },
+    externalCodeLookup: { sourceId: "congno_subcontractors" as const, matchField },
     ...overrides,
   };
 }
@@ -354,27 +357,52 @@ describe("findInvalidExternalCodeFields", () => {
     expect(result).toHaveLength(1);
   });
 
-  it("field mới externalCodeLookup (congno_subcontractors) khớp theo ma → không báo lỗi", async () => {
-    const fields = [subcontractorCodeField()];
+  // Cấp D — Sếp chốt 30/09/2026: Admin chọn TƯỜNG MINH đúng 1 field để khớp
+  // (thay bản đầu "khớp 1 trong nhiều field" dễ gây nhầm không biết field nào
+  // đang thật sự dùng) — mỗi field cấu hình CHỈ khớp theo ĐÚNG `matchField`
+  // đã chọn, không còn tự động thử các field khác của cùng nguồn.
+
+  it("khớp theo Mã NCC (matchField=ma) → không báo lỗi", async () => {
+    const fields = [subcontractorCodeField("ma")];
     const result = await findInvalidExternalCodeFields(fields, { f2: "4001094696" });
     expect(result).toHaveLength(0);
   });
 
-  it("nhà thầu chỉ có mst (không có ma) — khớp theo mst → không báo lỗi", async () => {
-    const fields = [subcontractorCodeField()];
+  it("field khớp theo Mã NCC (ma) mà gõ đúng MST lại → vẫn báo lỗi (không còn khớp chéo field khác)", async () => {
+    const fields = [subcontractorCodeField("ma")];
+    // Nhà thầu "Cơ khí Minh Phúc" không có `ma`, chỉ có `mst` — field này chỉ
+    // khớp theo `ma`, nên gõ đúng mst của nó vẫn phải bị chặn.
+    const result = await findInvalidExternalCodeFields(fields, { f2: "0317927805" });
+    expect(result).toHaveLength(1);
+  });
+
+  it("khớp theo MST/CCCD (matchField=mst) → không báo lỗi", async () => {
+    const fields = [subcontractorCodeField("mst")];
     const result = await findInvalidExternalCodeFields(fields, { f2: "0317927805" });
     expect(result).toHaveLength(0);
   });
 
-  it("mã nhà thầu phụ không tồn tại → báo lỗi đúng field", async () => {
-    const fields = [subcontractorCodeField()];
+  it("khớp theo Tên nhà cung cấp (matchField=ten) → không báo lỗi (Sếp phản hồi 30/09/2026: field 'Tên nhà thầu phụ đề xuất' cần chọn/gõ theo tên)", async () => {
+    const fields = [subcontractorCodeField("ten")];
+    const result = await findInvalidExternalCodeFields(fields, { f2: "Cơ khí Minh Phúc" });
+    expect(result).toHaveLength(0);
+  });
+
+  it("khớp theo Tên viết tắt (matchField=tenVietTat) → không báo lỗi", async () => {
+    const fields = [subcontractorCodeField("tenVietTat")];
+    const result = await findInvalidExternalCodeFields(fields, { f2: "An An Hòa" });
+    expect(result).toHaveLength(0);
+  });
+
+  it("giá trị không tồn tại trong field đã chọn → báo lỗi đúng field", async () => {
+    const fields = [subcontractorCodeField("ten")];
     const result = await findInvalidExternalCodeFields(fields, { f2: "khong-ton-tai" });
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe("f2");
   });
 
   it("2 field khác nguồn cùng lúc — chỉ báo lỗi field thật sự sai", async () => {
-    const fields = [contractCodeField(), subcontractorCodeField()];
+    const fields = [contractCodeField(), subcontractorCodeField("ten")];
     const result = await findInvalidExternalCodeFields(fields, {
       f1: "01/2026/HĐXD-HPCS", // đúng
       f2: "sai-hoan-toan", // sai

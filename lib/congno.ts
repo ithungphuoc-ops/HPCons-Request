@@ -113,19 +113,22 @@ export const loadContractCodeSuggestions = unstable_cache(
  * "Mã nhà thầu phụ" — collection RIÊNG `subcontractors` (khác `contracts`,
  * cùng project "hpcons-congno") — xem openspec/changes/add-external-code-lookup-picker.
  *
- * 🔴 CHỈ đọc và forward đúng 4 field `ma`/`mst`/`ten`/`diaChi` — collection
- * này còn có `nguon`, `hopDong` (mảng hợp đồng gắn với nhà thầu), `createdAt`,
- * `updatedAt`, `updatedBy` KHÔNG được lộ ra bất kỳ đâu ngoài file này.
+ * 🔴 CHỈ đọc và forward đúng 5 field `ma`/`mst`/`ten`/`tenVietTat`/`diaChi` —
+ * collection này còn có `nguon`, `hopDong` (mảng hợp đồng gắn với nhà thầu),
+ * `createdAt`, `updatedAt`, `updatedBy` KHÔNG được lộ ra bất kỳ đâu ngoài
+ * file này. `tenVietTat` (Tên viết tắt) là field Công nợ mới thêm 30/09/2026.
  *
  * Nhà thầu do hệ thống Công nợ TỰ THÊM lúc "Ký kết hợp đồng" thường chỉ có
  * `mst`, không có `ma` (xem `ghiNhanNhaThauKhiKyKet` trong HPCons-Congno/
- * lib/subcontractors.ts) — filter bỏ bản ghi thiếu CẢ 2 field (không có gì
- * để khớp), còn thiếu 1 trong 2 thì vẫn giữ.
+ * lib/subcontractors.ts) — filter bỏ bản ghi thiếu CẢ `ma` LẪN `mst` LẪN
+ * `ten` (không có gì để khớp — trong thực tế hiếm xảy ra vì `ten` là field
+ * bắt buộc bên Công nợ), còn thiếu 1-2 trong 3 thì vẫn giữ.
  */
 export interface SubcontractorCodeSuggestion {
   ma: string;
   mst: string;
   ten: string;
+  tenVietTat: string;
   diaChi: string;
 }
 
@@ -138,10 +141,11 @@ async function loadSubcontractorCodeSuggestionsUncached(): Promise<Subcontractor
         ma: typeof data.ma === "string" ? data.ma.trim() : "",
         mst: typeof data.mst === "string" ? data.mst.trim() : "",
         ten: typeof data.ten === "string" ? data.ten.trim() : "",
+        tenVietTat: typeof data.tenVietTat === "string" ? data.tenVietTat.trim() : "",
         diaChi: typeof data.diaChi === "string" ? data.diaChi.trim() : "",
       };
     })
-    .filter((s) => s.ma || s.mst);
+    .filter((s) => s.ma || s.mst || s.ten);
 }
 
 /** Cache 5 phút — cùng lý do/thời hạn với `loadContractCodeSuggestions` (dùng
