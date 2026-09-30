@@ -12,7 +12,7 @@ import {
   canView,
   computeDeadline,
   findBlockedDateLeadTimeFields,
-  findInvalidContractCodeFields,
+  findInvalidExternalCodeFields,
   findInvalidTableRows,
   findMissingRequiredFields,
   generateGroupRequestCode,
@@ -345,7 +345,7 @@ export async function POST(request: Request) {
       // openspec/changes/add-contract-code-lookup. Đọc lại dữ liệu hợp đồng
       // thật tại thời điểm gửi, không tin danh sách phía trình duyệt.
       if (!isDraft) {
-        const invalidCodes = await findInvalidContractCodeFields(group.fields, body.values ?? {});
+        const invalidCodes = await findInvalidExternalCodeFields(group.fields, body.values ?? {});
         if (invalidCodes.length > 0) {
           return NextResponse.json(
             {

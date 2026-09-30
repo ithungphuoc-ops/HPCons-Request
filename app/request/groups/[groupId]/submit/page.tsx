@@ -43,6 +43,7 @@ import {
 import TagUserInput from "@/components/shared/TagUserInput";
 import Avatar from "@/components/request/Avatar";
 import { useAvatarsByUids } from "@/lib/useAvatarsByUids";
+import { resolveExternalCodeSourceId } from "@/lib/external-code-source-labels";
 import DatePicker from "@/components/ui/DatePicker";
 import Modal from "@/components/shared/Modal";
 import { useCurrentSession } from "@/lib/useCurrentSession";
@@ -1126,11 +1127,13 @@ function FieldControl({
   const tableFileInputRef = useRef<HTMLInputElement>(null);
   switch (field.dataType) {
     case "short_text":
-      // contractCodeLookup ưu tiên hơn suggestFromHistory nếu Admin lỡ bật cả
-      // 2 trên cùng field (ràng buộc cứng quan trọng hơn gợi ý mềm).
-      if (field.contractCodeLookup && !readOnlyComputed) {
+      // Ràng buộc mã tham chiếu ngoài ưu tiên hơn suggestFromHistory nếu
+      // Admin lỡ bật cả 2 trên cùng field (ràng buộc cứng quan trọng hơn gợi
+      // ý mềm). `resolveExternalCodeSourceId` đọc được cả field cũ
+      // (contractCodeLookup) lẫn field mới (externalCodeLookup).
+      if (resolveExternalCodeSourceId(field) && !readOnlyComputed) {
         return (
-          <ShortTextWithContractCodeLookup
+          <ShortTextWithExternalCodeLookup
             groupId={groupId}
             fieldId={field.id}
             value={(value as string) ?? ""}
@@ -1739,22 +1742,24 @@ function ShortTextWithSuggestions({
 }
 
 /**
- * Field bật `contractCodeLookup` — KHÁC `ShortTextWithSuggestions` ở chỗ ép
- * buộc: gõ xong rời khỏi ô mà không khớp đúng 1 Số Hợp Đồng CĐT thật thì báo
- * lỗi ngay tại chỗ. Đây CHỈ là hỗ trợ trải nghiệm — hàng rào thật nằm ở
- * `findInvalidContractCodeFields` phía máy chủ (lib/server/requests.ts), gọi
+ * Field bật ràng buộc mã tham chiếu ngoài — KHÁC `ShortTextWithSuggestions` ở
+ * chỗ ép buộc: gõ xong rời khỏi ô mà không khớp đúng 1 mã thật thì báo lỗi
+ * ngay tại chỗ. Đây CHỈ là hỗ trợ trải nghiệm — hàng rào thật nằm ở
+ * `findInvalidExternalCodeFields` phía máy chủ (lib/server/requests.ts), gọi
  * lúc gửi chính thức, không tin danh sách đã tải ở đây.
+ *
+ * Tổng quát cho MỌI nguồn (thay `ShortTextWithContractCodeLookup` chỉ hỗ trợ
+ * Số Hợp Đồng CĐT) — xem openspec/changes/add-external-code-lookup-picker
+ * Decision #7. Không hard-code tên field nào của `display` — hiện TẤT CẢ cột
+ * phụ server đã duyệt cho nguồn đó, nối bằng " · ".
  */
-type ContractSuggestion = {
-  code: string;
-  project: string;
-  work: string;
-  customerName: string;
-  customerNameShort: string;
-};
-type ContractSuggestionResponse = { suggestions?: ContractSuggestion[] };
+type ExternalCodeRecord = { codeValues: string[]; display: Record<string, string> };
+type ExternalCodeSuggestionResponse = { records?: ExternalCodeRecord[] };
+/** 1 dòng gợi ý = 1 mã cụ thể (1 record có thể góp NHIỀU dòng nếu có nhiều
+ *  `codeValues`, vd nhà thầu phụ có cả `ma` lẫn `mst` — Decision #4). */
+type ExternalCodeSuggestionRow = { code: string; displayText: string };
 
-function ShortTextWithContractCodeLookup({
+function ShortTextWithExternalCodeLookup({
   groupId,
   fieldId,
   value,
@@ -1767,7 +1772,7 @@ function ShortTextWithContractCodeLookup({
   placeholder?: string;
   onChange: (value: string) => void;
 }) {
-  const [suggestions, setSuggestions] = useState<ContractSuggestion[]>([]);
+  const [records, setRecords] = useState<ExternalCodeRecord[]>([]);
   // Chỉ true SAU KHI đã tải xong (thành công hay lỗi đều tính) — tránh báo
   // "không khớp" SAI khi người dùng rời khỏi ô trước lúc danh sách tải kịp,
   // hoặc khi API lỗi (CodeRabbit PR #41: suggestions rỗng ban đầu khiến MỌI
@@ -1778,10 +1783,10 @@ function ShortTextWithContractCodeLookup({
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`/api/groups/${groupId}/contract-code-suggestions?fieldId=${fieldId}`)
+    fetch(`/api/groups/${groupId}/external-code-suggestions?fieldId=${fieldId}`)
       .then((res) => (res.ok ? res.json() : null))
-      .then((data: ContractSuggestionResponse | null) => {
-        if (!cancelled) setSuggestions(data?.suggestions ?? []);
+      .then((data: ExternalCodeSuggestionResponse | null) => {
+        if (!cancelled) setRecords(data?.records ?? []);
       })
       .catch(() => {
         // Lỗi tải danh sách không chặn nhập liệu ngay — validate thật vẫn
@@ -1795,28 +1800,30 @@ function ShortTextWithContractCodeLookup({
     };
   }, [groupId, fieldId]);
 
-  // Hạng mục (mô tả công việc) của ĐÚNG hợp đồng đang chọn — để người làm đề
-  // nghị tự đối chiếu, phát hiện gõ nhầm số hợp đồng của 1 hạng mục khác (Sếp
-  // chốt 26/09/2026). Chỉ hiện khi giá trị khớp CHÍNH XÁC 1 hợp đồng thật.
-  const matchedWork = suggestions.find((s) => s.code === value.trim())?.work;
+  // 1 dòng gợi ý / 1 mã cụ thể — record có 2 codeValues (vd ma + mst) sinh ra
+  // 2 dòng, cùng chung cột phụ (display) của record đó.
+  const rows: ExternalCodeSuggestionRow[] = records.flatMap((r) =>
+    r.codeValues
+      .filter(Boolean)
+      .map((code) => ({ code, displayText: Object.values(r.display).filter(Boolean).join(" · ") })),
+  );
+
+  // Dòng phụ dưới ô nhập khi giá trị khớp CHÍNH XÁC 1 mã thật — để người làm
+  // đề nghị tự đối chiếu, phát hiện gõ nhầm (Sếp chốt 26/09/2026 cho Số Hợp
+  // Đồng CĐT, áp dụng chung cho mọi nguồn).
+  const matchedRow = rows.find((r) => r.code === value.trim());
 
   // Combobox TỰ LỌC — thẻ <datalist> gốc của trình duyệt lọc rất lỏng lẻo
   // (Chrome/Edge coi khớp nếu chứa từng phần bất kỳ đâu, không ưu tiên khớp
   // đầu chuỗi) — Sếp phản hồi thật: gõ "02/2026" vẫn thấy "01-05/2026/..."
   // hiện lên. Tự lọc + sắp xếp để kiểm soát đúng, ưu tiên mã BẮT ĐẦU bằng
   // đúng những gì đang gõ lên trước.
-  //
-  // Cột phụ hiển thị "Tên CĐT" RÚT GỌN (customerNameShort) — chốt cuối cùng
-  // 26/09/2026: `customerName` gốc bên app Công nợ là tên PHÁP NHÂN ĐẦY ĐỦ
-  // (vd "CÔNG TY TNHH CÔNG NGHIỆP CHÍNH XÁC CHENKAI"), quá dài để đối chiếu
-  // nhanh lúc đang gõ — server tự rút gọn (xem `shortenCustomerName` trong
-  // lib/congno.ts) trước khi trả về, KHÔNG hiện `customerName` đầy đủ ở đây.
   const query = value.trim().toLowerCase();
   const filtered = (query
-    ? suggestions.filter(
-        (s) => s.code.toLowerCase().includes(query) || s.customerNameShort.toLowerCase().includes(query),
+    ? rows.filter(
+        (r) => r.code.toLowerCase().includes(query) || r.displayText.toLowerCase().includes(query),
       )
-    : suggestions
+    : rows
   )
     .slice()
     .sort((a, b) => {
@@ -1832,7 +1839,7 @@ function ShortTextWithContractCodeLookup({
       <input
         className={mismatch ? `${inputClass} border-red-400 focus:border-red-500` : inputClass}
         value={value}
-        placeholder={placeholder ?? "Gõ số hợp đồng…"}
+        placeholder={placeholder ?? "Gõ mã tham chiếu…"}
         autoComplete="off"
         onChange={(e) => {
           setMismatch(false);
@@ -1847,38 +1854,36 @@ function ShortTextWithContractCodeLookup({
             setMismatch(false);
             return;
           }
-          setMismatch(!suggestions.some((s) => s.code === v));
+          setMismatch(!rows.some((r) => r.code === v));
         }}
       />
       {open && filtered.length > 0 && (
         <ul className="absolute left-0 right-0 top-full z-20 mt-1 max-h-56 overflow-y-auto rounded-[3px] border border-gray-200 bg-white py-1 shadow-lg">
-          {filtered.map((s) => (
+          {filtered.map((r) => (
             <li
-              key={s.code}
+              key={r.code}
               // onMouseDown (không phải onClick) + preventDefault — giữ focus
               // ô nhập, tránh onBlur chạy TRƯỚC khi kịp ghi nhận lựa chọn.
               onMouseDown={(e) => {
                 e.preventDefault();
-                onChange(s.code);
+                onChange(r.code);
                 setMismatch(false);
                 setOpen(false);
               }}
               className="flex cursor-pointer items-center justify-between gap-3 px-3 py-1.5 text-[14px] hover:bg-gray-50"
             >
-              <span className="text-gray-800">{s.code}</span>
-              <span className="text-[12px] text-gray-400">{s.customerNameShort}</span>
+              <span className="text-gray-800">{r.code}</span>
+              <span className="text-[12px] text-gray-400">{r.displayText}</span>
             </li>
           ))}
         </ul>
       )}
-      {matchedWork && (
-        <p className="mt-1 text-[12px] text-gray-600">
-          <span className="font-medium text-gray-500">Hạng mục:</span> {matchedWork}
-        </p>
+      {matchedRow && (
+        <p className="mt-1 text-[12px] text-gray-600">{matchedRow.displayText}</p>
       )}
       {mismatch && (
         <p className="mt-1 text-[12px] text-red-600">
-          Chưa đúng số hợp đồng nào trong hệ thống Công nợ — chọn 1 dòng trong gợi ý.
+          Chưa khớp mã nào trong hệ thống — chọn 1 dòng trong gợi ý.
         </p>
       )}
     </div>

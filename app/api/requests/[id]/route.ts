@@ -10,7 +10,7 @@ import {
   canView,
   computeDeadline,
   findBlockedDateLeadTimeFields,
-  findInvalidContractCodeFields,
+  findInvalidExternalCodeFields,
   findInvalidTableRows,
   findMissingRequiredFields,
   generateGroupRequestCode,
@@ -196,7 +196,7 @@ export async function PATCH(
 
       // Ràng buộc Số Hợp Đồng CĐT — cùng chặn ở gửi từ nháp, xem
       // app/api/requests/route.ts (tạo mới) cho lý do đầy đủ.
-      const invalidCodes = await findInvalidContractCodeFields(group.fields, values);
+      const invalidCodes = await findInvalidExternalCodeFields(group.fields, values);
       if (invalidCodes.length > 0) {
         return NextResponse.json(
           {
