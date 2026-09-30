@@ -16,7 +16,7 @@ import {
 import { adminDb } from "@/lib/firebase/admin";
 import { evaluateConditionGroup, filterApplicableSteps } from "@/lib/server/conditions";
 import { getHpcoreDb } from "@/lib/hpcore";
-import { loadContractCodeSuggestions } from "@/lib/congno";
+import { EXTERNAL_CODE_SOURCES, resolveExternalCodeLookup } from "@/lib/external-code-sources";
 import { canManageGroupsAtAppScope, type Role } from "@/lib/permissions";
 import {
   deserializeTableRows,
@@ -196,40 +196,53 @@ export function findBlockedDateLeadTimeFields(
 }
 
 /**
- * Field bật `contractCodeLookup` có giá trị KHÔNG khớp đúng 1 Số Hợp Đồng CĐT
- * thật — dùng khi gửi chính thức (không dùng khi lưu nháp), cùng cách với
- * `findBlockedDateLeadTimeFields`. Đọc LẠI dữ liệu hợp đồng thật tại thời
- * điểm gửi (không tin danh sách phía trình duyệt) — cùng lý do đã ghi ở
- * `findBlockedDateLeadTimeFields` (gọi thẳng API né qua validate trình
- * duyệt). Field rỗng (kể cả field required — đã có `findMissingRequiredFields`
- * xử lý riêng) hoặc field bị ẩn (visibleWhen không thoả) thì bỏ qua, không
- * phải lỗi của luật này.
+ * Field bật ràng buộc mã tham chiếu ngoài (`externalCodeLookup`, hoặc cờ cũ
+ * `contractCodeLookup` — xem `resolveExternalCodeLookup`) có giá trị KHÔNG
+ * khớp đúng 1 mã thật của nguồn đã chọn — dùng khi gửi chính thức (không
+ * dùng khi lưu nháp), cùng cách với `findBlockedDateLeadTimeFields`. Đọc LẠI
+ * dữ liệu thật tại thời điểm gửi (không tin danh sách phía trình duyệt) —
+ * cùng lý do đã ghi ở `findBlockedDateLeadTimeFields`. Field rỗng (kể cả
+ * field required — đã có `findMissingRequiredFields` xử lý riêng) hoặc field
+ * bị ẩn (visibleWhen không thoả) thì bỏ qua, không phải lỗi của luật này.
+ *
+ * Gom field theo `sourceId` trước khi gọi `loadRecords()` — nhiều field cùng
+ * ràng buộc 1 nguồn (hiếm nhưng không cấm) chỉ tải dữ liệu nguồn đó 1 lần.
  */
-export async function findInvalidContractCodeFields(
+export async function findInvalidExternalCodeFields(
   fields: ProposalField[],
   values: Record<string, unknown>,
 ): Promise<ProposalField[]> {
-  const targets = fields.filter((f) => {
-    if (!f.contractCodeLookup) return false;
-    if (f.visibleWhen && !evaluateConditionGroup(f.visibleWhen, values ?? {}, fields)) return false;
-    return !isEmptyValue(values?.[f.id]);
-  });
+  const targets = fields
+    .map((f) => ({ field: f, lookup: resolveExternalCodeLookup(f) }))
+    .filter(({ field: f, lookup }) => {
+      if (!lookup) return false;
+      if (f.visibleWhen && !evaluateConditionGroup(f.visibleWhen, values ?? {}, fields)) return false;
+      return !isEmptyValue(values?.[f.id]);
+    });
   if (targets.length === 0) return [];
 
-  const contracts = await loadContractCodeSuggestions();
-  const codeSet = new Set(contracts.map((c) => c.code));
+  const sourceIds = [...new Set(targets.map((t) => t.lookup!.sourceId))];
+  const codeSetBySource = new Map<string, Set<string>>();
+  await Promise.all(
+    sourceIds.map(async (sourceId) => {
+      const records = await EXTERNAL_CODE_SOURCES[sourceId].loadRecords();
+      codeSetBySource.set(sourceId, new Set(records.flatMap((r) => r.codeValues)));
+    }),
+  );
 
-  return targets.filter((f) => {
-    const raw = values?.[f.id];
-    // Không tin kiểu dữ liệu client gửi lên (xem findBlockedDateLeadTimeFields
-    // cho cùng lý do) — giá trị không phải string thì coi là không khớp.
-    if (typeof raw !== "string") return true;
-    // KHÔNG trim trước khi so — giá trị được LƯU vào request là `raw` nguyên
-    // văn (không bị trim ở đâu khác), nên phải so đúng CHÍNH giá trị đó với
-    // tập mã hợp lệ để tránh vênh: "01/2026/HĐXD-HPCS " (thừa khoảng trắng)
-    // pass validate nhưng giá trị lưu lại không khớp mã thật (CodeRabbit PR #41).
-    return !codeSet.has(raw);
-  });
+  return targets
+    .filter(({ field: f, lookup }) => {
+      const raw = values?.[f.id];
+      // Không tin kiểu dữ liệu client gửi lên (xem findBlockedDateLeadTimeFields
+      // cho cùng lý do) — giá trị không phải string thì coi là không khớp.
+      if (typeof raw !== "string") return true;
+      // KHÔNG trim trước khi so — giá trị được LƯU vào request là `raw` nguyên
+      // văn (không bị trim ở đâu khác), nên phải so đúng CHÍNH giá trị đó với
+      // tập mã hợp lệ để tránh vênh: "01/2026/HĐXD-HPCS " (thừa khoảng trắng)
+      // pass validate nhưng giá trị lưu lại không khớp mã thật (CodeRabbit PR #41).
+      return !codeSetBySource.get(lookup!.sourceId)!.has(raw);
+    })
+    .map(({ field }) => field);
 }
 
 /** Khởi tạo approvers "pending" theo đúng thứ tự của danh sách người duyệt. */

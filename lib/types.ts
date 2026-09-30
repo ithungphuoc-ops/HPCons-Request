@@ -98,19 +98,39 @@ export interface ProposalField {
    */
   suggestFromHistory?: boolean;
   /**
-   * Chỉ cho field kiểu short_text: bật thì ô nhập BẮT BUỘC khớp đúng 1 Số Hợp
-   * Đồng CĐT thật, đọc từ app Công nợ (congno.hpcore.vn, project Firestore
-   * riêng "hpcons-congno", collection `contracts`) — khác hẳn
-   * `suggestFromHistory` (chỉ gợi ý mềm, vẫn cho gõ tự do): field này ÉP
-   * BUỘC, gửi chính thức mà không khớp sẽ bị chặn (xem
-   * `findInvalidContractCodeFields` trong lib/server/requests.ts). Cờ đặt
-   * TRÊN TỪNG FIELD cụ thể (Sếp chốt 26/09/2026, "Cách 2" — không đoán theo
-   * tên field, tránh Admin đổi tên field là mất tác dụng mà không biết vì
-   * sao). "Tên công trình" và mọi field khác KHÔNG bị ảnh hưởng gì — không có
-   * liên kết/tự động điền chéo giữa 2 field, xem design.md của change
-   * add-contract-code-lookup.
+   * @deprecated Thay bằng `externalCodeLookup` (change
+   * add-external-code-lookup-picker, 30/09/2026) — chỉ hỗ trợ đúng 1 nguồn
+   * (Số Hợp Đồng CĐT). GIỮ LẠI field này để field cũ trên production (chưa
+   * được sửa lại qua UI mới) tiếp tục hoạt động — đọc qua
+   * `resolveExternalCodeLookup()` (lib/external-code-sources.ts), KHÔNG đọc
+   * trực tiếp field này ở nơi nào khác. Field TẠO MỚI/SỬA LẠI qua UI mới ghi
+   * `externalCodeLookup`, không ghi field này nữa.
    */
   contractCodeLookup?: boolean;
+  /**
+   * Chỉ cho field kiểu short_text: bật thì ô nhập BẮT BUỘC khớp đúng 1 mã
+   * tham chiếu thật từ 1 trong các nguồn ngoài đã đăng ký sẵn (xem
+   * `EXTERNAL_CODE_SOURCES` trong lib/external-code-sources.ts — hiện có
+   * "Số Hợp Đồng CĐT" và "Mã nhà thầu phụ" từ app Công nợ) — khác hẳn
+   * `suggestFromHistory` (chỉ gợi ý mềm, vẫn cho gõ tự do): field này ÉP
+   * BUỘC, gửi chính thức mà không khớp sẽ bị chặn (xem
+   * `findInvalidExternalCodeFields` trong lib/server/requests.ts). Field CHỈ
+   * lưu `sourceId` — danh sách field nào là "mã"/field nào hiện phụ nằm CỐ
+   * ĐỊNH trong registry, không lưu lặp lại trên từng field (tránh 2 nơi giữ
+   * dữ liệu dễ lệch nhau, xem design.md Decision #1 của change
+   * add-external-code-lookup-picker). Thay thế `contractCodeLookup` ở trên —
+   * xem `resolveExternalCodeLookup()` để đọc đúng cả field cũ lẫn field mới.
+   */
+  externalCodeLookup?: ExternalCodeLookupConfig;
+}
+
+/** Nguồn dữ liệu ngoài đã đăng ký sẵn cho ràng buộc mã tham chiếu — CHỈ đúng
+ *  2 giá trị này ở đợt này (không mở rộng tự do lúc runtime), xem
+ *  lib/external-code-sources.ts. */
+export type ExternalCodeSourceId = "congno_contracts" | "congno_subcontractors";
+
+export interface ExternalCodeLookupConfig {
+  sourceId: ExternalCodeSourceId;
 }
 
 /**

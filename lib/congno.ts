@@ -14,11 +14,14 @@ import { shortenCustomerName } from "./customer-name";
  *
  * 🔴 CHỈ đọc collection "contracts" và CHỈ forward `code`/`group`/`name`/`work`/
  * `customerName` ra ngoài file này (xem
- * app/api/groups/[id]/contract-code-suggestions/route.ts) — `work` ("hạng
- * mục") và `customerName` ("Tên CĐT", hiện ở cột phụ trong dropdown gợi ý)
- * được Sếp chốt cho lộ ra (26/09/2026) để người làm đề nghị đối chiếu, tự
- * phát hiện gõ nhầm Số Hợp Đồng CĐT. Dữ liệu TÀI CHÍNH (`totalAfterTax`...)
- * của app Công nợ vẫn KHÔNG được lộ ra bất kỳ đâu trong base-request-app.
+ * lib/external-code-sources.ts và app/api/groups/[id]/external-code-suggestions/
+ * route.ts) — `work` ("hạng mục") và `customerName` ("Tên CĐT", hiện ở cột
+ * phụ trong dropdown gợi ý) được Sếp chốt cho lộ ra (26/09/2026) để người
+ * làm đề nghị đối chiếu, tự phát hiện gõ nhầm Số Hợp Đồng CĐT. Dữ liệu TÀI
+ * CHÍNH (`totalAfterTax`...) của app Công nợ vẫn KHÔNG được lộ ra bất kỳ đâu
+ * trong base-request-app. Từ 30/09/2026 (change add-external-code-lookup-picker)
+ * còn thêm nguồn "subcontractors" (Mã nhà thầu phụ) — xem hàm
+ * `loadSubcontractorCodeSuggestions` bên dưới.
  */
 
 const APP_NAME = "congno";
@@ -103,5 +106,48 @@ async function loadContractCodeSuggestionsUncached(): Promise<ContractCodeSugges
 export const loadContractCodeSuggestions = unstable_cache(
   loadContractCodeSuggestionsUncached,
   ["contract-code-suggestions"],
+  { revalidate: 300 },
+);
+
+/**
+ * "Mã nhà thầu phụ" — collection RIÊNG `subcontractors` (khác `contracts`,
+ * cùng project "hpcons-congno") — xem openspec/changes/add-external-code-lookup-picker.
+ *
+ * 🔴 CHỈ đọc và forward đúng 4 field `ma`/`mst`/`ten`/`diaChi` — collection
+ * này còn có `nguon`, `hopDong` (mảng hợp đồng gắn với nhà thầu), `createdAt`,
+ * `updatedAt`, `updatedBy` KHÔNG được lộ ra bất kỳ đâu ngoài file này.
+ *
+ * Nhà thầu do hệ thống Công nợ TỰ THÊM lúc "Ký kết hợp đồng" thường chỉ có
+ * `mst`, không có `ma` (xem `ghiNhanNhaThauKhiKyKet` trong HPCons-Congno/
+ * lib/subcontractors.ts) — filter bỏ bản ghi thiếu CẢ 2 field (không có gì
+ * để khớp), còn thiếu 1 trong 2 thì vẫn giữ.
+ */
+export interface SubcontractorCodeSuggestion {
+  ma: string;
+  mst: string;
+  ten: string;
+  diaChi: string;
+}
+
+async function loadSubcontractorCodeSuggestionsUncached(): Promise<SubcontractorCodeSuggestion[]> {
+  const snap = await getCongNoDb().collection("subcontractors").get();
+  return snap.docs
+    .map((d) => {
+      const data = d.data();
+      return {
+        ma: typeof data.ma === "string" ? data.ma.trim() : "",
+        mst: typeof data.mst === "string" ? data.mst.trim() : "",
+        ten: typeof data.ten === "string" ? data.ten.trim() : "",
+        diaChi: typeof data.diaChi === "string" ? data.diaChi.trim() : "",
+      };
+    })
+    .filter((s) => s.ma || s.mst);
+}
+
+/** Cache 5 phút — cùng lý do/thời hạn với `loadContractCodeSuggestions` (dùng
+ * chung cho cả gợi ý lẫn validate, xem lib/external-code-sources.ts). */
+export const loadSubcontractorCodeSuggestions = unstable_cache(
+  loadSubcontractorCodeSuggestionsUncached,
+  ["subcontractor-code-suggestions"],
   { revalidate: 300 },
 );

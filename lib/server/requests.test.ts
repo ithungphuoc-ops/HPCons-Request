@@ -22,15 +22,22 @@ vi.mock("@/lib/hpcore", () => ({
   }),
 }));
 
-// findInvalidContractCodeFields gọi loadContractCodeSuggestions() — mock danh
-// sách hợp đồng giả cố định, đủ để test luật khớp/không khớp mà không cần
-// Firestore thật của app Công nợ.
+// findInvalidExternalCodeFields (qua lib/external-code-sources.ts) gọi
+// loadContractCodeSuggestions()/loadSubcontractorCodeSuggestions() — mock dữ
+// liệu giả cố định cho cả 2 nguồn, đủ để test luật khớp/không khớp mà không
+// cần Firestore thật của app Công nợ.
 const mockContracts = [
-  { code: "01/2026/HĐXD-HPCS", project: "HOWELL" },
-  { code: "02/2026/HĐXD-HPCS", project: "CHENKAI-PS" },
+  { code: "01/2026/HĐXD-HPCS", project: "HOWELL", work: "", customerName: "", customerNameShort: "" },
+  { code: "02/2026/HĐXD-HPCS", project: "CHENKAI-PS", work: "", customerName: "", customerNameShort: "" },
+];
+const mockSubcontractors = [
+  { ma: "4001094696", mst: "4001094696", ten: "Comin An An Hòa", diaChi: "" },
+  // Nhà thầu tự thêm lúc Ký kết — chỉ có mst, không có ma.
+  { ma: "", mst: "0317927805", ten: "Cơ khí Minh Phúc", diaChi: "" },
 ];
 vi.mock("@/lib/congno", () => ({
   loadContractCodeSuggestions: async () => mockContracts,
+  loadSubcontractorCodeSuggestions: async () => mockSubcontractors,
 }));
 
 const {
@@ -38,7 +45,7 @@ const {
   resolveApproverSteps,
   resolveInitialSlaHours,
   recomputeDeadlineForNextStep,
-  findInvalidContractCodeFields,
+  findInvalidExternalCodeFields,
   MissingApproverError,
 } = await import("./requests");
 
@@ -284,34 +291,50 @@ function contractCodeField(overrides: Partial<import("@/lib/types").ProposalFiel
     dataType: "short_text" as const,
     required: false,
     order: 0,
+    // Cờ CŨ (contractCodeLookup) — cố ý dùng cờ cũ ở đây (không phải
+    // externalCodeLookup) để test luôn PHỦ ĐƯỢC đường tương thích ngược
+    // (field trên production chưa migrate) — xem Decision 8 design.md của
+    // change add-external-code-lookup-picker.
     contractCodeLookup: true,
     ...overrides,
   };
 }
 
-describe("findInvalidContractCodeFields", () => {
-  it("giá trị khớp đúng 1 hợp đồng thật → không báo lỗi", async () => {
+function subcontractorCodeField(overrides: Partial<import("@/lib/types").ProposalField> = {}) {
+  return {
+    id: "f2",
+    name: "Mã nhà thầu phụ",
+    dataType: "short_text" as const,
+    required: false,
+    order: 0,
+    externalCodeLookup: { sourceId: "congno_subcontractors" as const },
+    ...overrides,
+  };
+}
+
+describe("findInvalidExternalCodeFields", () => {
+  it("giá trị khớp đúng 1 hợp đồng thật (field cũ contractCodeLookup) → không báo lỗi", async () => {
     const fields = [contractCodeField()];
-    const result = await findInvalidContractCodeFields(fields, { f1: "01/2026/HĐXD-HPCS" });
+    const result = await findInvalidExternalCodeFields(fields, { f1: "01/2026/HĐXD-HPCS" });
     expect(result).toHaveLength(0);
   });
 
   it("giá trị không khớp hợp đồng nào → báo lỗi đúng field", async () => {
     const fields = [contractCodeField()];
-    const result = await findInvalidContractCodeFields(fields, { f1: "SO-BAY-VU" });
+    const result = await findInvalidExternalCodeFields(fields, { f1: "SO-BAY-VU" });
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe("f1");
   });
 
-  it("field không bật contractCodeLookup → bỏ qua dù giá trị sai", async () => {
+  it("field không bật ràng buộc nào → bỏ qua dù giá trị sai", async () => {
     const fields = [contractCodeField({ contractCodeLookup: false })];
-    const result = await findInvalidContractCodeFields(fields, { f1: "SO-BAY-VU" });
+    const result = await findInvalidExternalCodeFields(fields, { f1: "SO-BAY-VU" });
     expect(result).toHaveLength(0);
   });
 
   it("giá trị rỗng (kể cả required) → bỏ qua, không phải lỗi của luật này", async () => {
     const fields = [contractCodeField({ required: true })];
-    const result = await findInvalidContractCodeFields(fields, { f1: "" });
+    const result = await findInvalidExternalCodeFields(fields, { f1: "" });
     expect(result).toHaveLength(0);
   });
 
@@ -321,13 +344,42 @@ describe("findInvalidContractCodeFields", () => {
         visibleWhen: { conjunction: "all", rules: [{ fieldCode: "khac", operator: "equals", value: "x" }] },
       }),
     ];
-    const result = await findInvalidContractCodeFields(fields, { f1: "SO-BAY-VU" });
+    const result = await findInvalidExternalCodeFields(fields, { f1: "SO-BAY-VU" });
     expect(result).toHaveLength(0);
   });
 
   it("giá trị không phải string (client gửi sai kiểu) → coi là không khớp", async () => {
     const fields = [contractCodeField()];
-    const result = await findInvalidContractCodeFields(fields, { f1: 12345 });
+    const result = await findInvalidExternalCodeFields(fields, { f1: 12345 });
     expect(result).toHaveLength(1);
+  });
+
+  it("field mới externalCodeLookup (congno_subcontractors) khớp theo ma → không báo lỗi", async () => {
+    const fields = [subcontractorCodeField()];
+    const result = await findInvalidExternalCodeFields(fields, { f2: "4001094696" });
+    expect(result).toHaveLength(0);
+  });
+
+  it("nhà thầu chỉ có mst (không có ma) — khớp theo mst → không báo lỗi", async () => {
+    const fields = [subcontractorCodeField()];
+    const result = await findInvalidExternalCodeFields(fields, { f2: "0317927805" });
+    expect(result).toHaveLength(0);
+  });
+
+  it("mã nhà thầu phụ không tồn tại → báo lỗi đúng field", async () => {
+    const fields = [subcontractorCodeField()];
+    const result = await findInvalidExternalCodeFields(fields, { f2: "khong-ton-tai" });
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("f2");
+  });
+
+  it("2 field khác nguồn cùng lúc — chỉ báo lỗi field thật sự sai", async () => {
+    const fields = [contractCodeField(), subcontractorCodeField()];
+    const result = await findInvalidExternalCodeFields(fields, {
+      f1: "01/2026/HĐXD-HPCS", // đúng
+      f2: "sai-hoan-toan", // sai
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("f2");
   });
 });
