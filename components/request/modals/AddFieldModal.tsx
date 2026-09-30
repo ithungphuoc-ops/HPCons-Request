@@ -35,9 +35,10 @@ import {
 import { slugifyFieldName } from "@/lib/print-template";
 import { validateFieldName, validateFieldOptions } from "@/lib/validation";
 import {
+  EXTERNAL_CODE_SOURCE_FIELDS,
   EXTERNAL_CODE_SOURCE_ID_LIST,
   EXTERNAL_CODE_SOURCE_LABELS,
-  resolveExternalCodeSourceId,
+  resolveExternalCodeLookup,
 } from "@/lib/external-code-source-labels";
 import type { ExternalCodeSourceId } from "@/lib/types";
 
@@ -81,19 +82,31 @@ export default function AddFieldModal() {
   const [computedBranches, setComputedBranches] = useState<ComputedTemplateBranch[] | null>(null);
   const [dateLeadTimeEnabled, setDateLeadTimeEnabled] = useState(false);
   const [suggestFromHistory, setSuggestFromHistory] = useState(false);
-  // Ràng buộc mã tham chiếu ngoài (Phương án B, Sếp chốt 30/09/2026 — xem
-  // design.md Decision #6 của change add-external-code-lookup-picker):
-  // `externalCodeSourceId` là giá trị ĐÃ XÁC NHẬN (thứ thật sự gửi lên khi
-  // lưu field). `lookupStep` điều khiển panel đang hiện gì khi bật checkbox
-  // mà CHƯA/đang đổi lại lựa chọn: "choose" = đang chọn thẻ nguồn, "preview"
-  // = đã bấm 1 thẻ, đang xem mẫu thật trước khi xác nhận.
-  const [externalCodeSourceId, setExternalCodeSourceId] = useState<ExternalCodeSourceId | null>(null);
+  // Ràng buộc mã tham chiếu ngoài (Sếp chốt 30/09/2026 — xem design.md
+  // Decision #4/#6 của change add-external-code-lookup-picker): 4 bước —
+  // "choose-source" (chọn thẻ nguồn) → "choose-field" (chọn ĐÚNG 1 field của
+  // nguồn đó để khớp — thay bản đầu "khớp 1 trong nhiều field" dễ gây nhầm)
+  // → "preview" (xem mẫu thật, cột đã chọn tô nổi bật) → "confirmed" (đã xác
+  // nhận). `lookupSourceId`/`lookupMatchField` là lựa chọn ĐANG CHỌN (tạm,
+  // có thể huỷ); `confirmedSourceId`/`confirmedMatchField` là giá trị ĐÃ XÁC
+  // NHẬN (thứ thật sự gửi lên khi lưu field).
   const [lookupEnabled, setLookupEnabled] = useState(false);
-  const [lookupStep, setLookupStep] = useState<"choose" | "preview" | "confirmed">("choose");
-  const [previewSourceId, setPreviewSourceId] = useState<ExternalCodeSourceId | null>(null);
+  const [lookupStep, setLookupStep] = useState<"choose-source" | "choose-field" | "preview" | "confirmed">(
+    "choose-source",
+  );
+  const [lookupSourceId, setLookupSourceId] = useState<ExternalCodeSourceId | null>(null);
+  const [lookupMatchField, setLookupMatchField] = useState<string | null>(null);
+  const [confirmedSourceId, setConfirmedSourceId] = useState<ExternalCodeSourceId | null>(null);
+  const [confirmedMatchField, setConfirmedMatchField] = useState<string | null>(null);
   const [previewSample, setPreviewSample] = useState<Record<string, string> | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  // Tự động điền từ trường khác (Sếp yêu cầu 30/09/2026) — MÂU THUẪN với
+  // ràng buộc mã tham chiếu ngoài trên CÙNG field, UI chỉ cho bật 1 trong 2
+  // (xem `lookupEnabled`/`autofillEnabled` không bao giờ cùng true).
+  const [autofillEnabled, setAutofillEnabled] = useState(false);
+  const [autofillSourceFieldId, setAutofillSourceFieldId] = useState<string | null>(null);
+  const [autofillPullField, setAutofillPullField] = useState<string | null>(null);
   // Giữ dạng chuỗi để người dùng xoá trắng ô mà không bị nhảy về 0; validate lúc lưu.
   const [dateLeadTimeBlockDays, setDateLeadTimeBlockDays] = useState(String(DATE_LEAD_TIME_DEFAULT_BLOCK_DAYS));
   const [dateLeadTimeStandardDays, setDateLeadTimeStandardDays] = useState(
@@ -129,6 +142,18 @@ export default function AddFieldModal() {
       ),
     [group, editingField],
   );
+
+  const autofillSourceOptions = useMemo(
+    () => group?.fields.filter((f) => f.id !== editingField?.id && resolveExternalCodeLookup(f) !== null) ?? [],
+    [group, editingField],
+  );
+
+  const autofillPullFieldOptions = useMemo(() => {
+    if (!autofillSourceFieldId) return [];
+    const sourceField = group?.fields.find((f) => f.id === autofillSourceFieldId);
+    const lookup = sourceField ? resolveExternalCodeLookup(sourceField) : null;
+    return lookup ? EXTERNAL_CODE_SOURCE_FIELDS[lookup.sourceId] : [];
+  }, [autofillSourceFieldId, group]);
 
   // Xem trước mã trường SẼ được gán khi tạo mới (Sếp phản hồi 29/09/2026: gõ
   // "Tên trường" xong phải tắt-mở lại (chuyển sang chế độ sửa) mới thấy được
@@ -166,12 +191,17 @@ export default function AddFieldModal() {
     setDateLeadTimeBlockDays(String(DATE_LEAD_TIME_DEFAULT_BLOCK_DAYS));
     setDateLeadTimeStandardDays(String(DATE_LEAD_TIME_DEFAULT_STANDARD_DAYS));
     setSuggestFromHistory(false);
-    setExternalCodeSourceId(null);
     setLookupEnabled(false);
-    setLookupStep("choose");
-    setPreviewSourceId(null);
+    setLookupStep("choose-source");
+    setLookupSourceId(null);
+    setLookupMatchField(null);
+    setConfirmedSourceId(null);
+    setConfirmedMatchField(null);
     setPreviewSample(null);
     setPreviewError(null);
+    setAutofillEnabled(false);
+    setAutofillSourceFieldId(null);
+    setAutofillPullField(null);
     setErrors({});
   };
 
@@ -197,13 +227,20 @@ export default function AddFieldModal() {
         // Field cũ có `contractCodeLookup` (chưa migrate) hoặc field mới có
         // `externalCodeLookup` — cả 2 đều hiện thẳng dạng tóm tắt đã chọn,
         // KHÔNG bắt Admin chọn lại từ đầu (task 4.5).
-        const resolved = resolveExternalCodeSourceId(editingField);
-        setExternalCodeSourceId(resolved);
+        const resolved = resolveExternalCodeLookup(editingField);
         setLookupEnabled(resolved !== null);
-        setLookupStep(resolved !== null ? "confirmed" : "choose");
-        setPreviewSourceId(null);
+        setConfirmedSourceId(resolved?.sourceId ?? null);
+        setConfirmedMatchField(resolved?.matchField ?? null);
+        setLookupStep(resolved !== null ? "confirmed" : "choose-source");
+        setLookupSourceId(null);
+        setLookupMatchField(null);
         setPreviewSample(null);
         setPreviewError(null);
+
+        const autofill = editingField.autofillFromLookup;
+        setAutofillEnabled(!!autofill);
+        setAutofillSourceFieldId(autofill?.sourceFieldId ?? null);
+        setAutofillPullField(autofill?.pullField ?? null);
       }
       // Trường ngày lưu trước 13/09/2026 chưa có blockDays -> điền mặc định 2.
       const leadTimeNums = resolveDateLeadTimeNumbers(editingField.dateLeadTimeRule);
@@ -303,10 +340,17 @@ export default function AddFieldModal() {
       // ghi `contractCodeLookup` nữa) — field cũ trên production giữ nguyên
       // cờ cũ cho tới khi có ai sửa lại (Decision 8 design.md).
       externalCodeLookup:
-        externalCodeLookupEligibleTypes.includes(dataType) && lookupEnabled && externalCodeSourceId
-          ? { sourceId: externalCodeSourceId }
+        externalCodeLookupEligibleTypes.includes(dataType) && lookupEnabled && confirmedSourceId && confirmedMatchField
+          ? { sourceId: confirmedSourceId, matchField: confirmedMatchField }
           : undefined,
       contractCodeLookup: undefined,
+      // Mâu thuẫn với `externalCodeLookup` trên CÙNG field — UI chỉ cho bật 1
+      // trong 2 (checkbox mỗi bên tự tắt bên còn lại), nên không cần chặn lại
+      // ở đây, chỉ cần đọc đúng state của bên đang bật.
+      autofillFromLookup:
+        externalCodeLookupEligibleTypes.includes(dataType) && autofillEnabled && autofillSourceFieldId && autofillPullField
+          ? { sourceFieldId: autofillSourceFieldId, pullField: autofillPullField }
+          : undefined,
     };
 
     if (isEditMode && editingField) {
@@ -317,24 +361,36 @@ export default function AddFieldModal() {
     resetForm();
   };
 
-  // Bấm 1 thẻ nguồn (bước 1) — chuyển sang bước xem trước, tự tải 1 bản ghi
-  // mẫu THẬT của nguồn đó (Decision 6 design.md, change
-  // add-external-code-lookup-picker). CHỈ ĐỂ XEM — Admin không tick chọn
-  // field nào ở đây, field mã/hiện phụ đã cố định theo nguồn.
-  const chooseLookupSource = async (sourceId: ExternalCodeSourceId) => {
-    setPreviewSourceId(sourceId);
+  // Bước 1→2: bấm 1 thẻ nguồn — sang bước chọn ĐÚNG 1 field để khớp. Danh
+  // sách field cho phép chọn HARD-CODE trong EXTERNAL_CODE_SOURCE_FIELDS,
+  // không đọc động từ document mẫu (an toàn: không lộ field tài chính nằm
+  // chung document, vd `totalAfterTax`).
+  const chooseLookupSourceCard = (sourceId: ExternalCodeSourceId) => {
+    setLookupSourceId(sourceId);
+    setLookupMatchField(null);
+    setLookupStep("choose-field");
+    setPreviewSample(null);
+    setPreviewError(null);
+  };
+
+  // Bước 2→3: bấm 1 field cụ thể để khớp — sang bước xem trước, tự tải 1 bản
+  // ghi mẫu THẬT của nguồn đó (Decision 6 design.md, change
+  // add-external-code-lookup-picker) để Admin thấy field vừa chọn ứng với
+  // giá trị thật nào trước khi xác nhận.
+  const chooseLookupMatchField = async (fieldKey: string) => {
+    if (!lookupSourceId || !group) return;
+    setLookupMatchField(fieldKey);
     setLookupStep("preview");
     setPreviewSample(null);
     setPreviewError(null);
-    if (!group) return;
     setPreviewLoading(true);
     try {
       const res = await fetch(
-        `/api/groups/${group.id}/external-code-suggestions?sourceId=${sourceId}&sample=1`,
+        `/api/groups/${group.id}/external-code-suggestions?sourceId=${lookupSourceId}&sample=1`,
       );
       if (!res.ok) throw new Error("request failed");
-      const data = (await res.json()) as { records?: { display: Record<string, string> }[] };
-      setPreviewSample(data.records?.[0]?.display ?? null);
+      const data = (await res.json()) as { records?: { fields: Record<string, string> }[] };
+      setPreviewSample(data.records?.[0]?.fields ?? null);
     } catch {
       setPreviewError(
         "Không tải được dữ liệu mẫu để xem trước — vẫn có thể xác nhận, hàng rào thật vẫn kiểm tra ở máy chủ lúc gửi đề xuất.",
@@ -345,17 +401,38 @@ export default function AddFieldModal() {
   };
 
   const confirmLookupSource = () => {
-    if (!previewSourceId) return;
-    setExternalCodeSourceId(previewSourceId);
+    if (!lookupSourceId || !lookupMatchField) return;
+    setConfirmedSourceId(lookupSourceId);
+    setConfirmedMatchField(lookupMatchField);
     setLookupStep("confirmed");
   };
 
-  const changeLookupSource = () => {
-    setLookupStep("choose");
-    setPreviewSourceId(null);
+  const backToChooseSource = () => {
+    setLookupStep("choose-source");
+    setLookupSourceId(null);
+    setLookupMatchField(null);
     setPreviewSample(null);
     setPreviewError(null);
   };
+
+  const backToChooseField = () => {
+    setLookupStep("choose-field");
+    setLookupMatchField(null);
+    setPreviewSample(null);
+    setPreviewError(null);
+  };
+
+  // "Đổi lại" ở thẻ đã xác nhận — quay về bước 1, GIỮ NGUYÊN
+  // confirmedSourceId/confirmedMatchField cũ cho tới khi Admin xác nhận lựa
+  // chọn mới (nếu bấm Hủy bỏ giữa chừng, field vẫn giữ cấu hình cũ).
+  const changeLookupSource = () => {
+    setLookupStep("choose-source");
+    setLookupSourceId(null);
+    setLookupMatchField(null);
+    setPreviewSample(null);
+    setPreviewError(null);
+  };
+
 
   return (
     <Modal
@@ -786,13 +863,21 @@ export default function AddFieldModal() {
                 onChange={(e) => {
                   const checked = e.target.checked;
                   setLookupEnabled(checked);
-                  if (!checked) {
-                    setExternalCodeSourceId(null);
-                    setPreviewSourceId(null);
+                  if (checked) {
+                    // Mâu thuẫn với "Tự động điền" bên dưới — chỉ bật 1 trong 2.
+                    setAutofillEnabled(false);
+                    setAutofillSourceFieldId(null);
+                    setAutofillPullField(null);
+                    setLookupStep(confirmedSourceId && confirmedMatchField ? "confirmed" : "choose-source");
+                  } else {
+                    setLookupSourceId(null);
+                    setLookupMatchField(null);
+                    setConfirmedSourceId(null);
+                    setConfirmedMatchField(null);
                     setPreviewSample(null);
                     setPreviewError(null);
+                    setLookupStep("choose-source");
                   }
-                  setLookupStep(checked && externalCodeSourceId ? "confirmed" : "choose");
                 }}
               />
               Bắt buộc khớp 1 mã tham chiếu ngoài
@@ -803,17 +888,17 @@ export default function AddFieldModal() {
               bị chặn.
             </p>
 
-            {lookupEnabled && lookupStep === "choose" && (
+            {lookupEnabled && lookupStep === "choose-source" && (
               <div className="mt-2 rounded border border-dashed border-gray-300 bg-gray-50 p-3">
                 <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
-                  Chọn nguồn
+                  Bước 1/3 — Chọn nguồn
                 </p>
                 <div className="flex flex-col gap-1.5">
                   {EXTERNAL_CODE_SOURCE_ID_LIST.map((sourceId) => (
                     <button
                       key={sourceId}
                       type="button"
-                      onClick={() => chooseLookupSource(sourceId)}
+                      onClick={() => chooseLookupSourceCard(sourceId)}
                       className="rounded border border-gray-200 bg-white px-3 py-2 text-left text-[13.5px] text-gray-700 hover:border-[var(--color-action-blue)] hover:bg-blue-50"
                     >
                       {EXTERNAL_CODE_SOURCE_LABELS[sourceId]}
@@ -823,22 +908,61 @@ export default function AddFieldModal() {
               </div>
             )}
 
-            {lookupEnabled && lookupStep === "preview" && previewSourceId && (
+            {lookupEnabled && lookupStep === "choose-field" && lookupSourceId && (
               <div className="mt-2 rounded border border-dashed border-gray-300 bg-gray-50 p-3">
                 <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
-                  Xem trước dữ liệu thật (chỉ xem, không chọn field)
+                  Bước 2/3 — Chọn ĐÚNG 1 trường để khớp/gợi ý ({EXTERNAL_CODE_SOURCE_LABELS[lookupSourceId]})
+                </p>
+                <div className="flex flex-col gap-1.5">
+                  {EXTERNAL_CODE_SOURCE_FIELDS[lookupSourceId].map((f) => (
+                    <button
+                      key={f.key}
+                      type="button"
+                      onClick={() => chooseLookupMatchField(f.key)}
+                      className="rounded border border-gray-200 bg-white px-3 py-2 text-left text-[13.5px] text-gray-700 hover:border-[var(--color-action-blue)] hover:bg-blue-50"
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={backToChooseSource}
+                  className="mt-2 text-[12px] font-medium text-gray-500 hover:underline"
+                >
+                  ← Quay lại chọn nguồn
+                </button>
+              </div>
+            )}
+
+            {lookupEnabled && lookupStep === "preview" && lookupSourceId && lookupMatchField && (
+              <div className="mt-2 rounded border border-dashed border-gray-300 bg-gray-50 p-3">
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+                  Bước 3/3 — Xem trước dữ liệu thật (dòng tô xanh là trường vừa chọn)
                 </p>
                 {previewLoading && <p className="text-[12px] text-gray-400">Đang tải…</p>}
                 {previewError && <p className="text-[12px] text-[var(--color-danger-red)]">{previewError}</p>}
                 {!previewLoading && previewSample && (
                   <table className="w-full text-[12.5px]">
                     <tbody>
-                      {Object.entries(previewSample).map(([key, value]) => (
-                        <tr key={key} className="border-b border-gray-100 last:border-0">
-                          <td className="py-1 pr-3 font-mono text-gray-400">{key}</td>
-                          <td className="py-1 text-gray-700">{value || "—"}</td>
-                        </tr>
-                      ))}
+                      {Object.entries(previewSample).map(([key, value]) => {
+                        const label =
+                          EXTERNAL_CODE_SOURCE_FIELDS[lookupSourceId].find((f) => f.key === key)?.label ?? key;
+                        const isMatch = key === lookupMatchField;
+                        return (
+                          <tr
+                            key={key}
+                            className={`border-b border-gray-100 last:border-0 ${isMatch ? "bg-blue-50" : ""}`}
+                          >
+                            <td className={`py-1 pr-3 ${isMatch ? "font-semibold text-[var(--color-action-blue)]" : "text-gray-400"}`}>
+                              {label}
+                            </td>
+                            <td className={`py-1 ${isMatch ? "font-semibold text-gray-800" : "text-gray-700"}`}>
+                              {value || "—"}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 )}
@@ -848,7 +972,7 @@ export default function AddFieldModal() {
                 <div className="mt-3 flex justify-between">
                   <button
                     type="button"
-                    onClick={changeLookupSource}
+                    onClick={backToChooseField}
                     className="text-[12px] font-medium text-gray-500 hover:underline"
                   >
                     ← Quay lại
@@ -864,9 +988,13 @@ export default function AddFieldModal() {
               </div>
             )}
 
-            {lookupEnabled && lookupStep === "confirmed" && externalCodeSourceId && (
+            {lookupEnabled && lookupStep === "confirmed" && confirmedSourceId && confirmedMatchField && (
               <div className="mt-2 flex items-center gap-2 rounded border border-green-200 bg-green-50 px-3 py-2 text-[13px] text-green-800">
-                <span>✓ Đã ràng buộc: {EXTERNAL_CODE_SOURCE_LABELS[externalCodeSourceId]}</span>
+                <span>
+                  ✓ Đã ràng buộc: {EXTERNAL_CODE_SOURCE_LABELS[confirmedSourceId]} — khớp theo{" "}
+                  {EXTERNAL_CODE_SOURCE_FIELDS[confirmedSourceId].find((f) => f.key === confirmedMatchField)?.label ??
+                    confirmedMatchField}
+                </span>
                 <button
                   type="button"
                   onClick={changeLookupSource}
@@ -874,6 +1002,88 @@ export default function AddFieldModal() {
                 >
                   Đổi lại
                 </button>
+              </div>
+            )}
+          </Row>
+        )}
+
+        {externalCodeLookupEligibleTypes.includes(dataType) && (
+          <Row label="Tự động điền từ trường khác">
+            <label className="flex items-center gap-2 text-[14px] text-gray-700">
+              <input
+                type="checkbox"
+                checked={autofillEnabled}
+                disabled={autofillSourceOptions.length === 0}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  setAutofillEnabled(checked);
+                  if (checked) {
+                    // Mâu thuẫn với "Ràng buộc mã tham chiếu ngoài" ở trên — chỉ bật 1 trong 2.
+                    setLookupEnabled(false);
+                    setLookupSourceId(null);
+                    setLookupMatchField(null);
+                    setConfirmedSourceId(null);
+                    setConfirmedMatchField(null);
+                    setPreviewSample(null);
+                    setPreviewError(null);
+                    setLookupStep("choose-source");
+                  } else {
+                    setAutofillSourceFieldId(null);
+                    setAutofillPullField(null);
+                  }
+                }}
+              />
+              Bật — trường này KHÔNG tự validate, chỉ THỤ ĐỘNG nhận giá trị từ trường khác khi trường đó khớp 1
+              bản ghi thật
+            </label>
+            <p className="mt-1.5 text-[12px] text-gray-500">
+              Ví dụ: field &quot;MST Nhà thầu phụ&quot; tự điền theo field &quot;Tên nhà thầu phụ đề xuất&quot; vừa
+              chọn — vẫn cho sửa tay đè lên nếu Công nợ thiếu dữ liệu.
+              {autofillSourceOptions.length === 0 &&
+                ' Cần có ít nhất 1 trường khác trong nhóm đã bật "Ràng buộc mã tham chiếu ngoài" ở trên trước.'}
+            </p>
+
+            {autofillEnabled && (
+              <div className="mt-2 flex flex-col gap-3 rounded border border-dashed border-gray-300 bg-gray-50 p-3">
+                <div>
+                  <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+                    Lấy theo trường
+                  </p>
+                  <select
+                    className={selectClass}
+                    value={autofillSourceFieldId ?? ""}
+                    onChange={(e) => {
+                      setAutofillSourceFieldId(e.target.value || null);
+                      setAutofillPullField(null);
+                    }}
+                  >
+                    <option value="">— Chọn trường —</option>
+                    {autofillSourceOptions.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {autofillSourceFieldId && autofillPullFieldOptions.length > 0 && (
+                  <div>
+                    <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+                      Điền giá trị
+                    </p>
+                    <select
+                      className={selectClass}
+                      value={autofillPullField ?? ""}
+                      onChange={(e) => setAutofillPullField(e.target.value || null)}
+                    >
+                      <option value="">— Chọn trường dữ liệu —</option>
+                      {autofillPullFieldOptions.map((f) => (
+                        <option key={f.key} value={f.key}>
+                          {f.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
             )}
           </Row>

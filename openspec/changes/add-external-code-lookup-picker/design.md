@@ -31,7 +31,7 @@ Sếp cần thêm nguồn thứ 2 (Mã nhà thầu phụ, collection `subcontrac
 - Không tự động liệt kê/khám phá TOÀN BỘ collection thật của project Công nợ lúc runtime (Cấp D "cao" như mô tả cảm giác trong demo tương tác) — xem Decision 6 vì sao.
 - Không hỗ trợ project Firestore nào khác ngoài `congno` (Cấp E).
 - Không thêm nguồn `customers` (xem Decision 5).
-- Không cho Admin tự chọn field nào bất kỳ trong document làm "mã"/"hiện phụ" — codeFields/displayFields của mỗi nguồn là CỐ ĐỊNH trong registry, Admin chỉ chọn NGUỒN, không tự tay chọn field.
+- ~~Không cho Admin tự chọn field nào bất kỳ trong document làm "mã"/"hiện phụ"~~ — ĐÃ ĐỔI Ý sau khi triển khai, xem "Cập nhật 30/09/2026" bên dưới: Admin CÓ chọn đúng 1 field trong danh sách field HARD-CODE sẵn của nguồn (không phải chọn tự do bất kỳ field nào trong document thật).
 
 ## Decisions
 
@@ -141,3 +141,68 @@ Mọi nơi đọc (`findInvalidExternalCodeFields`, route suggestions, `AddField
 ## Open Questions
 
 Không còn — mọi quyết định cần thiết đã chốt qua 5 demo + trao đổi 29–30/09/2026 (nguồn cho phép, cách khớp nhiều field, loại `customers`, phạm vi ngoài đợt này, và UI Phương án B ở Decision 6). Sẵn sàng `apply`.
+
+## Cập nhật 30/09/2026 — Kiến trúc V3 (SAU khi Decision 1/2/4/6 ở trên đã code xong và lên production)
+
+Sau khi field "Mã nhà thầu phụ" chạy thật, Sếp phát hiện 2 vấn đề qua ảnh chụp production:
+1. Field cần khớp theo TÊN nhà thầu phụ (không phải mã/MST) không hoạt động — registry ban đầu chỉ có `codeValues: [ma, mst]`, thiếu `ten`.
+2. Cách hiện "Số Hợp Đồng CĐT" (chỉ `customerNameShort` + ghi chú "Hạng mục") bị hiện generic hoá thành nối chuỗi tất cả field phụ — hồi quy so với bản gốc.
+
+Thay vì vá tiếp OR-matching (đã thử ở PR #56, sau đó bỏ vì Sếp muốn rõ ràng hơn), Sếp yêu cầu trực tiếp: **"cho phép chọn 1 trong các trường được không... cho dễ khỏi phải nhầm"** — tức đổi từ "khớp NHIỀU field cùng lúc" (Decision 4) sang "Admin chọn tường minh ĐÚNG 1 field để khớp". Đồng thời Sếp yêu cầu thêm khả năng 1 field khác TỰ ĐỘNG ĐIỀN theo field đã khớp (vd "MST Nhà thầu phụ" tự điền theo "Tên nhà thầu phụ đề xuất" vừa chọn).
+
+**Decision 1/2 sửa lại:**
+```ts
+// lib/types.ts
+export interface ExternalCodeLookupConfig {
+  sourceId: ExternalCodeSourceId;
+  /** ĐÚNG 1 field của nguồn dùng để khớp/gợi ý — Admin chọn tường minh,
+   *  KHÔNG còn khớp OR nhiều field như Decision 4 gốc. */
+  matchField: string;
+}
+
+// lib/external-code-sources.ts
+export interface ExternalCodeRecord {
+  /** Map PHẲNG mọi field nguồn cho phép — thay {codeValues, display} cũ.
+   *  Field nào dùng làm "mã" hay "hiện phụ" giờ do UI tự suy ra từ
+   *  matchField đã chọn (không còn phân biệt cứng codeValues/display ở tầng
+   *  dữ liệu — linh hoạt hơn vì cùng 1 field (vd `ten`) có thể là field khớp
+   *  ở field này, field hiện phụ ở field khác). */
+  fields: Record<string, string>;
+}
+```
+Danh sách field cho phép mỗi nguồn (dùng CHUNG cho việc chọn matchField VÀ chọn pullField của autofill, xem Decision 9) chuyển sang hằng số `EXTERNAL_CODE_SOURCE_FIELDS` trong `lib/external-code-source-labels.ts` — file MỚI, KHÔNG import Firestore, dùng an toàn ở client (`AddFieldModal.tsx`). `lib/external-code-sources.ts` (server-only) import lại hằng số này để khỏi lặp danh sách field 2 nơi.
+
+**Decision 4 (khớp NHIỀU field OR) — HUỶ, thay bằng "khớp ĐÚNG 1 field Admin tự chọn".** Validate (`findInvalidExternalCodeFields`) giờ chỉ so giá trị với `record.fields[matchField]`, không còn duyệt nhiều field. Rủi ro trùng giá trị giữa 2 field khác nhau (đã ghi ở Decision 4 gốc) KHÔNG còn nữa — mỗi field đề xuất chỉ khớp theo đúng 1 field nguồn duy nhất.
+
+**Decision 6 (UI) mở rộng từ 2 bước lên 3 bước, cộng bước xác nhận (4 bước tổng):**
+1. Bước 1/3 — chọn thẻ nguồn (như cũ).
+2. Bước 2/3 — MỚI: chọn ĐÚNG 1 field của nguồn đó để khớp, hiện dạng thẻ/nút từ `EXTERNAL_CODE_SOURCE_FIELDS[sourceId]` (danh sách HARD-CODE, không phải Admin gõ tự do hay thấy toàn bộ field document mẫu — vẫn giữ đúng tinh thần an toàn "không lộ field tài chính" của Non-Goals gốc, chỉ khác là danh sách field hợp lệ giờ có >1 lựa chọn thay vì cố định 1).
+3. Bước 3/3 — xem trước 1 bản ghi mẫu thật, TÔ NỔI BẬT dòng ứng với field vừa chọn (giúp Admin xác nhận đúng ý trước khi lưu).
+4. Xác nhận → lưu `{sourceId, matchField}`, hiện chip tóm tắt "Đã ràng buộc: <label nguồn> — khớp theo <label field>".
+
+Demo đã duyệt: `tong-quan-demo/base-request-app/chon-truong-cu-the-2026-09-30/index.html`.
+
+**Decision 9 (MỚI) — Tự động điền chéo field (`autofillFromLookup`):**
+```ts
+// lib/types.ts, trên ProposalField
+export interface AutofillFromLookupConfig {
+  /** field KHÁC trong cùng nhóm, field đó phải có externalCodeLookup/
+   *  contractCodeLookup (tự resolve qua resolveExternalCodeLookup). */
+  sourceFieldId: string;
+  /** field nào của bản ghi đã khớp bởi sourceFieldId sẽ được điền vào field
+   *  hiện tại — key phải nằm trong EXTERNAL_CODE_SOURCE_FIELDS của nguồn đó. */
+  pullField: string;
+}
+autofillFromLookup?: AutofillFromLookupConfig;
+```
+Field bật `autofillFromLookup` KHÔNG tự validate/ép khớp gì (không dùng `findInvalidExternalCodeFields`) — nó THỤ ĐỘNG nhận giá trị mỗi khi field `sourceFieldId` khớp chính xác 1 bản ghi thật, lấy field `pullField` của bản ghi đó. **Vẫn cho sửa tay đè lên** giá trị đã tự điền (Sếp chốt: phòng khi Công nợ thiếu dữ liệu, không khoá cứng field) — khác với field `externalCodeLookup` (ép buộc khớp, chặn gửi nếu sai).
+
+Ràng buộc UI: `externalCodeLookup` và `autofillFromLookup` **mâu thuẫn trên CÙNG 1 field** — bật cái này tự tắt cái kia trong `AddFieldModal.tsx` (2 checkbox riêng, mỗi checkbox onChange tự reset checkbox còn lại). Không validate lại ràng buộc này ở server vì cả 2 field đều optional và độc lập — nếu do lỗi client cả 2 cùng có giá trị, `externalCodeLookup` được ưu tiên xử lý trước (field vẫn bị validate ép khớp), autofill chỉ ảnh hưởng UI submit, không có hàng rào server tương ứng cần thêm.
+
+Runtime: `submit/page.tsx` — `ShortTextWithExternalCodeLookup` nhận thêm callback `onMatchedFieldsChange` báo record đã khớp (hoặc `null`); component cha (form field map) tìm các field có `autofillFromLookup.sourceFieldId === field.id` và gọi `setFieldValue(target.id, matchedFields?.[target.autofillFromLookup.pullField] ?? "")`.
+
+Demo đã duyệt: `tong-quan-demo/base-request-app/tu-dong-dien-mst-theo-ten-2026-09-30/index.html`, `tong-quan-demo/base-request-app/goi-y-khi-nguoi-lam-de-xuat-2026-09-30/index.html`.
+
+**Tương thích ngược (Decision 8) không đổi bản chất** — `resolveExternalCodeLookup` giờ trả thêm `matchField` (mặc định `code` cho `congno_contracts`, `ten` cho `congno_subcontractors` khi field cũ chưa có `matchField` — bao gồm cả field production đang dùng `contractCodeLookup: true` VÀ field tạo ra trong khoảng ngắn giữa PR #53 và bản V3 này, trước khi có bước chọn field).
+
+PR #56 (`fix/external-code-lookup-display-and-name-match`, vá tạm OR-matching + DISPLAY_UI riêng cho từng nguồn) bị **đóng, không merge** — toàn bộ vấn đề PR đó vá được giải quyết triệt để hơn bởi kiến trúc V3 này (curated display giờ tính qua `computeSecondary`/`computeMatchedNote` theo `sourceId` + `matchField`, không cần bảng `DISPLAY_UI` riêng).
