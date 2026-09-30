@@ -9,7 +9,7 @@ import { primaryButtonClass } from "@/components/shared/form-styles";
 import { useCurrentSession } from "@/lib/useCurrentSession";
 import { useDirectoryAvatars } from "@/lib/useDirectoryAvatars";
 import { exportRequestsToExcel } from "@/lib/request-export-excel";
-import { chuanHoaTimKiem, draftLinkFor, notableFields } from "@/lib/request-list-format";
+import { chuanHoaTimKiem, draftLinkFor, notableFields, tableFieldCellValues } from "@/lib/request-list-format";
 import { resolveRequestTitle } from "@/lib/request-title";
 import { matchesRequestView, type RequestListView } from "@/lib/request-views";
 import type { ListLoadStatus, RequestInstance } from "@/lib/types";
@@ -133,7 +133,13 @@ export default function RequestHomePage() {
       if (filterGroup !== "all" && r.groupNameSnapshot !== filterGroup) return false;
       if (q) {
         const haystack = chuanHoaTimKiem(
-          [r.code ?? "", resolveRequestTitle(r), ...notableFields(r).map((x) => x.value), r.submittedBy.name].join(" | "),
+          [
+            r.code ?? "",
+            resolveRequestTitle(r),
+            ...notableFields(r).map((x) => x.value),
+            r.submittedBy.name,
+            ...tableFieldCellValues(r),
+          ].join(" | "),
         );
         if (!haystack.includes(q)) return false;
       }

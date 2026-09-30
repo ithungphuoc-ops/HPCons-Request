@@ -6,7 +6,7 @@ import Avatar from "@/components/request/Avatar";
 import ApproverCluster from "@/components/request/ApproverCluster";
 import RequestStatusBadge from "@/components/request/RequestStatusBadge";
 import HighlightMatch from "@/components/shared/HighlightMatch";
-import { draftLinkFor, notableFieldParts, submitterInitial } from "@/lib/request-list-format";
+import { draftLinkFor, matchedTableCell, notableFieldParts, submitterInitial } from "@/lib/request-list-format";
 import { resolveRequestTitle } from "@/lib/request-title";
 import { isRequestOverdue } from "@/lib/request-views";
 import type { RequestInstance } from "@/lib/types";
@@ -65,7 +65,14 @@ export default function RequestHomeRow({
 }) {
   const isDraft = r.status === "draft";
   const dot = processingDot(r, now);
-  const summaryParts = notableFieldParts(r);
+  // Khớp tìm kiếm trong bảng "Chi tiết" (Sếp yêu cầu 30/09/2026) — CHỈ thêm
+  // trích đoạn này khi có từ khoá đang gõ VÀ chưa khớp field nổi bật nào ở
+  // trên (tránh lặp lại thông tin nếu cùng đề xuất khớp cả 2 nơi).
+  const tableMatch = matchedTableCell(r, searchText);
+  const summaryParts =
+    tableMatch && !notableFieldParts(r).some((p) => p.toLowerCase().includes(tableMatch.toLowerCase()))
+      ? [...notableFieldParts(r), `Chi tiết: ${tableMatch}`]
+      : notableFieldParts(r);
   const [menuOpen, setMenuOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);

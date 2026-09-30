@@ -1,5 +1,6 @@
 import type { ProposalField, RequestInstance } from "@/lib/types";
 import { TITLE_FIELD_CODES } from "@/lib/request-title";
+import { deserializeTableRows } from "@/lib/table-field";
 
 /**
  * Tách ra từ app/request/list/page.tsx (14/09/2026, change
@@ -63,6 +64,30 @@ export function notableFields(r: RequestInstance): { name: string; value: string
 
 export function notableFieldParts(r: RequestInstance): string[] {
   return notableFields(r).map((x) => `${x.name}: ${x.value}`);
+}
+
+/** Mọi Ô (cell) không rỗng trong các field kiểu bảng ("table"/"base_table")
+ * của 1 đề xuất — dùng để mở rộng phạm vi tìm kiếm Trang chủ/Danh sách đề
+ * xuất vào tận nội dung bảng "Chi tiết" (Sếp yêu cầu 30/09/2026, theo mẫu
+ * Base.vn: gõ "sơn" phải ra được đề xuất có dòng vật tư "Sơn ..." dù tên đề
+ * xuất không có chữ đó). KHÔNG phân biệt cột — người dùng không cần nhớ vật
+ * tư nằm ở cột nào trong bảng mới tìm ra được. */
+export function tableFieldCellValues(r: RequestInstance): string[] {
+  return r.fieldsSnapshot
+    .filter((f) => f.dataType === "table" || f.dataType === "base_table")
+    .flatMap((f) => deserializeTableRows(r.values[f.id]).flat())
+    .filter((cell) => cell.trim());
+}
+
+/** Ô bảng ĐẦU TIÊN khớp từ khoá tìm kiếm (không phân biệt dấu) — dùng để
+ * hiện 1 dòng trích đoạn cho người dùng biết khớp ở đâu trong bảng "Chi
+ * tiết", giống cách Base.vn tô sáng đoạn khớp. `null` nếu không có từ khoá
+ * hoặc không khớp ô bảng nào (đã khớp ở field khác thì không cần trích đoạn
+ * này nữa). */
+export function matchedTableCell(r: RequestInstance, query: string): string | null {
+  const q = chuanHoaTimKiem(query);
+  if (!q) return null;
+  return tableFieldCellValues(r).find((cell) => chuanHoaTimKiem(cell).includes(q)) ?? null;
 }
 
 export function draftLinkFor(r: RequestInstance): string {

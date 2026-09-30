@@ -18,9 +18,11 @@ import { exportRequestsToExcel } from "@/lib/request-export-excel";
 import {
   chuanHoaTimKiem,
   draftLinkFor,
+  matchedTableCell,
   notableFields,
   notableFieldParts,
   submitterInitial,
+  tableFieldCellValues,
 } from "@/lib/request-list-format";
 import { DEFAULT_GROUP_PERMISSION_RULES } from "@/lib/types";
 import {
@@ -151,6 +153,7 @@ function RequestListPageInner() {
             resolveRequestTitle(r),
             ...notableFields(r).map((x) => x.value),
             r.submittedBy.name,
+            ...tableFieldCellValues(r),
           ].join(" | "),
         );
         if (!haystack.includes(q)) return false;
@@ -395,6 +398,14 @@ function RequestListPageInner() {
                     )}
                     {filteredRequests.map((r) => {
                       const isDraft = r.status === "draft";
+                      // Khớp tìm kiếm trong bảng "Chi tiết" (Sếp yêu cầu
+                      // 30/09/2026) — chỉ thêm trích đoạn khi chưa khớp field
+                      // nổi bật nào (tránh lặp thông tin).
+                      const tableMatch = matchedTableCell(r, searchText);
+                      const infoParts =
+                        tableMatch && !notableFieldParts(r).some((p) => p.toLowerCase().includes(tableMatch.toLowerCase()))
+                          ? [...notableFieldParts(r), `Chi tiết: ${tableMatch}`]
+                          : notableFieldParts(r);
                       return (
                         <tr
                           key={r.id}
@@ -440,11 +451,11 @@ function RequestListPageInner() {
                             </span>
                           </td>
                           <td className="px-4 py-2.5">
-                            <span className="block truncate text-gray-500" title={isDraft ? undefined : notableFieldParts(r).join(" · ")}>
+                            <span className="block truncate text-gray-500" title={isDraft ? undefined : infoParts.join(" · ")}>
                               {isDraft ? (
                                 `Cập nhật ${new Date(r.updatedAt ?? r.submittedAt).toLocaleString("vi-VN")}`
-                              ) : notableFieldParts(r).length > 0 ? (
-                                <HighlightMatch text={notableFieldParts(r).join(" · ")} query={searchText} />
+                              ) : infoParts.length > 0 ? (
+                                <HighlightMatch text={infoParts.join(" · ")} query={searchText} />
                               ) : (
                                 "—"
                               )}
