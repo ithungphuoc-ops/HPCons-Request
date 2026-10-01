@@ -51,6 +51,41 @@ export async function loadRequest(id: string): Promise<RequestInstance | null> {
 }
 
 /**
+ * Path R2 của ảnh "tiêu đề công văn" (logo + tên công ty) thuộc ĐÚNG công ty
+ * (category) mà nhóm đề xuất này thuộc về — dùng khi in đề xuất
+ * (RequestDetailView.tsx). `RequestInstance` không lưu category trực tiếp,
+ * phải tra qua group (`groups/{groupId}.category` là TÊN category, không
+ * phải id — 1 app Request này đang dùng CHUNG cho nhiều công ty, vd
+ * "02 - HPCons", "03 - EQUI", mỗi công ty 1 ảnh riêng, xem
+ * CategoryGroup/ProposalGroup ở lib/types.ts). Trả PATH chứ không trả URL ký
+ * sẵn: link ký sẵn có hạn, trang để mở lâu rồi mới in sẽ vỡ ảnh — nên trình
+ * duyệt luôn tải qua app/api/requests/[id]/letterhead/image, mỗi lần tải
+ * được ký link mới. null nếu không xác định được nhóm/category hoặc công ty
+ * đó chưa cài ảnh. Nuốt lỗi (không throw) vì đây chỉ là trang trí bản in —
+ * lỗi ở đây không được làm hỏng việc xem đề xuất. Sếp chốt 01/10/2026.
+ */
+export async function resolveCategoryLetterheadPath(groupId: string | null): Promise<string | null> {
+  if (!groupId) return null;
+  try {
+    const groupSnap = await adminDb.collection("groups").doc(groupId).get();
+    if (!groupSnap.exists) return null;
+    const categoryName = (groupSnap.data() as { category?: string }).category;
+    if (!categoryName) return null;
+
+    const categorySnap = await adminDb
+      .collection("categories")
+      .where("name", "==", categoryName)
+      .limit(1)
+      .get();
+    if (categorySnap.empty) return null;
+    const path = (categorySnap.docs[0].data() as { letterheadImagePath?: string }).letterheadImagePath;
+    return path || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Nháp chỉ chủ đề xuất xem/sửa được (§ Requirement "Lưu nháp"). Đề xuất đã
  * gửi thì người tạo, người duyệt, người theo dõi hoặc owner/app_admin xem
  * được — không rò rỉ nội dung cho người không liên quan. Dùng chung cho cả

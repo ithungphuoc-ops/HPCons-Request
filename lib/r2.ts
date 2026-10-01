@@ -86,6 +86,23 @@ export async function headObjectSize(path: string): Promise<number | null> {
   }
 }
 
+/** Như `headObjectSize` nhưng trả kèm Content-Type đã lưu — `null` nếu
+ * object không tồn tại. Dùng khi cần kiểm đúng LOẠI file thật trên R2 (vd
+ * ảnh logo công ty, app/api/categories/[id]/letterhead). */
+export async function headObjectMeta(
+  path: string,
+): Promise<{ size: number; contentType: string | null } | null> {
+  try {
+    const res = await getR2Client().send(
+      new HeadObjectCommand({ Bucket: getBucketName(), Key: path }),
+    );
+    if (typeof res.ContentLength !== "number") return null;
+    return { size: res.ContentLength, contentType: res.ContentType ?? null };
+  } catch {
+    return null;
+  }
+}
+
 /** Ghi file trực tiếp từ server (route nhận multipart/form-data upload thẳng). */
 export async function putObject(path: string, body: Buffer, contentType: string): Promise<void> {
   await getR2Client().send(

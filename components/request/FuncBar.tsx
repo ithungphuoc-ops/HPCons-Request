@@ -74,7 +74,7 @@ export default function FuncBar() {
       )}
       <nav
         aria-label="Thanh chức năng Base Request"
-        className={`z-40 h-full w-[200px] shrink-0 flex-col overflow-y-auto border-r border-[var(--color-funcbar-border)] bg-[var(--color-funcbar-bg)] py-3 lg:static lg:flex ${
+        className={`print-hide z-40 h-full w-[200px] shrink-0 flex-col overflow-y-auto border-r border-[var(--color-funcbar-border)] bg-[var(--color-funcbar-bg)] py-3 lg:static lg:flex ${
           mobileNavOpen ? "fixed inset-y-0 left-20 flex" : "hidden"
         }`}
       >

@@ -222,7 +222,9 @@ function RequestListPageInner() {
           selectedRequest
             ? // Đang mở box nội dung: danh sách thu về cột trái (ẩn hẳn trên
               // màn hình nhỏ để box nội dung đủ chỗ đọc — bấm "Đóng" quay lại).
-              "hidden w-[320px] border-r border-[var(--color-border)] md:flex"
+              // `print-hide`: khi in đề xuất đang mở thì bỏ cột danh sách,
+              // không thì in khổ ngang (≥ md) sẽ in kèm cột này.
+              "print-hide hidden w-[320px] border-r border-[var(--color-border)] md:flex"
             : "flex w-full"
         }`}
       >
@@ -589,7 +591,7 @@ function RequestListPageInner() {
           <button
             type="button"
             onClick={closeDetail}
-            className="mb-3 flex items-center gap-1 text-[14px] font-medium text-gray-500 hover:text-gray-800"
+            className="print-hide mb-3 flex items-center gap-1 text-[14px] font-medium text-gray-500 hover:text-gray-800"
           >
             <X size={14} /> Đóng
           </button>

@@ -11,12 +11,12 @@ export default function RequestLayout({
 }) {
   return (
     <RequestProvider>
-      <div className="flex h-screen w-screen overflow-hidden bg-[var(--color-page-bg)]">
+      <div className="request-app-shell flex h-screen w-screen overflow-hidden bg-[var(--color-page-bg)]">
         <AppBar />
         <Suspense fallback={null}>
           <FuncBar />
         </Suspense>
-        <main className="h-full min-w-0 flex-1 overflow-y-auto">{children}</main>
+        <main className="request-app-main h-full min-w-0 flex-1 overflow-y-auto">{children}</main>
         <RequestModalHost />
       </div>
     </RequestProvider>

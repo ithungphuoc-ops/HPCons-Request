@@ -103,3 +103,40 @@ body {
 .animate-modal-pop {
   animation: modal-pop-in 150ms ease-out;
 }
+
+/* In đề xuất ("In đề xuất"/"In đề xuất và thảo luận", window.print() thuần —
+   khác "In theo mẫu" sinh file .docx thật, xem RequestDetailView.tsx). Để
+   GLOBAL (không đặt trong style riêng của 1 component) vì `.print-hide` áp
+   cho cả AppBar/FuncBar — những component này render qua layout.tsx dùng
+   chung cho MỌI trang /request, không riêng trang chi tiết đề xuất.
+   `.request-app-shell`/`.request-app-main` (app/request/layout.tsx): khung
+   gốc đang cố định chiều cao + tự cuộn (`h-screen overflow-hidden`,
+   `overflow-y-auto`) để làm layout kiểu ứng dụng — nhưng khi in, trình
+   duyệt chỉ in đúng phần đang NẰM TRONG khung nhìn đã cuộn tới, cắt mất phần
+   còn lại của trang dài (bảng "Chi tiết" nhiều dòng, "Tài liệu đính kèm",
+   "Điều chỉnh đề nghị sau duyệt", "Thảo luận"...). Mở khung ra `visible`/
+   `auto` khi in để toàn bộ nội dung hiện đủ (Sếp phản hồi 01/10/2026). */
+/* Ngược lại `.print-hide`: ẩn khi xem bình thường, CHỈ hiện khi in — dùng
+   cho logo + tên công ty ở đầu bản in đề xuất (RequestDetailView.tsx). */
+.print-only {
+  display: none;
+}
+
+@media print {
+  /* 2 host của widget ngoài nạp từ account.hpcore.vn (app/layout.tsx):
+     bong bóng "Góp ý" và "Hỏi AI" — nằm ngoài cây React nên không gắn
+     `.print-hide` được, phải ẩn theo id host do chính 2 script đó tạo. */
+  .print-hide,
+  #hpcore-feedback-widget-host,
+  #hpcore-ai-guide-widget-host {
+    display: none !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+  .request-app-shell,
+  .request-app-main {
+    height: auto !important;
+    overflow: visible !important;
+  }
+}

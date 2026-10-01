@@ -37,12 +37,19 @@ export async function GET() {
     );
 
     const categoryGroups: CategoryGroup[] = categoriesSnap.docs.map((doc) => {
-      const data = doc.data() as { code: string; name: string };
+      const data = doc.data() as {
+        code: string;
+        name: string;
+        letterheadImagePath?: string;
+        letterheadImageName?: string;
+      };
       return {
         id: doc.id,
         code: data.code,
         name: data.name,
         groups: groups.filter((g) => g.category === data.name),
+        letterheadImagePath: data.letterheadImagePath,
+        letterheadImageName: data.letterheadImageName,
       };
     });
 

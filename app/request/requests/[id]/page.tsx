@@ -39,7 +39,7 @@ export default function RequestDetailPage() {
       <button
         type="button"
         onClick={() => router.back()}
-        className="mb-3 text-[12px] text-gray-500 hover:underline"
+        className="print-hide mb-3 text-[12px] text-gray-500 hover:underline"
       >
         ← Quay lại
       </button>

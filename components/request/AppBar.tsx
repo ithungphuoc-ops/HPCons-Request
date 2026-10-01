@@ -38,7 +38,7 @@ export default function AppBar() {
   return (
     <nav
       aria-label="Thanh ứng dụng"
-      className="flex h-full w-20 shrink-0 flex-col items-center bg-[var(--color-appbar-bg)] py-3"
+      className="print-hide flex h-full w-20 shrink-0 flex-col items-center bg-[var(--color-appbar-bg)] py-3"
     >
       <button
         type="button"

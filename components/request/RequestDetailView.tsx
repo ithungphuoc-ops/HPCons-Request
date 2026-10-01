@@ -214,6 +214,23 @@ export default function RequestDetailView({
   );
   const [bookmarking, setBookmarking] = useState(false);
   const [printHideDiscussion, setPrintHideDiscussion] = useState(false);
+  // Ảnh logo + tên công ty cho bản in — xem app/api/requests/[id]/letterhead.
+  // Lỗi mạng/chưa cài ảnh đều chỉ để null (không báo lỗi): đây là phần trang
+  // trí bản in, không được làm hỏng việc xem đề xuất.
+  const [letterheadUrl, setLetterheadUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setLetterheadUrl(null);
+    fetch(`/api/requests/${request.id}/letterhead`)
+      .then((res) => (res.ok ? (res.json() as Promise<{ url: string | null }>) : { url: null }))
+      .then((data) => {
+        if (!cancelled) setLetterheadUrl(data.url ?? null);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [request.id]);
   const [attachments, setAttachments] = useState<RequestAttachment[]>(request.attachments ?? []);
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const [previewingAttachment, setPreviewingAttachment] = useState<RequestAttachment | null>(null);
@@ -567,6 +584,21 @@ export default function RequestDetailView({
     // đọc được nội dung phiếu, và khung còn tràn ngang.
     <div className="flex flex-col gap-6 xl:flex-row">
       <div className="min-w-0 flex-[3]">
+        {/* Logo + tên công ty RIÊNG theo công ty của nhóm đề xuất (02-HPCons,
+            03-EQUI...) — CHỈ hiện khi in (ẩn khi xem bình thường), xem
+            `.print-only` ở app/globals.css. Công ty chưa cài ảnh thì không
+            có gì, bản in vẫn bình thường. Sếp chốt 01/10/2026. */}
+        {letterheadUrl && (
+          // eslint-disable-next-line @next/next/no-img-element -- route app chuyển hướng sang link R2 ký mới, next/image không tối ưu được
+          <img
+            src={letterheadUrl}
+            alt="Logo và tên công ty"
+            className="print-only mb-4 max-h-[110px] w-auto max-w-full"
+            // Ảnh lỗi (mất mạng, file R2 bị xoá...) thì bỏ hẳn thẻ ảnh — bản in
+            // không có logo còn hơn in ra biểu tượng ảnh vỡ.
+            onError={() => setLetterheadUrl(null)}
+          />
+        )}
         <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-[22px] font-bold text-gray-900">{resolveRequestTitle(request)}</h1>
@@ -1331,14 +1363,10 @@ export default function RequestDetailView({
       {/* "In đề xuất"/"In đề xuất và thảo luận" (menu Thêm) — window.print()
           thuần, khác hẳn "In theo mẫu" (sinh file .docx thật). `.print-hide`
           áp cho sidebar/nút bấm; card Thảo luận thêm class này CÓ ĐIỀU KIỆN
-          qua `printHideDiscussion` khi in KHÔNG kèm thảo luận. */}
-      <style jsx global>{`
-        @media print {
-          .print-hide {
-            display: none !important;
-          }
-        }
-      `}</style>
+          qua `printHideDiscussion` khi in KHÔNG kèm thảo luận. Rule CSS thật
+          của `.print-hide` (+ mở khung cuộn khi in) đã chuyển sang
+          app/globals.css — đặt GLOBAL vì áp dụng cả cho AppBar/FuncBar render
+          qua layout.tsx dùng chung mọi trang /request, không riêng trang này. */}
     </div>
   );
 }

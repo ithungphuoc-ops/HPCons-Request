@@ -635,6 +635,14 @@ export interface CategoryGroup {
   code: string;
   name: string;
   groups: ProposalGroup[];
+  /** Ảnh "tiêu đề công văn" (logo + tên công ty, đã thiết kế sẵn thành 1 ảnh
+   * duy nhất) hiện ở đầu bản in "In đề xuất"/"In đề xuất và thảo luận" —
+   * RIÊNG cho từng công ty (category), vì 1 app này đang dùng chung cho
+   * NHIỀU công ty (vd "02 - HPCons", "03 - EQUI") không cùng 1 logo. Admin
+   * tự tải/đổi ở trang "Tất cả nhóm đề xuất", xem
+   * app/request/groups/page.tsx — Sếp chốt 01/10/2026. */
+  letterheadImagePath?: string;
+  letterheadImageName?: string;
 }
 
 /**
