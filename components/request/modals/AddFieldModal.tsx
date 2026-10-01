@@ -646,7 +646,14 @@ export default function AddFieldModal() {
                     placeholder={`Tên cột ${index + 1}`}
                   />
                   <select
-                    className={`${selectClass} w-[130px] shrink-0`}
+                    // `!w-[130px]` (không phải `w-[130px]` suông) — Sếp phát
+                    // hiện 01/10/2026 (annotate "cải tiến tên cột"): lỗi CÓ
+                    // SẴN từ trước (bản cũ `w-[170px]`) bị chính `w-full` có
+                    // sẵn trong `selectClass` đè mất do thứ tự CSS Tailwind,
+                    // khiến select giãn hết cỡ (≈ rộng bằng cả hàng) và ép ô
+                    // tên cột bên cạnh (flex-1, có flex-shrink) co lại gần
+                    // như biến mất — `!` ép đúng độ rộng bất kể thứ tự cascade.
+                    className={`${selectClass} !w-[130px] shrink-0`}
                     value={tableColumnTypes[index] ?? "text"}
                     aria-label={`Kiểu dữ liệu cột ${index + 1}`}
                     onChange={(e) =>
