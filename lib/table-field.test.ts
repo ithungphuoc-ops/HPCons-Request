@@ -138,18 +138,23 @@ describe("filterNumericInput", () => {
     expect(filterNumericInput("abc 123", "text")).toBe("abc 123");
   });
 
-  it("cột Số nguyên: bỏ hết chữ cái lẫn dấu chấm", () => {
+  it("cột số: bỏ hết chữ cái", () => {
     expect(filterNumericInput("20abc000", "int")).toBe("20000");
-    expect(filterNumericInput("1.5", "int")).toBe("15");
-  });
-
-  it("cột Tiền tệ/Số thập phân: bỏ chữ cái, giữ ĐÚNG 1 dấu chấm đầu tiên", () => {
     expect(filterNumericInput("20abc000", "money")).toBe("20000");
-    expect(filterNumericInput("12.34.56", "decimal")).toBe("12.3456");
   });
 
   it("không cho dấu trừ (số âm)", () => {
     expect(filterNumericInput("-100", "money")).toBe("100");
+  });
+
+  // CodeRabbit PR #62: lọc bỏ dấu phẩy ngay lúc gõ sẽ biến "2,5" (thập phân
+  // kiểu Việt) thành "25" — phải GIỮ LẠI dấu phẩy, để parseCellToRaw lúc rời
+  // ô tự phân biệt đúng nghĩa (ngăn nghìn hay thập phân).
+  it("giữ lại dấu phẩy — không tự diễn giải, nhường cho parseCellToRaw lúc rời ô", () => {
+    expect(filterNumericInput("2,5", "decimal")).toBe("2,5");
+    expect(parseCellToRaw(filterNumericInput("2,5", "decimal"), "decimal")).toBe("2.5");
+    expect(filterNumericInput("1,234,567", "money")).toBe("1,234,567");
+    expect(parseCellToRaw(filterNumericInput("1,234,567", "money"), "money")).toBe("1234567");
   });
 });
 

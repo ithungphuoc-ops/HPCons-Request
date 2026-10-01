@@ -1401,13 +1401,23 @@ function FieldControl({
       const columnWidths = resolveTableColumnWidths(columns, field.tableColumnWidths);
       // Dòng TỔNG chỉ hiện khi có ít nhất 1 cột tiền tệ (Sếp chốt 13/09/2026).
       const hasMoneyColumn = columnTypes.includes("money");
+      // CodeRabbit PR #62: `table-layout: auto` (mặc định) + `w-full` khiến
+      // trình duyệt TỰ GIÃN cột cho lấp hết container (và nới rộng hơn nữa
+      // nếu nội dung dài), nên độ rộng Admin chọn chỉ còn là "tối thiểu",
+      // không phải độ rộng THẬT. `table-layout: fixed` + đặt đúng tổng độ
+      // rộng (cộng cả 2 cột phụ #/thao tác) mới ép đúng từng cột — bảng rộng
+      // hơn khung chứa thì cuộn ngang (div `overflow-x-auto` đã có sẵn).
+      const ROW_NUMBER_COL_PX = 36; // khớp class w-9 bên dưới
+      const TRAILING_COL_PX = 32; // khớp class w-8 bên dưới
+      const tableTotalWidth =
+        ROW_NUMBER_COL_PX + columnWidths.reduce((sum, w) => sum + w, 0) + TRAILING_COL_PX;
 
       return (
         <div>
           {importButtons}
           <div className="overflow-hidden rounded border border-[var(--color-border)]">
             <div className="overflow-x-auto">
-              <table className="w-full text-[14px]">
+              <table className="text-[14px]" style={{ width: tableTotalWidth, tableLayout: "fixed" }}>
                 <thead className="border-b border-[var(--color-border)] bg-gray-100/80">
                   <tr>
                     <th className="w-9 px-2 py-2 text-left text-[12px] font-semibold text-gray-500">#</th>

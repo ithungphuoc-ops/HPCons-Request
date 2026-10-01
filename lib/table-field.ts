@@ -161,17 +161,16 @@ export function resolveTableColumnWidths(columns: string[], widths?: number[]): 
  * Lọc ký tự KHÔNG hợp lệ NGAY lúc gõ (Sếp phát hiện 01/10/2026: ô số/tiền tệ
  * trước đây cho gõ chữ tự do, chỉ lặng lẽ dọn dẹp lúc rời ô — dữ liệu không
  * phải số có thể lọt xuống nếu người dùng không để ý, giống lỗi đề nghị
- * 000000072/073/074 đã gặp). Chỉ còn chữ số + tối đa 1 dấu chấm thập phân
- * (kiểu "int" không cho dấu chấm). KHÔNG cho dấu trừ — mọi field số trong
- * app Đề xuất luôn dương (Sếp chốt 01/10/2026).
+ * 000000072/073/074 đã gặp). CHỈ chặn chữ cái/ký tự lạ và dấu trừ (mọi field
+ * số trong app Đề xuất luôn dương, Sếp chốt 01/10/2026) — CỐ Ý giữ lại dấu
+ * phẩy, KHÔNG tự diễn giải ở bước này: dấu phẩy có 2 nghĩa tuỳ ngữ cảnh (ngăn
+ * nghìn "1,234,567" hay thập phân kiểu Việt "2,5"), việc phân biệt và chuẩn
+ * hoá cuối cùng vẫn do `parseCellToRaw` đảm nhận lúc rời ô như trước giờ —
+ * lọc bỏ dấu phẩy ngay ở bước gõ sẽ biến "2,5" thành "25" (CodeRabbit PR #62).
  */
 export function filterNumericInput(input: string, type: TableColumnType): string {
   if (!isNumericColumnType(type)) return input;
-  if (type === "int") return input.replace(/[^0-9]/g, "");
-  const cleaned = input.replace(/[^0-9.]/g, "");
-  const firstDot = cleaned.indexOf(".");
-  if (firstDot === -1) return cleaned;
-  return cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, "");
+  return input.replace(/[^0-9.,]/g, "");
 }
 
 /**
