@@ -115,7 +115,11 @@ body {
    duyệt chỉ in đúng phần đang NẰM TRONG khung nhìn đã cuộn tới, cắt mất phần
    còn lại của trang dài (bảng "Chi tiết" nhiều dòng, "Tài liệu đính kèm",
    "Điều chỉnh đề nghị sau duyệt", "Thảo luận"...). Mở khung ra `visible`/
-   `auto` khi in để toàn bộ nội dung hiện đủ (Sếp phản hồi 01/10/2026). */
+   `auto` khi in để toàn bộ nội dung hiện đủ (Sếp phản hồi 01/10/2026).
+   `.request-list-split`/`.request-list-detail` (app/request/list/page.tsx):
+   trang danh sách mở đề xuất trong box bên phải còn thêm 2 lớp khung cố định
+   chiều cao + tự cuộn riêng nằm GIỮA khung gốc và nội dung — bỏ sót thì bản
+   in hiện thanh cuộn xám và cắt mất cuối nội dung (Sếp in thử 01/10/2026). */
 /* Ngược lại `.print-hide`: ẩn khi xem bình thường, CHỈ hiện khi in — dùng
    cho logo + tên công ty ở đầu bản in đề xuất (RequestDetailView.tsx). */
 .print-only {
@@ -135,7 +139,9 @@ body {
     display: block !important;
   }
   .request-app-shell,
-  .request-app-main {
+  .request-app-main,
+  .request-list-split,
+  .request-list-detail {
     height: auto !important;
     overflow: visible !important;
   }

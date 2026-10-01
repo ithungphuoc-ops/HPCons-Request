@@ -216,7 +216,11 @@ function RequestListPageInner() {
   };
 
   return (
-    <div className="flex h-full">
+    // `request-list-split` + `request-list-detail` (box nội dung bên dưới):
+    // 2 khung cố định chiều cao + tự cuộn riêng của trang này — khi in phải mở
+    // ra như khung gốc ở layout.tsx, không thì bản in hiện thanh cuộn và cắt
+    // mất cuối nội dung (Sếp in thử 01/10/2026). Xem app/globals.css.
+    <div className="request-list-split flex h-full">
       <div
         className={`shrink-0 flex-col ${
           selectedRequest
@@ -587,7 +591,7 @@ function RequestListPageInner() {
       {/* px-8 = 64px lề hai bên — trên điện thoại 390px thì đó là 1/5 bề ngang
           còn lại, nên thu về px-4 và chỉ nới ra từ khổ md. */}
       {selectedRequest && (
-        <div className="min-w-0 flex-1 overflow-y-auto px-4 py-4 md:px-8 md:py-6">
+        <div className="request-list-detail min-w-0 flex-1 overflow-y-auto px-4 py-4 md:px-8 md:py-6">
           <button
             type="button"
             onClick={closeDetail}
