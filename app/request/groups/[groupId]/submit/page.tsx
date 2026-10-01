@@ -2002,7 +2002,11 @@ function ShortTextWithExternalCodeLookup({
       // Đẩy bản ghi mới vào state cục bộ NGAY (không chờ lượt tải lại) để chọn
       // được luôn và để field "tự động điền" (nếu có) khớp ngay lập tức.
       setRecords((prev) => [...prev, data.record!]);
-      onChange(data.record.fields[matchField] ?? ten);
+      // `||` (không phải `??`) — `fields.ma` CỐ Ý luôn rỗng ở modal này (không
+      // thu thập "Mã NCC"), nếu field đang cấu hình khớp theo "ma" thì chuỗi
+      // rỗng (không phải nullish) sẽ không fallback qua `??`, xoá trắng ô
+      // nhập thay vì chọn bản ghi vừa thêm (CodeRabbit PR #59).
+      onChange(data.record.fields[matchField] || ten);
       setAddOpen(false);
     } catch (err) {
       setAddError(err instanceof Error ? err.message : "Không thêm được nhà thầu phụ — thử lại sau.");

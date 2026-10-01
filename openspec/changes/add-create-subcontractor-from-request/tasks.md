@@ -11,20 +11,20 @@
 
 ## 3. API route mới
 
-- [ ] 3.1 Tạo `app/api/groups/[id]/congno-subcontractors/route.ts` (POST): `requireSession()`, đọc field theo `fieldId`, xác nhận `resolveExternalCodeLookup(field)?.sourceId === "congno_subcontractors"`, kiểm `isWithinUsedForScope`.
-- [ ] 3.2 Validate `nhom` chỉ nhận literal `"THẦU PHỤ"|"TỔ ĐỘI"`; lấy `nguoiThem` từ `session.name` (không nhận từ body).
-- [ ] 3.3 Gọi `createSubcontractorInCongNo`, trả `{ id, record: { fields } }` đúng shape `ExternalCodeRecord` đã dùng ở route `external-code-suggestions`.
+- [x] 3.1 Tạo `app/api/groups/[id]/congno-subcontractors/route.ts` (POST): `requireSession()`, đọc field theo `fieldId`, xác nhận `resolveExternalCodeLookup(field)?.sourceId === "congno_subcontractors"`, kiểm `isWithinUsedForScope`.
+- [x] 3.2 Validate `nhom` chỉ nhận literal `"THẦU PHỤ"|"TỔ ĐỘI"` — sai định dạng bị TỪ CHỐI (400), không âm thầm ép về mặc định (CodeRabbit PR #59); lấy `nguoiThem` từ `session.name` (không nhận từ body).
+- [x] 3.3 Gọi `createSubcontractorInCongNo`, trả `{ id, record: { fields } }` đúng shape `ExternalCodeRecord` đã dùng ở route `external-code-suggestions`.
 
 ## 4. UI submit/page.tsx
 
-- [ ] 4.1 Thêm dòng "+ Thêm nhà thầu phụ mới" vào dropdown gợi ý của `ShortTextWithExternalCodeLookup`, CHỈ khi `sourceId === "congno_subcontractors"` và ô đang có nội dung gõ.
-- [ ] 4.2 Thêm modal (dùng `Modal` + `form-styles` có sẵn): Tên nhà cung cấp*, Tên viết tắt (không bắt buộc, gợi ý tự rút gọn qua `ntpVietTat` lúc đang gõ), MST hoặc CCCD* (ghi chú "điền đúng bằng số"), Nhóm (mặc định Thầu phụ), Địa chỉ (không bắt buộc). Ghi chú đầu modal theo đúng demo đã duyệt.
-- [ ] 4.3 Ghi thành công → đóng modal, chọn luôn bản ghi mới (`onChange`), đẩy vào state `records` cục bộ (không gọi lại API) để autofill chéo field hoạt động ngay.
-- [ ] 4.4 Ghi thất bại → hiện lỗi trong modal, giữ dữ liệu đã nhập, không đóng modal.
+- [x] 4.1 Thêm dòng "+ Thêm nhà thầu phụ mới" vào dropdown gợi ý của `ShortTextWithExternalCodeLookup`, CHỈ khi `sourceId === "congno_subcontractors"` và ô đang có nội dung gõ.
+- [x] 4.2 Thêm modal (dùng `Modal` + `form-styles` có sẵn): Tên nhà cung cấp*, Tên viết tắt (không bắt buộc, gợi ý tự rút gọn qua `ntpVietTat` lúc đang gõ), MST hoặc CCCD* (ghi chú "điền đúng bằng số"), Nhóm (mặc định Thầu phụ), Địa chỉ (không bắt buộc). Ghi chú đầu modal theo đúng demo đã duyệt.
+- [x] 4.3 Ghi thành công → đóng modal, chọn luôn bản ghi mới (`onChange`, dùng `||` không phải `??` để rỗng vẫn fallback đúng — CodeRabbit PR #59), đẩy vào state `records` cục bộ (không gọi lại API) để autofill chéo field hoạt động ngay.
+- [x] 4.4 Ghi thất bại → hiện lỗi trong modal, giữ dữ liệu đã nhập, không đóng modal.
 
 ## 5. Kiểm chứng
 
-- [ ] 5.1 `npx tsc --noEmit`, `npm run build`, `npx vitest run` sạch.
-- [ ] 5.2 Viết/cập nhật test cho `createSubcontractorInCongNo` (mock Firestore) — xác nhận không đụng `nguon` cũ, có `ghiChuNguon`, fallback `tenVietTat` đúng khi để trống.
+- [x] 5.1 `npx tsc --noEmit`, `npm run build`, `npx vitest run` sạch.
+- [x] 5.2 Viết/cập nhật test cho `createSubcontractorInCongNo` (mock Firestore) — xác nhận không đụng `nguon` cũ, có `ghiChuNguon`, fallback `tenVietTat` đúng khi để trống.
 - [ ] 5.3 Thử ghi 1 bản ghi TEST thật qua Preview deployment (Vercel, cùng biến môi trường Production) — xác nhận service account có quyền ghi thật (rủi ro IAM chưa xác nhận được bằng code, xem design.md). Xoá bản ghi test sau khi xác nhận (qua giao diện Công nợ).
 - [ ] 5.4 Kiểm chứng thật trên production sau deploy: thêm 1 nhà thầu phụ mới qua app Đề xuất bằng tài khoản thật, xác nhận chọn được ngay (không cần đợi 5 phút), mở Công nợ xác nhận bản ghi đúng field, không có badge/lọc nào bị ảnh hưởng.

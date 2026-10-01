@@ -61,8 +61,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const mst = typeof body.mst === "string" ? body.mst.trim() : "";
     const tenVietTat = typeof body.tenVietTat === "string" ? body.tenVietTat.trim() : "";
     const diaChi = typeof body.diaChi === "string" ? body.diaChi.trim() : "";
-    const nhomRaw = typeof body.nhom === "string" ? body.nhom : "";
-    const nhom = (NHOM_VALUES.has(nhomRaw) ? nhomRaw : "THẦU PHỤ") as "THẦU PHỤ" | "TỔ ĐỘI";
+    // CodeRabbit PR #59: `nhom` sai định dạng phải bị TỪ CHỐI (400), không
+    // được âm thầm ép về mặc định — client gọi thẳng API (bỏ qua UI) gửi giá
+    // trị lạ sẽ không biết là đã bị đổi ý.
+    const nhomRaw = body.nhom === undefined ? "THẦU PHỤ" : body.nhom;
+    if (typeof nhomRaw !== "string" || !NHOM_VALUES.has(nhomRaw)) {
+      return NextResponse.json({ error: "Nhóm không hợp lệ." }, { status: 400 });
+    }
+    const nhom = nhomRaw as "THẦU PHỤ" | "TỔ ĐỘI";
 
     if (!ten) {
       return NextResponse.json({ error: "Thiếu tên nhà cung cấp." }, { status: 400 });
