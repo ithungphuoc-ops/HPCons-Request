@@ -2109,7 +2109,7 @@ function ShortTextWithExternalCodeLookup({
             </p>
             <div>
               <label className="mb-1 block text-[14px] font-medium text-gray-700">
-                Tên nhà cung cấp<span className="text-[var(--color-danger-red)]">*</span>
+                Tên nhà cung cấp đầy đủ<span className="text-[var(--color-danger-red)]">*</span>
               </label>
               <input className={inputClass} value={addTen} onChange={(e) => setAddTen(e.target.value)} />
             </div>
