@@ -2007,6 +2007,13 @@ function ShortTextWithExternalCodeLookup({
       // rỗng (không phải nullish) sẽ không fallback qua `??`, xoá trắng ô
       // nhập thay vì chọn bản ghi vừa thêm (CodeRabbit PR #59).
       onChange(data.record.fields[matchField] || ten);
+      // Bấm nút "Thêm & chọn luôn" (nằm trong Modal, phần tử focusable khác)
+      // khiến trình duyệt chuyển focus ra khỏi ô nhập NGAY LÚC mousedown —
+      // trước khi handler này kịp chạy — nên `onBlur` của ô nhập đã lỡ chạy
+      // với `rows` CŨ (chưa có bản ghi vừa thêm) và tự set `mismatch = true`.
+      // Phát hiện qua kiểm thử thật trên production (01/10/2026) — phải tự
+      // đặt lại false ở đây, không có cách nào chặn thứ tự blur/click khác.
+      setMismatch(false);
       setAddOpen(false);
     } catch (err) {
       setAddError(err instanceof Error ? err.message : "Không thêm được nhà thầu phụ — thử lại sau.");
