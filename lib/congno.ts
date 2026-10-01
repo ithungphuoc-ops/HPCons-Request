@@ -1,16 +1,26 @@
 import "server-only";
 import { cert, getApps, initializeApp, type App } from "firebase-admin/app";
 import { getFirestore, type Firestore } from "firebase-admin/firestore";
-import { unstable_cache } from "next/cache";
+import { revalidateTag, unstable_cache } from "next/cache";
 import { shortenCustomerName } from "./customer-name";
+import { ntpVietTat } from "./ntp-viet-tat";
 
 /**
- * Đọc chéo app Công nợ (congno.hpcore.vn, project Firestore RIÊNG
- * "hpcons-congno") — xem openspec/changes/add-contract-code-lookup.
- * App Công nợ là 1 SPA thuần, không có server API nào; base-request-app đọc
- * THẲNG Firestore của họ bằng Admin SDK phía server, CHỈ ĐỌC (không có hàm
- * ghi nào trong file này) — dùng đúng mẫu đã có ở lib/hpcore.ts (đọc chéo
- * app tổng), chỉ khác project/biến môi trường.
+ * Đọc/ghi chéo app Công nợ (congno.hpcore.vn, project Firestore RIÊNG
+ * "hpcons-congno") — xem openspec/changes/add-contract-code-lookup. App Công
+ * nợ là 1 SPA thuần, không có server API nào đáng tin cậy để gọi (route
+ * POST /api/subcontractors của họ không tự validate gì, lại đòi 1 loại ID
+ * token riêng của project đó — xem Quyết định 4, change
+ * add-create-subcontractor-from-request); base-request-app đọc/ghi THẲNG
+ * Firestore của họ bằng Admin SDK phía server — dùng đúng mẫu đã có ở
+ * lib/hpcore.ts (đọc chéo app tổng), chỉ khác project/biến môi trường.
+ *
+ * Từ 01/10/2026 (Sếp chốt) file này có THÊM đúng 1 hàm GHI
+ * (`createSubcontractorInCongNo`, dưới cùng file) — lần đầu base-request-app
+ * ghi qua app khác, trước giờ chỉ đọc. Hàm ghi CHỈ tạo mới 1 document trong
+ * collection "subcontractors", KHÔNG đụng field `nguon` cũ (enum
+ * "goc"|"xetduyet", Công nợ dùng để hiện badge/lọc riêng) — xem comment tại
+ * hàm đó.
  *
  * 🔴 CHỈ đọc collection "contracts" và CHỈ forward `code`/`group`/`name`/`work`/
  * `customerName` ra ngoài file này (xem
@@ -47,7 +57,8 @@ function getCongNoApp(): App {
 
 const g = globalThis as unknown as { __congnoDb?: Firestore };
 
-/** Firestore của app Công nợ — CHỈ ĐỌC (không export hàm ghi nào). */
+/** Firestore của app Công nợ — chỉ 1 hàm GHI duy nhất được export từ file
+ * này (`createSubcontractorInCongNo`, cuối file), mọi chỗ khác chỉ đọc. */
 export function getCongNoDb(): Firestore {
   return (g.__congnoDb ??= getFirestore(getCongNoApp()));
 }
@@ -149,9 +160,79 @@ async function loadSubcontractorCodeSuggestionsUncached(): Promise<Subcontractor
 }
 
 /** Cache 5 phút — cùng lý do/thời hạn với `loadContractCodeSuggestions` (dùng
- * chung cho cả gợi ý lẫn validate, xem lib/external-code-sources.ts). */
+ * chung cho cả gợi ý lẫn validate, xem lib/external-code-sources.ts). Có
+ * `tags` (khác `loadContractCodeSuggestions`, chưa cần) để
+ * `createSubcontractorInCongNo` bên dưới làm mới NGAY sau khi ghi — không
+ * đợi hết 5 phút mới chọn được nhà thầu vừa thêm. */
 export const loadSubcontractorCodeSuggestions = unstable_cache(
   loadSubcontractorCodeSuggestionsUncached,
   ["subcontractor-code-suggestions"],
-  { revalidate: 300 },
+  { revalidate: 300, tags: ["subcontractor-code-suggestions"] },
 );
+
+export interface NewSubcontractorInput {
+  ten: string;
+  /** Để trống → tự tính bằng `ntpVietTat` (y hệt Công nợ tự làm lúc hiển thị
+   * nếu field này rỗng — xem lib/ntp-viet-tat.ts). */
+  tenVietTat?: string;
+  mst: string;
+  nhom: "THẦU PHỤ" | "TỔ ĐỘI";
+  diaChi?: string;
+  /** Tên người đã thêm (lấy từ phiên đăng nhập SSO, KHÔNG tin giá trị client
+   * gửi lên — route gọi hàm này phải tự lấy từ `requireSession().name`). */
+  nguoiThem: string;
+}
+
+/**
+ * GHI MỚI 1 nhà thầu phụ vào Công nợ — Sếp chốt 01/10/2026 (change
+ * add-create-subcontractor-from-request): dùng thẳng Admin SDK hiện có thay
+ * vì gọi route POST của Công nợ (route đó không tự validate gì, lại đòi 1
+ * loại ID token riêng của project Công nợ mà app Đề xuất chưa có cơ chế lấy
+ * — phức tạp hơn mà không an toàn hơn).
+ *
+ * KHÔNG đụng field `nguon` cũ (enum "goc"|"xetduyet", Công nợ dùng để tự hiện
+ * badge "Danh sách gốc"/"Từ xét duyệt" + lọc/thống kê riêng — xem
+ * HPCons-Congno/components/Subcontractors.tsx) — ghi `"goc"` y như Admin Công
+ * nợ tự thêm tay qua UI của họ, không tạo giá trị lạ nào có thể làm vỡ UI đó.
+ * Thay vào đó lưu thêm 1 field MỚI, RIÊNG — `ghiChuNguon` — là 1 ghi chú tự
+ * do, CHỈ để ai mở thẳng dữ liệu Firestore thấy được nguồn gốc bản ghi; Sếp
+ * xác nhận 01/10/2026 KHÔNG cần hiện field này ở đâu trong giao diện Công nợ.
+ *
+ * Validate tối thiểu (Công nợ hoàn toàn không validate gì ở phía họ — xem
+ * comment route.ts của họ — nên toàn bộ hàng rào phải nằm ở đây): `ten`/`mst`
+ * bắt buộc non-empty, đúng yêu cầu Sếp (nghiêm hơn chính Công nợ, nơi chỉ bắt
+ * buộc `ten`).
+ */
+export async function createSubcontractorInCongNo(
+  input: NewSubcontractorInput,
+): Promise<{ id: string; record: SubcontractorCodeSuggestion }> {
+  const ten = input.ten.trim();
+  const mst = input.mst.trim();
+  if (!ten) throw new Error("Thiếu tên nhà cung cấp.");
+  if (!mst) throw new Error("Thiếu MST hoặc CCCD.");
+  const tenVietTat = input.tenVietTat?.trim() || ntpVietTat(ten);
+  const diaChi = input.diaChi?.trim() || "";
+  const now = new Date().toISOString();
+  const nguoiThem = input.nguoiThem.trim();
+
+  const doc = await getCongNoDb()
+    .collection("subcontractors")
+    .add({
+      ten,
+      tenVietTat,
+      mst,
+      nhom: input.nhom,
+      diaChi,
+      nguon: "goc",
+      ghiChuNguon: nguoiThem ? `Thêm qua app Đề xuất — ${nguoiThem}` : "Thêm qua app Đề xuất",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+  revalidateTag("subcontractor-code-suggestions");
+
+  return {
+    id: doc.id,
+    record: { ma: "", mst, ten, tenVietTat, diaChi },
+  };
+}
