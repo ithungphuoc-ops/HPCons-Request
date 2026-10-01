@@ -148,11 +148,19 @@ async function loadSubcontractorCodeSuggestionsUncached(): Promise<Subcontractor
   return snap.docs
     .map((d) => {
       const data = d.data();
+      const ten = typeof data.ten === "string" ? data.ten.trim() : "";
+      const tenVietTatRaw = typeof data.tenVietTat === "string" ? data.tenVietTat.trim() : "";
       return {
         ma: typeof data.ma === "string" ? data.ma.trim() : "",
         mst: typeof data.mst === "string" ? data.mst.trim() : "",
-        ten: typeof data.ten === "string" ? data.ten.trim() : "",
-        tenVietTat: typeof data.tenVietTat === "string" ? data.tenVietTat.trim() : "",
+        ten,
+        // Sếp phát hiện 01/10/2026: nhà thầu phụ CŨ (thêm từ trước, phần lớn
+        // chưa ai nhập tay field này ở Công nợ) hiện RỖNG bên app Đề xuất,
+        // trong khi Công nợ tự hiển thị đủ vì HỌ tự bù `ntpVietTat()` ngay
+        // lúc hiển thị nếu field rỗng (xem `tenVanTatNTP` bên Công nợ). Bù
+        // Y HỆT ở đây — tại điểm ĐỌC, không chỉ lúc GHI (viết mới) — để nhất
+        // quán, không phân biệt nhà thầu cũ/mới.
+        tenVietTat: tenVietTatRaw || ntpVietTat(ten),
         diaChi: typeof data.diaChi === "string" ? data.diaChi.trim() : "",
       };
     })

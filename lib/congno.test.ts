@@ -115,6 +115,21 @@ describe("loadSubcontractorCodeSuggestions", () => {
     expect(onlyTen?.ma).toBe("");
     expect(onlyTen?.mst).toBe("");
   });
+
+  // Sếp phát hiện 01/10/2026: nhà thầu phụ CŨ chưa ai nhập tay "Tên viết tắt"
+  // hiện RỖNG bên app Đề xuất trong khi Công nợ tự hiển thị đủ (họ tự bù
+  // ntpVietTat lúc hiển thị) — phải bù Y HỆT ở đây lúc ĐỌC, không chỉ lúc GHI.
+  it("tenVietTat rỗng trong Firestore (nhà thầu CŨ) -> tự tính bằng ntpVietTat lúc đọc", async () => {
+    const result = await loadSubcontractorCodeSuggestions();
+    const noVietTat = result.find((s) => s.mst === "0317927805");
+    expect(noVietTat?.tenVietTat).toBe("MINH PHÚC");
+  });
+
+  it("tenVietTat đã có sẵn trong Firestore (nhà thầu đã nhập tay) -> giữ nguyên, không tính lại", async () => {
+    const result = await loadSubcontractorCodeSuggestions();
+    const hasVietTat = result.find((s) => s.mst === "4001094696");
+    expect(hasVietTat?.tenVietTat).toBe("AN AN HÒA");
+  });
 });
 
 describe("createSubcontractorInCongNo", () => {

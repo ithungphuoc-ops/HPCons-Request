@@ -1845,7 +1845,7 @@ function computeSecondary(sourceId: ExternalCodeSourceId, matchField: string, fi
  * Đồng CĐT, áp dụng chung cho mọi nguồn với nội dung curate riêng). */
 function computeMatchedNote(sourceId: ExternalCodeSourceId, matchField: string, fields: Record<string, string>): string | null {
   if (sourceId === "congno_contracts") return fields.work ? `Hạng mục: ${fields.work}` : null;
-  const labels: Record<string, string> = { ma: "Mã NCC", ten: "Tên nhà cung cấp", tenVietTat: "Tên viết tắt", mst: "MST/CCCD", diaChi: "Địa chỉ" };
+  const labels: Record<string, string> = { ma: "Mã NCC", ten: "Tên nhà cung cấp", tenVietTat: "Tên vắn tắt", mst: "MST/CCCD", diaChi: "Địa chỉ" };
   const parts = ["ten", "mst", "diaChi"]
     .filter((k) => k !== matchField && fields[k])
     .map((k) => `${labels[k]}: ${fields[k]}`);
@@ -1886,7 +1886,10 @@ function ShortTextWithExternalCodeLookup({
   const [addTen, setAddTen] = useState("");
   const [addTenVietTat, setAddTenVietTat] = useState("");
   const [addMst, setAddMst] = useState("");
-  const [addNhom, setAddNhom] = useState<"THẦU PHỤ" | "TỔ ĐỘI">("THẦU PHỤ");
+  // Sếp chốt 01/10/2026: Nhóm giờ BẮT BUỘC TỰ CHỌN (trước đây mặc định sẵn
+  // "THẦU PHỤ", không bao giờ rỗng nên "bắt buộc" không có ý nghĩa gì) — để
+  // trống ("") ban đầu, ép người dùng chọn tường minh 1 trong 2 giá trị.
+  const [addNhom, setAddNhom] = useState<"" | "THẦU PHỤ" | "TỔ ĐỘI">("");
   const [addDiaChi, setAddDiaChi] = useState("");
   const [addSaving, setAddSaving] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
@@ -1978,7 +1981,7 @@ function ShortTextWithExternalCodeLookup({
     setAddTen(trimmedQuery);
     setAddTenVietTat("");
     setAddMst("");
-    setAddNhom("THẦU PHỤ");
+    setAddNhom("");
     setAddDiaChi("");
     setAddError(null);
     setAddOpen(true);
@@ -1993,12 +1996,28 @@ function ShortTextWithExternalCodeLookup({
   const submitAdd = async () => {
     const ten = addTen.trim();
     const mst = addMst.trim();
+    const tenVietTat = addTenVietTat.trim();
+    const diaChi = addDiaChi.trim();
+    // Sếp chốt 01/10/2026: Tên vắn tắt, Nhóm, Địa chỉ giờ đều BẮT BUỘC (trước
+    // đây chỉ Tên nhà cung cấp + MST bắt buộc).
     if (!ten) {
       setAddError("Vui lòng nhập tên nhà cung cấp.");
       return;
     }
+    if (!tenVietTat) {
+      setAddError("Vui lòng nhập tên vắn tắt.");
+      return;
+    }
     if (!mst) {
       setAddError("Vui lòng nhập MST hoặc CCCD.");
+      return;
+    }
+    if (!addNhom) {
+      setAddError("Vui lòng chọn nhóm.");
+      return;
+    }
+    if (!diaChi) {
+      setAddError("Vui lòng nhập địa chỉ.");
       return;
     }
     setAddSaving(true);
@@ -2010,10 +2029,10 @@ function ShortTextWithExternalCodeLookup({
         body: JSON.stringify({
           fieldId,
           ten,
-          tenVietTat: addTenVietTat.trim(),
+          tenVietTat,
           mst,
           nhom: addNhom,
-          diaChi: addDiaChi.trim(),
+          diaChi,
         }),
       });
       const data = (await res.json()) as { error?: string; record?: ExternalCodeRecord };
@@ -2135,16 +2154,25 @@ function ShortTextWithExternalCodeLookup({
               <input className={inputClass} value={addTen} onChange={(e) => setAddTen(e.target.value)} />
             </div>
             <div>
-              <label className="mb-1 block text-[14px] font-medium text-gray-700">Tên viết tắt</label>
+              <label className="mb-1 block text-[14px] font-medium text-gray-700">
+                Tên vắn tắt<span className="text-[var(--color-danger-red)]">*</span>
+              </label>
               <input
                 className={inputClass}
                 value={addTenVietTat}
-                placeholder="Để trống sẽ tự gợi ý rút gọn"
+                placeholder="Nhập tên vắn tắt"
                 onChange={(e) => setAddTenVietTat(e.target.value)}
               />
               {!addTenVietTat.trim() && addTen.trim() && (
                 <p className="mt-1 text-[12px] text-gray-400">
-                  Gợi ý tự rút gọn: {ntpVietTat(addTen)}
+                  Gợi ý tự rút gọn: {ntpVietTat(addTen)}{" "}
+                  <button
+                    type="button"
+                    onClick={() => setAddTenVietTat(ntpVietTat(addTen))}
+                    className="font-medium text-[var(--color-action-blue)] hover:underline"
+                  >
+                    Dùng gợi ý này
+                  </button>
                 </p>
               )}
             </div>
@@ -2156,22 +2184,27 @@ function ShortTextWithExternalCodeLookup({
               <p className="mt-1 text-[12px] text-gray-400">Vui lòng điền đúng thông tin này bằng số.</p>
             </div>
             <div>
-              <label className="mb-1 block text-[14px] font-medium text-gray-700">Nhóm</label>
+              <label className="mb-1 block text-[14px] font-medium text-gray-700">
+                Nhóm<span className="text-[var(--color-danger-red)]">*</span>
+              </label>
               <select
                 className={selectClass}
                 value={addNhom}
-                onChange={(e) => setAddNhom(e.target.value as "THẦU PHỤ" | "TỔ ĐỘI")}
+                onChange={(e) => setAddNhom(e.target.value as "" | "THẦU PHỤ" | "TỔ ĐỘI")}
               >
+                <option value="">— Chọn nhóm —</option>
                 <option value="THẦU PHỤ">Thầu phụ</option>
                 <option value="TỔ ĐỘI">Tổ đội</option>
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-[14px] font-medium text-gray-700">Địa chỉ</label>
+              <label className="mb-1 block text-[14px] font-medium text-gray-700">
+                Địa chỉ<span className="text-[var(--color-danger-red)]">*</span>
+              </label>
               <input
                 className={inputClass}
                 value={addDiaChi}
-                placeholder="Không bắt buộc"
+                placeholder="Nhập địa chỉ"
                 onChange={(e) => setAddDiaChi(e.target.value)}
               />
             </div>
