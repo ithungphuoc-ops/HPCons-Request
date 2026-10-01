@@ -383,10 +383,14 @@ export default function AddFieldModal() {
     setPreviewError(null);
   };
 
-  // Bước 2→3: bấm 1 field cụ thể để khớp — sang bước xem trước, tự tải 1 bản
+  // Bước 2→3: bấm 1 field cụ thể để khớp — sang bước xem trước, tự tải bản
   // ghi mẫu THẬT của nguồn đó (Decision 6 design.md, change
   // add-external-code-lookup-picker) để Admin thấy field vừa chọn ứng với
-  // giá trị thật nào trước khi xác nhận.
+  // giá trị thật nào trước khi xác nhận. Ưu tiên chọn 1 bản ghi CÓ giá trị ở
+  // đúng field vừa chọn (Sếp phản hồi 01/10/2026: bản ghi đầu danh sách tình
+  // cờ trống "Tên viết tắt" khiến tưởng nhầm là lỗi) — không gọi `?sample=1`
+  // nữa (chỉ trả đúng 1 bản ghi đầu, không đủ để lọc), lấy nguyên danh sách
+  // (đã cache 5 phút phía server) rồi tự tìm ở client.
   const chooseLookupMatchField = async (fieldKey: string) => {
     if (!lookupSourceId || !group) return;
     setLookupMatchField(fieldKey);
@@ -395,12 +399,12 @@ export default function AddFieldModal() {
     setPreviewError(null);
     setPreviewLoading(true);
     try {
-      const res = await fetch(
-        `/api/groups/${group.id}/external-code-suggestions?sourceId=${lookupSourceId}&sample=1`,
-      );
+      const res = await fetch(`/api/groups/${group.id}/external-code-suggestions?sourceId=${lookupSourceId}`);
       if (!res.ok) throw new Error("request failed");
       const data = (await res.json()) as { records?: { fields: Record<string, string> }[] };
-      setPreviewSample(data.records?.[0]?.fields ?? null);
+      const records = data.records ?? [];
+      const sample = records.find((r) => r.fields[fieldKey]) ?? records[0];
+      setPreviewSample(sample?.fields ?? null);
     } catch {
       setPreviewError(
         "Không tải được dữ liệu mẫu để xem trước — vẫn có thể xác nhận, hàng rào thật vẫn kiểm tra ở máy chủ lúc gửi đề xuất.",
