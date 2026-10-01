@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Plus, X } from "lucide-react";
 import Modal from "@/components/shared/Modal";
 import {
@@ -154,6 +154,13 @@ export default function AddFieldModal() {
     const lookup = sourceField ? resolveExternalCodeLookup(sourceField) : null;
     return lookup ? EXTERNAL_CODE_SOURCE_FIELDS[lookup.sourceId] : [];
   }, [autofillSourceFieldId, group]);
+
+  // Admin có thể bấm lại "← Quay lại" rồi chọn field/nguồn KHÁC trong lúc
+  // request cũ chưa kịp trả lời — nếu không chặn, response CŨ trả về sau có
+  // thể đè preview của lựa chọn MỚI (CodeRabbit PR #58). `previewRequestRef`
+  // giữ "vé" của lượt gọi mới nhất; chỉ áp dụng kết quả nếu vé lúc trả lời
+  // vẫn còn là vé mới nhất lúc đó.
+  const previewRequestRef = useRef(0);
 
   // Xem trước mã trường SẼ được gán khi tạo mới (Sếp phản hồi 29/09/2026: gõ
   // "Tên trường" xong phải tắt-mở lại (chuyển sang chế độ sửa) mới thấy được
@@ -393,6 +400,7 @@ export default function AddFieldModal() {
   // (đã cache 5 phút phía server) rồi tự tìm ở client.
   const chooseLookupMatchField = async (fieldKey: string) => {
     if (!lookupSourceId || !group) return;
+    const requestId = ++previewRequestRef.current;
     setLookupMatchField(fieldKey);
     setLookupStep("preview");
     setPreviewSample(null);
@@ -402,15 +410,17 @@ export default function AddFieldModal() {
       const res = await fetch(`/api/groups/${group.id}/external-code-suggestions?sourceId=${lookupSourceId}`);
       if (!res.ok) throw new Error("request failed");
       const data = (await res.json()) as { records?: { fields: Record<string, string> }[] };
+      if (previewRequestRef.current !== requestId) return;
       const records = data.records ?? [];
       const sample = records.find((r) => r.fields[fieldKey]) ?? records[0];
       setPreviewSample(sample?.fields ?? null);
     } catch {
+      if (previewRequestRef.current !== requestId) return;
       setPreviewError(
         "Không tải được dữ liệu mẫu để xem trước — vẫn có thể xác nhận, hàng rào thật vẫn kiểm tra ở máy chủ lúc gửi đề xuất.",
       );
     } finally {
-      setPreviewLoading(false);
+      if (previewRequestRef.current === requestId) setPreviewLoading(false);
     }
   };
 
