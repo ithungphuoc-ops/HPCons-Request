@@ -44,6 +44,7 @@ import TagUserInput from "@/components/shared/TagUserInput";
 import Avatar from "@/components/request/Avatar";
 import { useAvatarsByUids } from "@/lib/useAvatarsByUids";
 import { resolveExternalCodeLookup } from "@/lib/external-code-source-labels";
+import { ntpVietTat } from "@/lib/ntp-viet-tat";
 import DatePicker from "@/components/ui/DatePicker";
 import Modal from "@/components/shared/Modal";
 import { useCurrentSession } from "@/lib/useCurrentSession";
@@ -1857,6 +1858,17 @@ function ShortTextWithExternalCodeLookup({
   const [loaded, setLoaded] = useState(false);
   const [mismatch, setMismatch] = useState(false);
   const [open, setOpen] = useState(false);
+  // "+ Thêm nhà thầu phụ mới" (Sếp chốt 01/10/2026, xem openspec/changes/
+  // add-create-subcontractor-from-request) — CHỈ cho nguồn subcontractors,
+  // KHÔNG áp dụng cho contracts (không có khái niệm "thêm hợp đồng mới").
+  const [addOpen, setAddOpen] = useState(false);
+  const [addTen, setAddTen] = useState("");
+  const [addTenVietTat, setAddTenVietTat] = useState("");
+  const [addMst, setAddMst] = useState("");
+  const [addNhom, setAddNhom] = useState<"THẦU PHỤ" | "TỔ ĐỘI">("THẦU PHỤ");
+  const [addDiaChi, setAddDiaChi] = useState("");
+  const [addSaving, setAddSaving] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -1938,6 +1950,71 @@ function ShortTextWithExternalCodeLookup({
     })
     .slice(0, 30);
 
+  const canAddNew = sourceId === "congno_subcontractors";
+  const trimmedQuery = value.trim();
+
+  const openAddModal = () => {
+    setAddTen(trimmedQuery);
+    setAddTenVietTat("");
+    setAddMst("");
+    setAddNhom("THẦU PHỤ");
+    setAddDiaChi("");
+    setAddError(null);
+    setAddOpen(true);
+    setOpen(false);
+  };
+
+  const closeAddModal = () => {
+    if (addSaving) return;
+    setAddOpen(false);
+  };
+
+  const submitAdd = async () => {
+    const ten = addTen.trim();
+    const mst = addMst.trim();
+    if (!ten) {
+      setAddError("Vui lòng nhập tên nhà cung cấp.");
+      return;
+    }
+    if (!mst) {
+      setAddError("Vui lòng nhập MST hoặc CCCD.");
+      return;
+    }
+    setAddSaving(true);
+    setAddError(null);
+    try {
+      const res = await fetch(`/api/groups/${groupId}/congno-subcontractors`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fieldId,
+          ten,
+          tenVietTat: addTenVietTat.trim(),
+          mst,
+          nhom: addNhom,
+          diaChi: addDiaChi.trim(),
+        }),
+      });
+      const data = (await res.json()) as { error?: string; record?: ExternalCodeRecord };
+      if (!res.ok || !data.record) {
+        throw new Error(data.error || "Không thêm được nhà thầu phụ — thử lại sau.");
+      }
+      // Đẩy bản ghi mới vào state cục bộ NGAY (không chờ lượt tải lại) để chọn
+      // được luôn và để field "tự động điền" (nếu có) khớp ngay lập tức.
+      setRecords((prev) => [...prev, data.record!]);
+      // `||` (không phải `??`) — `fields.ma` CỐ Ý luôn rỗng ở modal này (không
+      // thu thập "Mã NCC"), nếu field đang cấu hình khớp theo "ma" thì chuỗi
+      // rỗng (không phải nullish) sẽ không fallback qua `??`, xoá trắng ô
+      // nhập thay vì chọn bản ghi vừa thêm (CodeRabbit PR #59).
+      onChange(data.record.fields[matchField] || ten);
+      setAddOpen(false);
+    } catch (err) {
+      setAddError(err instanceof Error ? err.message : "Không thêm được nhà thầu phụ — thử lại sau.");
+    } finally {
+      setAddSaving(false);
+    }
+  };
+
   return (
     <div className="relative">
       <input
@@ -1961,7 +2038,7 @@ function ShortTextWithExternalCodeLookup({
           setMismatch(!rows.some((r) => r.code === v));
         }}
       />
-      {open && filtered.length > 0 && (
+      {open && (filtered.length > 0 || (canAddNew && trimmedQuery)) && (
         <ul className="absolute left-0 right-0 top-full z-20 mt-1 max-h-56 overflow-y-auto rounded-[3px] border border-gray-200 bg-white py-1 shadow-lg">
           {filtered.map((r) => (
             <li
@@ -1980,6 +2057,17 @@ function ShortTextWithExternalCodeLookup({
               <span className="text-[12px] text-gray-400">{r.displayText}</span>
             </li>
           ))}
+          {canAddNew && trimmedQuery && (
+            <li
+              onMouseDown={(e) => {
+                e.preventDefault();
+                openAddModal();
+              }}
+              className="flex cursor-pointer items-center gap-2 border-t border-gray-100 px-3 py-1.5 text-[14px] font-medium text-[var(--color-action-blue)] hover:bg-blue-50"
+            >
+              + Thêm nhà thầu phụ mới: &quot;{trimmedQuery}&quot;
+            </li>
+          )}
         </ul>
       )}
       {matchedRow?.matchedNote && (
@@ -1989,6 +2077,79 @@ function ShortTextWithExternalCodeLookup({
         <p className="mt-1 text-[12px] text-red-600">
           Chưa khớp mã nào trong hệ thống — chọn 1 dòng trong gợi ý.
         </p>
+      )}
+
+      {addOpen && (
+        <Modal
+          title="Thêm nhà thầu phụ mới"
+          width={520}
+          onClose={closeAddModal}
+          footer={
+            <>
+              <button type="button" onClick={closeAddModal} className={cancelButtonClass} disabled={addSaving}>
+                Hủy bỏ
+              </button>
+              <button type="button" onClick={submitAdd} className={confirmButtonClass} disabled={addSaving}>
+                {addSaving ? "Đang thêm…" : "Thêm & chọn luôn"}
+              </button>
+            </>
+          }
+        >
+          <div className="flex flex-col gap-4">
+            <p className="text-[13px] text-gray-500">
+              Nhà cung cấp chưa có trong danh sách? Điền đầy đủ thông tin bên dưới rồi bấm &quot;Thêm &amp; chọn
+              luôn&quot; — app sẽ tự động thêm vào Công nợ.
+            </p>
+            <div>
+              <label className="mb-1 block text-[14px] font-medium text-gray-700">
+                Tên nhà cung cấp<span className="text-[var(--color-danger-red)]">*</span>
+              </label>
+              <input className={inputClass} value={addTen} onChange={(e) => setAddTen(e.target.value)} />
+            </div>
+            <div>
+              <label className="mb-1 block text-[14px] font-medium text-gray-700">Tên viết tắt</label>
+              <input
+                className={inputClass}
+                value={addTenVietTat}
+                placeholder="Để trống sẽ tự gợi ý rút gọn"
+                onChange={(e) => setAddTenVietTat(e.target.value)}
+              />
+              {!addTenVietTat.trim() && addTen.trim() && (
+                <p className="mt-1 text-[12px] text-gray-400">
+                  Gợi ý tự rút gọn: {ntpVietTat(addTen)}
+                </p>
+              )}
+            </div>
+            <div>
+              <label className="mb-1 block text-[14px] font-medium text-gray-700">
+                MST hoặc CCCD<span className="text-[var(--color-danger-red)]">*</span>
+              </label>
+              <input className={inputClass} value={addMst} onChange={(e) => setAddMst(e.target.value)} />
+              <p className="mt-1 text-[12px] text-gray-400">Vui lòng điền đúng thông tin này bằng số.</p>
+            </div>
+            <div>
+              <label className="mb-1 block text-[14px] font-medium text-gray-700">Nhóm</label>
+              <select
+                className={selectClass}
+                value={addNhom}
+                onChange={(e) => setAddNhom(e.target.value as "THẦU PHỤ" | "TỔ ĐỘI")}
+              >
+                <option value="THẦU PHỤ">Thầu phụ</option>
+                <option value="TỔ ĐỘI">Tổ đội</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-[14px] font-medium text-gray-700">Địa chỉ</label>
+              <input
+                className={inputClass}
+                value={addDiaChi}
+                placeholder="Không bắt buộc"
+                onChange={(e) => setAddDiaChi(e.target.value)}
+              />
+            </div>
+            {addError && <p className="text-[12px] text-[var(--color-danger-red)]">{addError}</p>}
+          </div>
+        </Modal>
       )}
     </div>
   );

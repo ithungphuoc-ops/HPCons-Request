@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // "server-only" chỉ chặn import nhầm ở bundle client qua webpack — dưới
 // vitest (chạy thẳng Node) nó throw ngay, cùng lý do đã mock ở
@@ -7,9 +7,13 @@ vi.mock("server-only", () => ({}));
 
 // unstable_cache phụ thuộc runtime Next.js thật (request context) — không
 // chạy được dưới vitest thuần Node, mock pass-through (bỏ qua cache trong
-// test, không ảnh hưởng hành vi thật lúc build/deploy).
+// test, không ảnh hưởng hành vi thật lúc build/deploy). revalidateTag cũng
+// phụ thuộc runtime thật — mock thành spy để test xác nhận ĐƯỢC GỌI sau khi
+// ghi, không cần chạy cache thật.
+const revalidateTagMock = vi.fn();
 vi.mock("next/cache", () => ({
   unstable_cache: (fn: (...args: unknown[]) => unknown) => fn,
+  revalidateTag: revalidateTagMock,
 }));
 
 process.env.CONGNO_FIREBASE_SERVICE_ACCOUNT = JSON.stringify({ project_id: "test" });
@@ -45,6 +49,10 @@ const FAKE_DOCS: Record<string, Record<string, unknown>[]> = {
   ],
 };
 
+// Ghi lại mọi document được `.add()` trong test — dùng để assert
+// `createSubcontractorInCongNo` gửi đúng field, không đụng `nguon` cũ.
+const ADDED_DOCS: Record<string, unknown>[] = [];
+
 vi.mock("firebase-admin/app", () => ({
   cert: (x: unknown) => x,
   getApps: () => [],
@@ -56,11 +64,17 @@ vi.mock("firebase-admin/firestore", () => ({
       get: async () => ({
         docs: (FAKE_DOCS[name] ?? []).map((data, i) => ({ id: `${name}-${i}`, data: () => data })),
       }),
+      add: async (data: Record<string, unknown>) => {
+        ADDED_DOCS.push(data);
+        return { id: `${name}-new-${ADDED_DOCS.length}` };
+      },
     }),
   }),
 }));
 
-const { loadContractCodeSuggestions, loadSubcontractorCodeSuggestions } = await import("./congno");
+const { loadContractCodeSuggestions, loadSubcontractorCodeSuggestions, createSubcontractorInCongNo } = await import(
+  "./congno"
+);
 
 describe("loadContractCodeSuggestions", () => {
   it("chỉ forward đúng code/project/work/customerName(Short) — không có totalAfterTax", async () => {
@@ -100,5 +114,76 @@ describe("loadSubcontractorCodeSuggestions", () => {
     expect(onlyTen).toBeDefined();
     expect(onlyTen?.ma).toBe("");
     expect(onlyTen?.mst).toBe("");
+  });
+});
+
+describe("createSubcontractorInCongNo", () => {
+  beforeEach(() => {
+    ADDED_DOCS.length = 0;
+    revalidateTagMock.mockClear();
+  });
+
+  it("ghi đúng field, giữ nguyên nguon='goc' (không đụng ý nghĩa cũ), có ghiChuNguon", async () => {
+    const { id } = await createSubcontractorInCongNo({
+      ten: "Công Ty TNHH Thử Nghiệm",
+      mst: "0123456789",
+      nhom: "THẦU PHỤ",
+      diaChi: "Đà Nẵng",
+      nguoiThem: "Nguyễn Tấn Hậu",
+    });
+    expect(id).toBeTruthy();
+    expect(ADDED_DOCS).toHaveLength(1);
+    const doc = ADDED_DOCS[0];
+    expect(doc.ten).toBe("Công Ty TNHH Thử Nghiệm");
+    expect(doc.mst).toBe("0123456789");
+    expect(doc.nhom).toBe("THẦU PHỤ");
+    expect(doc.diaChi).toBe("Đà Nẵng");
+    expect(doc.nguon).toBe("goc");
+    expect(doc.ghiChuNguon).toContain("Nguyễn Tấn Hậu");
+  });
+
+  it("để trống tenVietTat thì tự tính bằng ntpVietTat", async () => {
+    await createSubcontractorInCongNo({
+      ten: "CÔNG TY CỔ PHẦN ĐẦU TƯ PHÁT TRIỂN MÔI TRƯỜNG ĐẠI VIỆT",
+      mst: "0310256675",
+      nhom: "THẦU PHỤ",
+      nguoiThem: "Test User",
+    });
+    expect(ADDED_DOCS[0].tenVietTat).toBe("ĐẠI VIỆT");
+  });
+
+  it("giữ nguyên tenVietTat nếu người dùng tự gõ, không tự tính đè lên", async () => {
+    await createSubcontractorInCongNo({
+      ten: "CÔNG TY CỔ PHẦN ĐẦU TƯ PHÁT TRIỂN MÔI TRƯỜNG ĐẠI VIỆT",
+      tenVietTat: "ĐV TỰ GÕ",
+      mst: "0310256675",
+      nhom: "THẦU PHỤ",
+      nguoiThem: "Test User",
+    });
+    expect(ADDED_DOCS[0].tenVietTat).toBe("ĐV TỰ GÕ");
+  });
+
+  it("thiếu tên nhà cung cấp thì từ chối ghi", async () => {
+    await expect(
+      createSubcontractorInCongNo({ ten: "  ", mst: "0123456789", nhom: "THẦU PHỤ", nguoiThem: "Test" }),
+    ).rejects.toThrow();
+    expect(ADDED_DOCS).toHaveLength(0);
+  });
+
+  it("thiếu MST/CCCD thì từ chối ghi", async () => {
+    await expect(
+      createSubcontractorInCongNo({ ten: "Công ty X", mst: "  ", nhom: "THẦU PHỤ", nguoiThem: "Test" }),
+    ).rejects.toThrow();
+    expect(ADDED_DOCS).toHaveLength(0);
+  });
+
+  it("làm mới cache ngay sau khi ghi thành công (không đợi hết 5 phút)", async () => {
+    await createSubcontractorInCongNo({
+      ten: "Công Ty TNHH Thử Nghiệm",
+      mst: "0123456789",
+      nhom: "THẦU PHỤ",
+      nguoiThem: "Test User",
+    });
+    expect(revalidateTagMock).toHaveBeenCalledWith("subcontractor-code-suggestions");
   });
 });
