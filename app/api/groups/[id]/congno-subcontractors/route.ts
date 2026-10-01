@@ -61,28 +61,34 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const mst = typeof body.mst === "string" ? body.mst.trim() : "";
     const tenVietTat = typeof body.tenVietTat === "string" ? body.tenVietTat.trim() : "";
     const diaChi = typeof body.diaChi === "string" ? body.diaChi.trim() : "";
-    // CodeRabbit PR #59: `nhom` sai định dạng phải bị TỪ CHỐI (400), không
-    // được âm thầm ép về mặc định — client gọi thẳng API (bỏ qua UI) gửi giá
-    // trị lạ sẽ không biết là đã bị đổi ý.
-    const nhomRaw = body.nhom === undefined ? "THẦU PHỤ" : body.nhom;
-    if (typeof nhomRaw !== "string" || !NHOM_VALUES.has(nhomRaw)) {
-      return NextResponse.json({ error: "Nhóm không hợp lệ." }, { status: 400 });
+    // Sếp chốt 01/10/2026: Tên vắn tắt, Nhóm, Địa chỉ đều BẮT BUỘC (trước đây
+    // chỉ Tên nhà cung cấp + MST bắt buộc, Nhóm còn tự ép mặc định "THẦU PHỤ"
+    // khi thiếu — CodeRabbit PR #59 từng chặn giá trị SAI nhưng vẫn cho phép
+    // THIẾU; giờ thiếu cũng bị từ chối, không còn mặc định ngầm nào).
+    if (typeof body.nhom !== "string" || !NHOM_VALUES.has(body.nhom)) {
+      return NextResponse.json({ error: "Vui lòng chọn nhóm." }, { status: 400 });
     }
-    const nhom = nhomRaw as "THẦU PHỤ" | "TỔ ĐỘI";
+    const nhom = body.nhom as "THẦU PHỤ" | "TỔ ĐỘI";
 
     if (!ten) {
       return NextResponse.json({ error: "Thiếu tên nhà cung cấp." }, { status: 400 });
     }
+    if (!tenVietTat) {
+      return NextResponse.json({ error: "Thiếu tên vắn tắt." }, { status: 400 });
+    }
     if (!mst) {
       return NextResponse.json({ error: "Thiếu MST hoặc CCCD." }, { status: 400 });
+    }
+    if (!diaChi) {
+      return NextResponse.json({ error: "Thiếu địa chỉ." }, { status: 400 });
     }
 
     const { id, record } = await createSubcontractorInCongNo({
       ten,
-      tenVietTat: tenVietTat || undefined,
+      tenVietTat,
       mst,
       nhom,
-      diaChi: diaChi || undefined,
+      diaChi,
       // Tên người đã thêm lấy từ phiên đăng nhập thật, KHÔNG nhận từ body —
       // tránh client giả mạo tên người khác.
       nguoiThem: session.name,

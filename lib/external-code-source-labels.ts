@@ -44,7 +44,7 @@ export const EXTERNAL_CODE_SOURCE_FIELDS: Record<ExternalCodeSourceId, ExternalC
   congno_subcontractors: [
     { key: "ma", label: "Mã NCC" },
     { key: "ten", label: "Tên nhà cung cấp" },
-    { key: "tenVietTat", label: "Tên viết tắt" },
+    { key: "tenVietTat", label: "Tên vắn tắt" },
     { key: "mst", label: "MST/CCCD" },
     { key: "diaChi", label: "Địa chỉ" },
   ],
