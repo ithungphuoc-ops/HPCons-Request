@@ -14,6 +14,7 @@ import { uploadAttachments } from "@/lib/upload-client";
 import type { TableColumnType } from "@/lib/types";
 import {
   deserializeTableRows,
+  filterNumericInput,
   formatCellForDisplay,
   isNumericColumnType,
   isRequiredTableColumn,
@@ -22,6 +23,7 @@ import {
   numericTypeForFieldDataType,
   parseCellToRaw,
   resolveTableColumnTypes,
+  resolveTableColumnWidths,
   sumColumn,
   toWireTableRows,
   downloadTableTemplateFile,
@@ -1393,6 +1395,10 @@ function FieldControl({
       }
 
       const columnTypes = resolveTableColumnTypes(columns, field.tableColumnTypes);
+      // Độ rộng TỪNG cột — Admin tự chọn (Sếp chốt 01/10/2026, thay khung
+      // min-110/max-240 áp đều mọi cột trước đây, vd cột "Ghi chú" không đủ
+      // chỗ trong khi cột "Số lượng" lại thừa).
+      const columnWidths = resolveTableColumnWidths(columns, field.tableColumnWidths);
       // Dòng TỔNG chỉ hiện khi có ít nhất 1 cột tiền tệ (Sếp chốt 13/09/2026).
       const hasMoneyColumn = columnTypes.includes("money");
 
@@ -1409,7 +1415,8 @@ function FieldControl({
                       <th
                         key={i}
                         title={col}
-                        className={`min-w-[110px] max-w-[240px] truncate border-l border-[var(--color-border)] px-2.5 py-2 text-[12px] font-semibold uppercase tracking-wide text-gray-600 ${
+                        style={{ width: columnWidths[i], minWidth: columnWidths[i] }}
+                        className={`truncate border-l border-[var(--color-border)] px-2.5 py-2 text-[12px] font-semibold uppercase tracking-wide text-gray-600 ${
                           isNumericColumnType(columnTypes[i]) ? "text-right" : "text-left"
                         }`}
                       >
@@ -1566,7 +1573,7 @@ function NumericFieldInput({
       className={inputClass}
       value={shown}
       onFocus={() => setDraft(stored)}
-      onChange={(e) => setDraft(e.target.value)}
+      onChange={(e) => setDraft(filterNumericInput(e.target.value, columnType))}
       onBlur={commit}
     />
   );
@@ -1595,8 +1602,12 @@ function TableCellInput({
       value={shown}
       onFocus={() => setDraft(value)}
       onChange={(e) => {
-        setDraft(e.target.value);
-        if (!numeric) onCommit(e.target.value);
+        if (numeric) {
+          setDraft(filterNumericInput(e.target.value, columnType));
+        } else {
+          setDraft(e.target.value);
+          onCommit(e.target.value);
+        }
       }}
       onBlur={(e) => {
         if (numeric) onCommit(normalizeRawForStorage(parseCellToRaw(e.target.value, columnType), columnType));

@@ -58,6 +58,17 @@ export interface ProposalField {
    * cột tên "Số lượng" = số thập phân, đúng y hành vi trước đây).
    */
   tableColumnTypes?: TableColumnType[];
+  /**
+   * Độ rộng TỪNG cột (px), SONG SONG theo index với `tableColumns` — Sếp
+   * chốt 01/10/2026: trước đó mọi cột đều bị ép chung 1 khung (110-240px),
+   * cột dài (vd "Ghi chú") không đủ chỗ, cột ngắn (vd "Số lượng") lại thừa.
+   * 3 mức gợi ý nhanh (Nhỏ/Vừa/Lớn — xem `TABLE_COLUMN_WIDTH_PRESETS` ở
+   * lib/table-field.ts) chỉ để BẤM NHANH, Admin vẫn tự gõ số px bất kỳ,
+   * KHÔNG khoá cứng theo 3 mức đó. Thiếu/lệch độ dài → suy ra bằng
+   * `resolveTableColumnWidths()` (mặc định "Vừa"/160px, giữ đúng cảm giác
+   * hành vi cũ cho cột đã tạo trước thời điểm này).
+   */
+  tableColumnWidths?: number[];
   formula?: string;
   /** Chỉ hiển thị field này trên form Gửi đề xuất khi nhóm điều kiện thoả mãn
    * (dựa trên giá trị (các) field khác của CÙNG đề xuất, kết hợp AND/OR) —

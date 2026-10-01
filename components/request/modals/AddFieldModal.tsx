@@ -28,9 +28,12 @@ import {
   validateDateLeadTimeNumbers,
 } from "@/lib/date-lead-time";
 import {
+  DEFAULT_TABLE_COLUMN_WIDTH_PX,
   resolveTableColumnTypes,
+  resolveTableColumnWidths,
   TABLE_COLUMN_TYPE_LABELS,
   TABLE_COLUMN_TYPES,
+  TABLE_COLUMN_WIDTH_PRESETS,
 } from "@/lib/table-field";
 import { slugifyFieldName } from "@/lib/print-template";
 import { validateFieldName, validateFieldOptions } from "@/lib/validation";
@@ -75,6 +78,9 @@ export default function AddFieldModal() {
   const [tableColumns, setTableColumns] = useState<string[]>([""]);
   // Kiểu của từng cột, SONG SONG index với tableColumns (Sếp chốt 13/09/2026).
   const [tableColumnTypes, setTableColumnTypes] = useState<TableColumnType[]>(["text"]);
+  // Độ rộng (px) từng cột, SONG SONG index với tableColumns (Sếp chốt
+  // 01/10/2026) — 3 nút Nhỏ/Vừa/Lớn chỉ để bấm nhanh, vẫn tự gõ số bất kỳ.
+  const [tableColumnWidths, setTableColumnWidths] = useState<number[]>([DEFAULT_TABLE_COLUMN_WIDTH_PX]);
   const [formula, setFormula] = useState("");
   const [visibleWhen, setVisibleWhen] = useState<ConditionGroup | undefined>(undefined);
   // null = tắt "tự động ghép giá trị"; mảng (kể cả rỗng) = đang bật, mỗi phần
@@ -191,6 +197,7 @@ export default function AddFieldModal() {
     setOptions([""]);
     setTableColumns([""]);
     setTableColumnTypes(["text"]);
+    setTableColumnWidths([DEFAULT_TABLE_COLUMN_WIDTH_PX]);
     setFormula("");
     setVisibleWhen(undefined);
     setComputedBranches(null);
@@ -225,6 +232,7 @@ export default function AddFieldModal() {
       setTableColumns(editingColumns);
       // Cột cũ chưa khai kiểu -> suy ra (văn bản, riêng "Số lượng" là số thập phân).
       setTableColumnTypes(resolveTableColumnTypes(editingColumns, editingField.tableColumnTypes));
+      setTableColumnWidths(resolveTableColumnWidths(editingColumns, editingField.tableColumnWidths));
       setFormula(editingField.formula ?? "");
       setVisibleWhen(editingField.visibleWhen);
       setComputedBranches(editingField.computedFrom?.branches ?? null);
@@ -319,9 +327,14 @@ export default function AddFieldModal() {
         return;
       }
     }
-    // Bỏ cột không tên, GIỮ ĐÚNG cặp tên–kiểu theo index (lọc rời 2 mảng là lệch).
+    // Bỏ cột không tên, GIỮ ĐÚNG bộ 3 tên–kiểu–độ rộng theo index (lọc rời
+    // từng mảng là lệch).
     const cleanedColumns = tableColumns
-      .map((name, i) => ({ name: name.trim(), type: tableColumnTypes[i] ?? "text" }))
+      .map((name, i) => ({
+        name: name.trim(),
+        type: tableColumnTypes[i] ?? "text",
+        width: tableColumnWidths[i] ?? DEFAULT_TABLE_COLUMN_WIDTH_PX,
+      }))
       .filter((c) => c.name);
 
     setErrors({});
@@ -334,6 +347,7 @@ export default function AddFieldModal() {
       options: choiceTypes.includes(dataType) ? cleanedOptions : undefined,
       tableColumns: tableTypes.includes(dataType) ? cleanedColumns.map((c) => c.name) : undefined,
       tableColumnTypes: tableTypes.includes(dataType) ? cleanedColumns.map((c) => c.type) : undefined,
+      tableColumnWidths: tableTypes.includes(dataType) ? cleanedColumns.map((c) => c.width) : undefined,
       formula: dataType === "formula" ? formula : undefined,
       visibleWhen,
       computedFrom: cleanedBranches && cleanedBranches.length > 0 ? { branches: cleanedBranches } : undefined,
@@ -613,10 +627,18 @@ export default function AddFieldModal() {
         {tableTypes.includes(dataType) && (
           <Row label="Cấu hình cột">
             <div className="flex flex-col gap-2">
+              {tableColumns.length > 0 && (
+                <div className="flex items-center gap-2 text-[10.5px] font-semibold uppercase tracking-wide text-gray-400">
+                  <span className="flex-1">Tên cột</span>
+                  <span className="w-[130px] shrink-0">Kiểu dữ liệu</span>
+                  <span className="w-[148px] shrink-0">Độ rộng (px)</span>
+                  <span className="w-[14px] shrink-0" />
+                </div>
+              )}
               {tableColumns.map((col, index) => (
                 <div key={index} className="flex items-center gap-2">
                   <input
-                    className={inputClass}
+                    className={`${inputClass} flex-1`}
                     value={col}
                     onChange={(e) =>
                       setTableColumns((prev) => prev.map((c, i) => (i === index ? e.target.value : c)))
@@ -624,7 +646,7 @@ export default function AddFieldModal() {
                     placeholder={`Tên cột ${index + 1}`}
                   />
                   <select
-                    className={`${selectClass} w-[170px] shrink-0`}
+                    className={`${selectClass} w-[130px] shrink-0`}
                     value={tableColumnTypes[index] ?? "text"}
                     aria-label={`Kiểu dữ liệu cột ${index + 1}`}
                     onChange={(e) =>
@@ -641,24 +663,67 @@ export default function AddFieldModal() {
                       </option>
                     ))}
                   </select>
+                  <div className="flex w-[148px] shrink-0 items-center gap-1">
+                    {TABLE_COLUMN_WIDTH_PRESETS.map((preset) => (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        title={`${preset.label} (${preset.px}px)`}
+                        onClick={() =>
+                          setTableColumnWidths((prev) => {
+                            const next = [...prev];
+                            next[index] = preset.px;
+                            return next;
+                          })
+                        }
+                        className={`rounded border px-1.5 py-1 text-[10.5px] font-semibold ${
+                          (tableColumnWidths[index] ?? DEFAULT_TABLE_COLUMN_WIDTH_PX) === preset.px
+                            ? "border-[var(--color-action-blue)] bg-blue-50 text-[var(--color-action-blue)]"
+                            : "border-gray-200 text-gray-500 hover:border-gray-300"
+                        }`}
+                      >
+                        {preset.label[0]}
+                      </button>
+                    ))}
+                    <input
+                      type="number"
+                      min={1}
+                      aria-label={`Độ rộng cột ${index + 1} (px)`}
+                      className="h-[30px] w-[54px] rounded border border-gray-200 px-1.5 text-center text-[12px]"
+                      value={tableColumnWidths[index] ?? DEFAULT_TABLE_COLUMN_WIDTH_PX}
+                      onChange={(e) =>
+                        setTableColumnWidths((prev) => {
+                          const next = [...prev];
+                          next[index] = Number(e.target.value) || DEFAULT_TABLE_COLUMN_WIDTH_PX;
+                          return next;
+                        })
+                      }
+                    />
+                  </div>
                   <button
                     type="button"
                     aria-label="Xóa cột"
                     onClick={() => {
                       setTableColumns((prev) => prev.filter((_, i) => i !== index));
                       setTableColumnTypes((prev) => prev.filter((_, i) => i !== index));
+                      setTableColumnWidths((prev) => prev.filter((_, i) => i !== index));
                     }}
-                    className="text-gray-400 hover:text-[var(--color-danger-red)]"
+                    className="shrink-0 text-gray-400 hover:text-[var(--color-danger-red)]"
                   >
                     <X size={14} />
                   </button>
                 </div>
               ))}
+              <p className="text-[11px] text-gray-400">
+                {TABLE_COLUMN_WIDTH_PRESETS.map((p) => `${p.label[0]}=${p.label} (${p.px}px)`).join(" · ")} — chỉ để
+                bấm nhanh, vẫn tự gõ số px bất kỳ vào ô bên cạnh.
+              </p>
               <button
                 type="button"
                 onClick={() => {
                   setTableColumns((prev) => [...prev, ""]);
                   setTableColumnTypes((prev) => [...prev, "text"]);
+                  setTableColumnWidths((prev) => [...prev, DEFAULT_TABLE_COLUMN_WIDTH_PX]);
                 }}
                 className="flex items-center gap-1 self-start text-[12px] text-[var(--color-action-blue)]"
               >

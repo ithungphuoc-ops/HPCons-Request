@@ -136,6 +136,44 @@ export function resolveTableColumnTypes(
   });
 }
 
+/** 3 mức gợi ý nhanh khi chọn độ rộng cột — bấm để áp nhanh, KHÔNG khoá cứng
+ * (Admin vẫn tự gõ số px bất kỳ, xem `ProposalField.tableColumnWidths`). */
+export const TABLE_COLUMN_WIDTH_PRESETS = [
+  { label: "Nhỏ", px: 100 },
+  { label: "Vừa", px: 160 },
+  { label: "Lớn", px: 240 },
+] as const;
+
+export const DEFAULT_TABLE_COLUMN_WIDTH_PX = 160;
+
+/** Cột cũ/thiếu `tableColumnWidths` (tạo trước 01/10/2026) → mặc định "Vừa"
+ * (160px) — cùng mẫu với `resolveTableColumnTypes`. */
+export function resolveTableColumnWidths(columns: string[], widths?: number[]): number[] {
+  return columns.map((_, i) => {
+    const declared = widths?.[i];
+    return typeof declared === "number" && Number.isFinite(declared) && declared > 0
+      ? Math.round(declared)
+      : DEFAULT_TABLE_COLUMN_WIDTH_PX;
+  });
+}
+
+/**
+ * Lọc ký tự KHÔNG hợp lệ NGAY lúc gõ (Sếp phát hiện 01/10/2026: ô số/tiền tệ
+ * trước đây cho gõ chữ tự do, chỉ lặng lẽ dọn dẹp lúc rời ô — dữ liệu không
+ * phải số có thể lọt xuống nếu người dùng không để ý, giống lỗi đề nghị
+ * 000000072/073/074 đã gặp). Chỉ còn chữ số + tối đa 1 dấu chấm thập phân
+ * (kiểu "int" không cho dấu chấm). KHÔNG cho dấu trừ — mọi field số trong
+ * app Đề xuất luôn dương (Sếp chốt 01/10/2026).
+ */
+export function filterNumericInput(input: string, type: TableColumnType): string {
+  if (!isNumericColumnType(type)) return input;
+  if (type === "int") return input.replace(/[^0-9]/g, "");
+  const cleaned = input.replace(/[^0-9.]/g, "");
+  const firstDot = cleaned.indexOf(".");
+  if (firstDot === -1) return cleaned;
+  return cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, "");
+}
+
 /**
  * Bóc mọi thứ người dùng gõ/dán về SỐ THÔ: bỏ khoảng trắng, bỏ đuôi VNĐ/₫/%,
  * bỏ dấu phẩy ngăn nghìn. Cột văn bản trả nguyên si.
