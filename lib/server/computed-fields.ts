@@ -1,4 +1,5 @@
 import { evaluateConditionGroup } from "@/lib/server/conditions";
+import { formatCellForDisplay, numericTypeForFieldDataType } from "@/lib/table-field";
 import type { ComputedFieldConfig, ProposalField } from "@/lib/types";
 
 /**
@@ -7,6 +8,13 @@ import type { ComputedFieldConfig, ProposalField } from "@/lib/types";
  * thì GIỮ NGUYÊN chuỗi `${code}` không thay thế (không xoá trắng, không
  * throw) — để dễ phát hiện cấu hình sai (gõ nhầm mã field) thay vì âm thầm
  * ra kết quả rỗng/thiếu.
+ *
+ * Field tham chiếu kiểu số (Số nguyên/Số thập phân/Tiền tệ) được ĐỊNH DẠNG
+ * LẠI giống hệt cách field đó tự hiện (`formatCellForDisplay` — dấu phẩy
+ * ngăn nghìn, tiền tệ thêm đuôi "VNĐ") thay vì ghép thẳng số thô — Sếp phát
+ * hiện 01/10/2026: field tự ghép (vd "Tên đề xuất") hiện "20000000" trong
+ * khi field gốc hiện "20,000,000 VNĐ", đọc rất khó. Phương án A (Sếp chốt):
+ * giữ nguyên đuôi "VNĐ"/"%' khi có.
  *
  * Cố ý KHÔNG import "server-only" (giống lib/server/conditions.ts) để dùng
  * được cả từ client component (submit/page.tsx, tính lại theo thời gian
@@ -21,7 +29,9 @@ export function resolveTemplate(
     const field = fields.find((f) => f.code === code);
     if (!field) return whole;
     const raw = values[field.id];
-    return raw === undefined || raw === null ? "" : String(raw);
+    if (raw === undefined || raw === null) return "";
+    const columnType = numericTypeForFieldDataType(field.dataType);
+    return columnType ? formatCellForDisplay(String(raw), columnType) : String(raw);
   });
 }
 

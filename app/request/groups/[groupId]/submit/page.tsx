@@ -14,6 +14,7 @@ import { uploadAttachments } from "@/lib/upload-client";
 import type { TableColumnType } from "@/lib/types";
 import {
   deserializeTableRows,
+  filterNumericInput,
   formatCellForDisplay,
   isNumericColumnType,
   isRequiredTableColumn,
@@ -22,6 +23,7 @@ import {
   numericTypeForFieldDataType,
   parseCellToRaw,
   resolveTableColumnTypes,
+  resolveTableColumnWidths,
   sumColumn,
   toWireTableRows,
   downloadTableTemplateFile,
@@ -1393,15 +1395,29 @@ function FieldControl({
       }
 
       const columnTypes = resolveTableColumnTypes(columns, field.tableColumnTypes);
+      // Độ rộng TỪNG cột — Admin tự chọn (Sếp chốt 01/10/2026, thay khung
+      // min-110/max-240 áp đều mọi cột trước đây, vd cột "Ghi chú" không đủ
+      // chỗ trong khi cột "Số lượng" lại thừa).
+      const columnWidths = resolveTableColumnWidths(columns, field.tableColumnWidths);
       // Dòng TỔNG chỉ hiện khi có ít nhất 1 cột tiền tệ (Sếp chốt 13/09/2026).
       const hasMoneyColumn = columnTypes.includes("money");
+      // CodeRabbit PR #62: `table-layout: auto` (mặc định) + `w-full` khiến
+      // trình duyệt TỰ GIÃN cột cho lấp hết container (và nới rộng hơn nữa
+      // nếu nội dung dài), nên độ rộng Admin chọn chỉ còn là "tối thiểu",
+      // không phải độ rộng THẬT. `table-layout: fixed` + đặt đúng tổng độ
+      // rộng (cộng cả 2 cột phụ #/thao tác) mới ép đúng từng cột — bảng rộng
+      // hơn khung chứa thì cuộn ngang (div `overflow-x-auto` đã có sẵn).
+      const ROW_NUMBER_COL_PX = 36; // khớp class w-9 bên dưới
+      const TRAILING_COL_PX = 32; // khớp class w-8 bên dưới
+      const tableTotalWidth =
+        ROW_NUMBER_COL_PX + columnWidths.reduce((sum, w) => sum + w, 0) + TRAILING_COL_PX;
 
       return (
         <div>
           {importButtons}
           <div className="overflow-hidden rounded border border-[var(--color-border)]">
             <div className="overflow-x-auto">
-              <table className="w-full text-[14px]">
+              <table className="text-[14px]" style={{ width: tableTotalWidth, tableLayout: "fixed" }}>
                 <thead className="border-b border-[var(--color-border)] bg-gray-100/80">
                   <tr>
                     <th className="w-9 px-2 py-2 text-left text-[12px] font-semibold text-gray-500">#</th>
@@ -1409,7 +1425,8 @@ function FieldControl({
                       <th
                         key={i}
                         title={col}
-                        className={`min-w-[110px] max-w-[240px] truncate border-l border-[var(--color-border)] px-2.5 py-2 text-[12px] font-semibold uppercase tracking-wide text-gray-600 ${
+                        style={{ width: columnWidths[i], minWidth: columnWidths[i] }}
+                        className={`truncate border-l border-[var(--color-border)] px-2.5 py-2 text-[12px] font-semibold uppercase tracking-wide text-gray-600 ${
                           isNumericColumnType(columnTypes[i]) ? "text-right" : "text-left"
                         }`}
                       >
@@ -1566,7 +1583,7 @@ function NumericFieldInput({
       className={inputClass}
       value={shown}
       onFocus={() => setDraft(stored)}
-      onChange={(e) => setDraft(e.target.value)}
+      onChange={(e) => setDraft(filterNumericInput(e.target.value, columnType))}
       onBlur={commit}
     />
   );
@@ -1595,8 +1612,12 @@ function TableCellInput({
       value={shown}
       onFocus={() => setDraft(value)}
       onChange={(e) => {
-        setDraft(e.target.value);
-        if (!numeric) onCommit(e.target.value);
+        if (numeric) {
+          setDraft(filterNumericInput(e.target.value, columnType));
+        } else {
+          setDraft(e.target.value);
+          onCommit(e.target.value);
+        }
       }}
       onBlur={(e) => {
         if (numeric) onCommit(normalizeRawForStorage(parseCellToRaw(e.target.value, columnType), columnType));

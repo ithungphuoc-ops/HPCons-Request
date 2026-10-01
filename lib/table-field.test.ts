@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  filterNumericInput,
   formatCellForDisplay,
   isNumericColumnType,
   isValidCellValue,
   parseCellToRaw,
   resolveTableColumnTypes,
+  resolveTableColumnWidths,
   sumColumn,
 } from "./table-field";
 
@@ -125,5 +127,51 @@ describe("isNumericColumnType", () => {
     expect(isNumericColumnType("text")).toBe(false);
     expect(isNumericColumnType("int")).toBe(true);
     expect(isNumericColumnType("money")).toBe(true);
+  });
+});
+
+// Sếp phát hiện 01/10/2026: ô Tiền tệ/Số cho gõ chữ tự do, chỉ lặng lẽ dọn
+// dẹp lúc rời ô — phải chặn NGAY lúc gõ. Không cho số âm (mọi field số
+// trong app Đề xuất luôn dương).
+describe("filterNumericInput", () => {
+  it("cột văn bản không lọc gì cả", () => {
+    expect(filterNumericInput("abc 123", "text")).toBe("abc 123");
+  });
+
+  it("cột số: bỏ hết chữ cái", () => {
+    expect(filterNumericInput("20abc000", "int")).toBe("20000");
+    expect(filterNumericInput("20abc000", "money")).toBe("20000");
+  });
+
+  it("không cho dấu trừ (số âm)", () => {
+    expect(filterNumericInput("-100", "money")).toBe("100");
+  });
+
+  // CodeRabbit PR #62: lọc bỏ dấu phẩy ngay lúc gõ sẽ biến "2,5" (thập phân
+  // kiểu Việt) thành "25" — phải GIỮ LẠI dấu phẩy, để parseCellToRaw lúc rời
+  // ô tự phân biệt đúng nghĩa (ngăn nghìn hay thập phân).
+  it("giữ lại dấu phẩy — không tự diễn giải, nhường cho parseCellToRaw lúc rời ô", () => {
+    expect(filterNumericInput("2,5", "decimal")).toBe("2,5");
+    expect(parseCellToRaw(filterNumericInput("2,5", "decimal"), "decimal")).toBe("2.5");
+    expect(filterNumericInput("1,234,567", "money")).toBe("1,234,567");
+    expect(parseCellToRaw(filterNumericInput("1,234,567", "money"), "money")).toBe("1234567");
+  });
+});
+
+describe("resolveTableColumnWidths — tương thích ngược cho nhóm cũ", () => {
+  it("chưa khai độ rộng -> mặc định Vừa (160px) cho mọi cột", () => {
+    expect(resolveTableColumnWidths(["Tên", "Số lượng"])).toEqual([160, 160]);
+  });
+
+  it("đã khai độ rộng -> dùng đúng số đã lưu, kể cả số KHÔNG trùng 3 mức gợi ý", () => {
+    expect(resolveTableColumnWidths(["Tên", "Ghi chú"], [100, 320])).toEqual([100, 320]);
+  });
+
+  it("thiếu/lệch độ dài so với tableColumns -> cột thiếu dùng mặc định", () => {
+    expect(resolveTableColumnWidths(["Tên", "Ghi chú"], [100])).toEqual([100, 160]);
+  });
+
+  it("giá trị không hợp lệ (0, âm, không phải số) -> dùng mặc định", () => {
+    expect(resolveTableColumnWidths(["A", "B", "C"], [0, -50, NaN])).toEqual([160, 160, 160]);
   });
 });

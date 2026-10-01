@@ -72,6 +72,42 @@ describe("resolveTemplate", () => {
     const values = { f2: "123" };
     expect(resolveTemplate("${so_hop_dong}-${khong_ton_tai}", values, fields)).toBe("123-${khong_ton_tai}");
   });
+
+  // Sếp phát hiện 01/10/2026: field tự ghép ghép thẳng số thô ("20000000"),
+  // khác với field gốc tự hiện có dấu phẩy + đuôi "VNĐ" ("20,000,000 VNĐ") —
+  // chốt phương án A: giữ đuôi "VNĐ" khi ghép vào chuỗi.
+  const soTien: ProposalField = {
+    id: "f6",
+    name: "Số tiền",
+    code: "so_tien",
+    dataType: "currency",
+    required: false,
+    order: 6,
+  };
+  const soLuong: ProposalField = {
+    id: "f7",
+    name: "Số lượng",
+    code: "so_luong",
+    dataType: "integer",
+    required: false,
+    order: 7,
+  };
+  const fieldsWithNumeric = [...fields, soTien, soLuong];
+
+  it("field Tiền tệ ghép vào chuỗi có dấu phẩy ngăn nghìn + đuôi VNĐ, giống hệt field gốc", () => {
+    const values = { f6: 20000000 };
+    expect(resolveTemplate("Tạm ứng ${so_tien}", values, fieldsWithNumeric)).toBe("Tạm ứng 20,000,000 VNĐ");
+  });
+
+  it("field Số nguyên ghép vào chuỗi có dấu phẩy ngăn nghìn, không có đuôi", () => {
+    const values = { f7: 1234567 };
+    expect(resolveTemplate("SL: ${so_luong}", values, fieldsWithNumeric)).toBe("SL: 1,234,567");
+  });
+
+  it("field văn bản (không phải số) vẫn ghép nguyên si, không bị định dạng nhầm", () => {
+    const values = { f2: "01/2026" };
+    expect(resolveTemplate("${so_hop_dong}", values, fieldsWithNumeric)).toBe("01/2026");
+  });
 });
 
 describe("resolveComputedValue", () => {

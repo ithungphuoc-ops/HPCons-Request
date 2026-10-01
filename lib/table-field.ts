@@ -136,6 +136,43 @@ export function resolveTableColumnTypes(
   });
 }
 
+/** 3 mức gợi ý nhanh khi chọn độ rộng cột — bấm để áp nhanh, KHÔNG khoá cứng
+ * (Admin vẫn tự gõ số px bất kỳ, xem `ProposalField.tableColumnWidths`). */
+export const TABLE_COLUMN_WIDTH_PRESETS = [
+  { label: "Nhỏ", px: 100 },
+  { label: "Vừa", px: 160 },
+  { label: "Lớn", px: 240 },
+] as const;
+
+export const DEFAULT_TABLE_COLUMN_WIDTH_PX = 160;
+
+/** Cột cũ/thiếu `tableColumnWidths` (tạo trước 01/10/2026) → mặc định "Vừa"
+ * (160px) — cùng mẫu với `resolveTableColumnTypes`. */
+export function resolveTableColumnWidths(columns: string[], widths?: number[]): number[] {
+  return columns.map((_, i) => {
+    const declared = widths?.[i];
+    return typeof declared === "number" && Number.isFinite(declared) && declared > 0
+      ? Math.round(declared)
+      : DEFAULT_TABLE_COLUMN_WIDTH_PX;
+  });
+}
+
+/**
+ * Lọc ký tự KHÔNG hợp lệ NGAY lúc gõ (Sếp phát hiện 01/10/2026: ô số/tiền tệ
+ * trước đây cho gõ chữ tự do, chỉ lặng lẽ dọn dẹp lúc rời ô — dữ liệu không
+ * phải số có thể lọt xuống nếu người dùng không để ý, giống lỗi đề nghị
+ * 000000072/073/074 đã gặp). CHỈ chặn chữ cái/ký tự lạ và dấu trừ (mọi field
+ * số trong app Đề xuất luôn dương, Sếp chốt 01/10/2026) — CỐ Ý giữ lại dấu
+ * phẩy, KHÔNG tự diễn giải ở bước này: dấu phẩy có 2 nghĩa tuỳ ngữ cảnh (ngăn
+ * nghìn "1,234,567" hay thập phân kiểu Việt "2,5"), việc phân biệt và chuẩn
+ * hoá cuối cùng vẫn do `parseCellToRaw` đảm nhận lúc rời ô như trước giờ —
+ * lọc bỏ dấu phẩy ngay ở bước gõ sẽ biến "2,5" thành "25" (CodeRabbit PR #62).
+ */
+export function filterNumericInput(input: string, type: TableColumnType): string {
+  if (!isNumericColumnType(type)) return input;
+  return input.replace(/[^0-9.,]/g, "");
+}
+
 /**
  * Bóc mọi thứ người dùng gõ/dán về SỐ THÔ: bỏ khoảng trắng, bỏ đuôi VNĐ/₫/%,
  * bỏ dấu phẩy ngăn nghìn. Cột văn bản trả nguyên si.
