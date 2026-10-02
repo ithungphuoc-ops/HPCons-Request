@@ -46,6 +46,7 @@ import CommentSection from "@/components/request/CommentSection";
 import AvatarWithCard from "@/components/request/AvatarWithCard";
 import { useAvatarProfilesByUids } from "@/lib/useAvatarProfilesByUids";
 import { canApproverAct } from "@/lib/approval-logic";
+import { findLetterheadUrl } from "@/lib/letterhead";
 import { useCurrentSession } from "@/lib/useCurrentSession";
 import { fieldDataTypeLabels } from "@/lib/types";
 import { DEFAULT_GROUP_PERMISSION_RULES, DEFAULT_GROUP_PRINT_OPTIONS } from "@/lib/types";
@@ -177,7 +178,7 @@ export default function RequestDetailView({
   onActed: () => void;
 }) {
   const router = useRouter();
-  const { askConfirm } = useRequestContext();
+  const { askConfirm, categoryGroups, groupsLoaded } = useRequestContext();
   const { isAdmin, session } = useCurrentSession();
   // Xóa bình luận đã khóa (quá 10 phút) CHỈ dành cho Owner — thu hẹp hơn
   // "Admin/Owner" (isAdmin) dùng cho các hành động quản lý khác trên trang
@@ -214,23 +215,55 @@ export default function RequestDetailView({
   );
   const [bookmarking, setBookmarking] = useState(false);
   const [printHideDiscussion, setPrintHideDiscussion] = useState(false);
-  // Ảnh logo + tên công ty cho bản in — xem app/api/requests/[id]/letterhead.
-  // Lỗi mạng/chưa cài ảnh đều chỉ để null (không báo lỗi): đây là phần trang
-  // trí bản in, không được làm hỏng việc xem đề xuất.
-  const [letterheadUrl, setLetterheadUrl] = useState<string | null>(null);
+  // Ảnh logo + tên công ty cho bản in — lấy NGAY từ categoryGroups đã tải sẵn
+  // (không hỏi máy chủ theo từng đề xuất), ảnh cũng đã được RequestContext
+  // tải sẵn, nên bấm In là có logo liền (Sếp chốt 02/10/2026, xem
+  // lib/letterhead.ts). Chưa cài ảnh/ảnh lỗi thì không có logo, không báo
+  // lỗi: đây là phần trang trí bản in, không được làm hỏng việc xem đề xuất.
+  const letterheadUrl = useMemo(
+    () => findLetterheadUrl(categoryGroups, request.groupId),
+    [categoryGroups, request.groupId],
+  );
+  const [failedLetterheadUrl, setFailedLetterheadUrl] = useState<string | null>(null);
+  const showLetterhead = letterheadUrl !== null && letterheadUrl !== failedLetterheadUrl;
+  const letterheadImgRef = useRef<HTMLImageElement>(null);
+  // Đọc trong printRequest (hàm async chạy qua nhiều lượt render) — ref luôn
+  // trỏ đúng trạng thái mới nhất, không bị kẹt giá trị cũ của closure.
+  const printReadyRef = useRef<() => boolean>(() => true);
+  printReadyRef.current = () => {
+    if (!groupsLoaded) return false;
+    if (!showLetterhead) return true;
+    const img = letterheadImgRef.current;
+    // Ảnh lỗi cũng "complete" nhưng naturalWidth = 0 — chờ onError kịp ẩn
+    // thẻ ảnh (showLetterhead → false) rồi mới in, không in ra ảnh vỡ.
+    return !img || (img.complete && img.naturalWidth > 0);
+  };
+  // Đang chờ logo thì bỏ qua lần bấm In thứ 2 — tránh bật 2 hộp thoại in.
+  const printingRef = useRef(false);
+
+  // Tên file PDF mặc định khi "Lưu dưới dạng PDF" = tiêu đề trang lúc in, nên
+  // đổi tạm thành "Base Request-<mã>" rồi trả lại sau khi in (Sếp chốt
+  // 02/10/2026). Bắt sự kiện in của trình duyệt nên ăn cả nút In lẫn Ctrl+P;
+  // tab trình duyệt vẫn giữ tên cũ khi xem bình thường.
+  const printFileTitle = `Base Request-${request.code ?? request.id}`;
   useEffect(() => {
-    let cancelled = false;
-    setLetterheadUrl(null);
-    fetch(`/api/requests/${request.id}/letterhead`)
-      .then((res) => (res.ok ? (res.json() as Promise<{ url: string | null }>) : { url: null }))
-      .then((data) => {
-        if (!cancelled) setLetterheadUrl(data.url ?? null);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
+    let savedTitle: string | null = null;
+    const restore = () => {
+      if (savedTitle !== null) document.title = savedTitle;
+      savedTitle = null;
     };
-  }, [request.id]);
+    const apply = () => {
+      if (savedTitle === null) savedTitle = document.title;
+      document.title = printFileTitle;
+    };
+    window.addEventListener("beforeprint", apply);
+    window.addEventListener("afterprint", restore);
+    return () => {
+      window.removeEventListener("beforeprint", apply);
+      window.removeEventListener("afterprint", restore);
+      restore();
+    };
+  }, [printFileTitle]);
   const [attachments, setAttachments] = useState<RequestAttachment[]>(request.attachments ?? []);
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const [previewingAttachment, setPreviewingAttachment] = useState<RequestAttachment | null>(null);
@@ -424,10 +457,24 @@ export default function RequestDetailView({
     window.open(window.location.href, "_blank");
   };
 
-  const printRequest = (withDiscussion: boolean) => {
+  const printRequest = async (withDiscussion: boolean) => {
     setMoreMenuOpen(false);
+    if (printingRef.current) return;
+    printingRef.current = true;
     setPrintHideDiscussion(!withDiscussion);
-    setTimeout(() => window.print(), 50);
+    try {
+      // Chờ React vẽ lại phần ẩn/hiện thảo luận, rồi chờ thêm logo nếu chưa
+      // tải xong (chỉ xảy ra vài giây đầu mới vào app) — tối đa 5 giây, quá
+      // thì vẫn in (thiếu logo) chứ không để nút In treo.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const deadline = Date.now() + 5000;
+      while (!printReadyRef.current() && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      window.print();
+    } finally {
+      printingRef.current = false;
+    }
   };
 
   const uploadAttachment = async (file: File) => {
@@ -588,15 +635,16 @@ export default function RequestDetailView({
             03-EQUI...) — CHỈ hiện khi in (ẩn khi xem bình thường), xem
             `.print-only` ở app/globals.css. Công ty chưa cài ảnh thì không
             có gì, bản in vẫn bình thường. Sếp chốt 01/10/2026. */}
-        {letterheadUrl && (
-          // eslint-disable-next-line @next/next/no-img-element -- route app chuyển hướng sang link R2 ký mới, next/image không tối ưu được
+        {showLetterhead && letterheadUrl && (
+          // eslint-disable-next-line @next/next/no-img-element -- ảnh riêng tư qua route app (cần đăng nhập), next/image không tối ưu được
           <img
+            ref={letterheadImgRef}
             src={letterheadUrl}
             alt="Logo và tên công ty"
             className="print-only mb-4 max-h-[110px] w-auto max-w-full"
             // Ảnh lỗi (mất mạng, file R2 bị xoá...) thì bỏ hẳn thẻ ảnh — bản in
             // không có logo còn hơn in ra biểu tượng ảnh vỡ.
-            onError={() => setLetterheadUrl(null)}
+            onError={() => setFailedLetterheadUrl(letterheadUrl)}
           />
         )}
         <div className="flex items-start justify-between gap-4">

@@ -14,7 +14,7 @@ export const runtime = "nodejs";
  * nhiều công ty (vd "02 - HPCons", "03 - EQUI"), mỗi công ty cần đúng
  * logo/tên của mình khi in đề xuất. Ảnh tải lên trước qua `/api/uploads`,
  * route này chỉ ghi path vào doc `categories/{id}`. Đọc ra để in: xem
- * `resolveCategoryLetterheadPath` (lib/server/requests.ts). Chỉ Owner/Admin
+ * ./image/route.ts + lib/letterhead.ts. Chỉ Owner/Admin
  * (`requireWriteAccess`) — khớp trang "Tất cả nhóm đề xuất" nơi đặt nút này
  * đã bọc RequireAdminRole. Sếp chốt 01/10/2026.
  */

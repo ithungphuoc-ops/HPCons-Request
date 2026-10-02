@@ -117,6 +117,22 @@ export async function downloadObject(path: string): Promise<Buffer> {
   return Buffer.from(bytes);
 }
 
+/** Như `downloadObject` nhưng trả kèm Content-Type đã lưu — `null` nếu không
+ * đọc được. Dùng khi route trả THẲNG file cho trình duyệt (ảnh logo công ty,
+ * app/api/categories/[id]/letterhead/image). */
+export async function downloadObjectWithType(
+  path: string,
+): Promise<{ body: Buffer; contentType: string | null } | null> {
+  try {
+    const res = await getR2Client().send(new GetObjectCommand({ Bucket: getBucketName(), Key: path }));
+    if (!res.Body) return null;
+    const bytes = await res.Body.transformToByteArray();
+    return { body: Buffer.from(bytes), contentType: res.ContentType ?? null };
+  } catch {
+    return null;
+  }
+}
+
 /** Presigned GET URL riêng tư — chỉ phát sau khi route đã tự kiểm tra quyền, hết hạn sau 5 phút. */
 export async function createSignedReadUrl(path: string, expiresIn = 300): Promise<string> {
   const command = new GetObjectCommand({ Bucket: getBucketName(), Key: path });

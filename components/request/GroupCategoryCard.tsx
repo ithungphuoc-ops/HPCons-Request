@@ -18,17 +18,15 @@ export default function GroupCategoryCard({
   selectedIds: Set<string>;
   onToggleSelect: (id: string) => void;
 }) {
-  const { collapsedCategoryIds, toggleCategoryCollapsed } = useRequestContext();
+  const { collapsedCategoryIds, toggleCategoryCollapsed, setCategoryLetterhead } = useRequestContext();
   const collapsed = collapsedCategoryIds.has(category.id);
 
-  // Ảnh "tiêu đề công văn" (logo + tên công ty) RIÊNG cho từng công ty —
-  // override cục bộ ngay sau khi tải lên thành công để thấy kết quả liền,
-  // không cần refetch toàn bộ /api/groups (refetchGroups chưa lộ ra ngoài
-  // RequestContext — thêm state riêng ở đây gọn hơn sửa context). Sếp chốt
-  // 01/10/2026: mỗi company (02-HPCons/03-EQUI...) có 1 ảnh riêng, hiện ở
-  // đầu bản in đề xuất (xem RequestDetailView.tsx).
-  const [letterheadOverrideName, setLetterheadOverrideName] = useState<string | null>(null);
-  const letterheadName = letterheadOverrideName ?? category.letterheadImageName;
+  // Ảnh "tiêu đề công văn" (logo + tên công ty) RIÊNG cho từng công ty — Sếp
+  // chốt 01/10/2026: mỗi company (02-HPCons/03-EQUI...) có 1 ảnh riêng, hiện
+  // ở đầu bản in đề xuất (xem RequestDetailView.tsx). Lưu xong ghi thẳng vào
+  // categoryGroups của RequestContext (không chỉ state riêng ở đây) để bản in
+  // dùng logo mới ngay, không phải tải lại trang.
+  const letterheadName = category.letterheadImageName;
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -67,7 +65,7 @@ export default function GroupCategoryCard({
         const body = (await patchRes.json().catch(() => ({}))) as { error?: string };
         throw new Error(body.error ?? "Không thể lưu ảnh cho công ty này.");
       }
-      setLetterheadOverrideName(uploaded.name);
+      setCategoryLetterhead(category.id, uploaded.path, uploaded.name);
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : "Có lỗi xảy ra.");
     } finally {

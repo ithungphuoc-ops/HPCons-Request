@@ -6,15 +6,23 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import type { CategoryGroup, ConditionGroup, ProposalField, ProposalGroup } from "@/lib/types";
+import { allLetterheadUrls } from "@/lib/letterhead";
 import { reportActivity } from "@/lib/reportActivity";
 
 export type StatusFilter = "all" | "active" | "closed";
 
 interface RequestContextValue {
   categoryGroups: CategoryGroup[];
+  /** Đã xong lượt tải `categoryGroups` đầu tiên (thành công hay lỗi) — nút
+   *  In đề xuất chờ cờ này để biết đề xuất có logo công ty hay không. */
+  groupsLoaded: boolean;
+  /** Ghi ảnh logo mới của 1 công ty vào state ngay sau khi lưu thành công
+   *  (GroupCategoryCard), để bản in dùng logo mới mà không phải tải lại trang. */
+  setCategoryLetterhead: (categoryId: string, imagePath: string, imageName: string) => void;
   statusFilter: StatusFilter;
   setStatusFilter: (filter: StatusFilter) => void;
   searchTerm: string;
@@ -151,9 +159,40 @@ export function RequestProvider({ children }: { children: React.ReactNode }) {
     setCategoryGroups(data.categoryGroups ?? []);
   }, []);
 
+  const [groupsLoaded, setGroupsLoaded] = useState(false);
   useEffect(() => {
-    refetchGroups();
+    refetchGroups()
+      .catch(() => {})
+      .finally(() => setGroupsLoaded(true));
   }, [refetchGroups]);
+
+  // Tải SẴN logo mọi công ty ngay khi vào app (Sếp chốt 02/10/2026: bấm In
+  // là phải có logo liền). Route ảnh cho trình duyệt nhớ lâu, nên tới lúc mở
+  // đề xuất thì <img> trong RequestDetailView lấy luôn bản đã có. Giữ tham
+  // chiếu trong ref để ảnh không bị dọn khỏi bộ nhớ trước khi tải xong.
+  const preloadedLetterheads = useRef(new Map<string, HTMLImageElement>());
+  useEffect(() => {
+    for (const url of allLetterheadUrls(categoryGroups)) {
+      if (preloadedLetterheads.current.has(url)) continue;
+      const img = new Image();
+      img.src = url;
+      img.decode?.().catch(() => {});
+      preloadedLetterheads.current.set(url, img);
+    }
+  }, [categoryGroups]);
+
+  const setCategoryLetterhead = useCallback(
+    (categoryId: string, imagePath: string, imageName: string) => {
+      setCategoryGroups((prev) =>
+        prev.map((c) =>
+          c.id === categoryId
+            ? { ...c, letterheadImagePath: imagePath, letterheadImageName: imageName }
+            : c,
+        ),
+      );
+    },
+    [],
+  );
 
   const toggleCategoryCollapsed = useCallback((categoryId: string) => {
     setCollapsedCategoryIds((prev) => {
@@ -498,6 +537,8 @@ export function RequestProvider({ children }: { children: React.ReactNode }) {
 
   const value: RequestContextValue = {
     categoryGroups,
+    groupsLoaded,
+    setCategoryLetterhead,
     statusFilter,
     setStatusFilter,
     searchTerm,
