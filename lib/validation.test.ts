@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   nextCounterCode,
+  requestCodeCandidates,
   sanitizeDescriptionHtml,
   validateFieldCodeUnique,
   validateFieldName,
@@ -131,5 +132,26 @@ describe("validatePermissionSelection", () => {
 
   it("hợp lệ khi đã chọn ít nhất một quyền", () => {
     expect(validatePermissionSelection(["request.admin"]).valid).toBe(true);
+  });
+});
+
+describe("requestCodeCandidates — link /request/<mã> (Sếp 02/10/2026)", () => {
+  it("mã 9 số đúng: tra cả dạng 6 số lẫn 9 số", () => {
+    expect(requestCodeCandidates("000000162")).toEqual(["000000162", "000162"]);
+  });
+
+  it("gõ thiếu số 0 vẫn ra đúng mã 9 số", () => {
+    expect(requestCodeCandidates("162")).toContain("000000162");
+  });
+
+  it("mã 6 số cấp trước 17/08/2026 vẫn tra được", () => {
+    expect(requestCodeCandidates("000058")).toContain("000058");
+    expect(requestCodeCandidates("000058")).toContain("000000058");
+  });
+
+  it("không phải chữ số thì không tra gì", () => {
+    expect(requestCodeCandidates("")).toEqual([]);
+    expect(requestCodeCandidates("abc")).toEqual([]);
+    expect(requestCodeCandidates("000000162-copy1")).toEqual([]);
   });
 });

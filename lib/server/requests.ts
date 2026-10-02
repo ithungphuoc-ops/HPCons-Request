@@ -31,7 +31,7 @@ import {
   REQUIRED_TABLE_COLUMN_NAMES,
   resolveTableColumnTypes,
 } from "@/lib/table-field";
-import { nextCounterCode } from "@/lib/validation";
+import { nextCounterCode, requestCodeCandidates } from "@/lib/validation";
 import type {
   ApprovalFlowType,
   ApproverStepDef,
@@ -84,6 +84,20 @@ export function canView(req: RequestInstance, uid: string, role: Role): boolean 
   const isApprover = req.approversSnapshot.some((a) => a.id === uid);
   const isFollower = req.followers.some((f) => f.id === uid);
   return isOwner || isApprover || isFollower || canManageGroupsAtAppScope(role);
+}
+
+/**
+ * Tìm đề xuất theo MÃ hiển thị cho trang `/request/<mã>` (Sếp 02/10/2026 — app Thu mua dẫn link
+ * sang đây). Nhận cả mã gõ thiếu số 0 (`162`) lẫn mã 6 số cấp trước 17/08/2026; bỏ đề xuất đã xoá
+ * mềm. Có thể ra NHIỀU kết quả khi nhóm bật bộ đếm riêng (`useOwnCounter`) — nơi gọi phải chịu được.
+ */
+export async function findRequestsByCode(code: string): Promise<RequestInstance[]> {
+  const candidates = requestCodeCandidates(code);
+  if (candidates.length === 0) return [];
+  const snap = await adminDb.collection("requests").where("code", "in", candidates).get();
+  return snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }) as RequestInstance)
+    .filter((r) => !r.deletedAt);
 }
 
 export function isEmptyValue(value: unknown): boolean {

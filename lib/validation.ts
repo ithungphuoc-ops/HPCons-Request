@@ -19,6 +19,17 @@ export function nextCounterCode(current: number | undefined): { next: number; co
   return { next: value + 1, code: String(value).padStart(9, "0") };
 }
 
+/**
+ * Các dạng mã có thể đang lưu cho một mã gõ vào link `/request/<mã>`: nguyên văn, 6 số (cấp trước
+ * 17/08/2026) và 9 số. Không phải chữ số → rỗng.
+ */
+export function requestCodeCandidates(code: string): string[] {
+  const raw = code.trim();
+  if (!/^\d+$/.test(raw)) return [];
+  const so = raw.replace(/^0+(?=\d)/, "");
+  return [...new Set([raw, so.padStart(6, "0"), so.padStart(9, "0")])];
+}
+
 export function sanitizeDescriptionHtml(html: string): string {
   return sanitizeHtml(html, {
     allowedTags: [
