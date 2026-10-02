@@ -39,6 +39,7 @@ import type {
   ExternalCodeSourceId,
   ProposalField,
   ProposalGroup,
+  RequestAttachment,
   RequestInstance,
   RequestStatus,
   TaggedUser,
@@ -48,6 +49,26 @@ export async function loadRequest(id: string): Promise<RequestInstance | null> {
   const snap = await adminDb.collection("requests").doc(id).get();
   if (!snap.exists) return null;
   return { id: snap.id, ...snap.data() } as RequestInstance;
+}
+
+/** Chỉ cho tải về/xem nhanh đúng path đang thật sự nằm trong values HOẶC
+ * `attachments` (cấp đề xuất, mới — xem capability request-level-attachments)
+ * của đề xuất này — chặn đoán/truy cập path tuỳ ý dù đã qua canView. Dùng
+ * chung cho app/api/requests/[id]/attachments (tải về) và
+ * .../attachments/content (đọc nội dung cho trình xem Excel/Word). */
+export function collectAttachmentPaths(found: RequestInstance): Set<string> {
+  const paths = new Set<string>();
+  for (const value of Object.values(found.values)) {
+    if (!Array.isArray(value)) continue;
+    for (const item of value) {
+      const path = (item as Partial<RequestAttachment> | undefined)?.path;
+      if (typeof path === "string") paths.add(path);
+    }
+  }
+  for (const att of found.attachments ?? []) {
+    if (att?.path) paths.add(att.path);
+  }
+  return paths;
 }
 
 /**

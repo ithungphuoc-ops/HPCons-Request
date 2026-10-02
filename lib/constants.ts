@@ -43,3 +43,10 @@ export const MAX_UPLOAD_FILE_SIZE_LABEL = "4MB";
 // (`verifyUploadedAttachments`), không tin con số client khai.
 export const MAX_DIRECT_UPLOAD_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 export const MAX_DIRECT_UPLOAD_FILE_SIZE_LABEL = "50MB";
+
+// Xem nhanh Excel/Word trong popup tệp đính kèm: nội dung tệp đi QUA serverless
+// function (bucket R2 chưa bật CORS cho trình duyệt đọc thẳng), nên cũng dính trần
+// phản hồi ~4,5MB của Vercel như đường tải lên ở trên. Lớn hơn thì báo "Tải về".
+// Đo 02/10/2026: tệp Excel đính kèm thật lớn nhất mới 1,1MB, chưa có tệp Word.
+export const MAX_PREVIEW_FILE_SIZE = MAX_UPLOAD_FILE_SIZE;
+export const MAX_PREVIEW_FILE_SIZE_LABEL = MAX_UPLOAD_FILE_SIZE_LABEL;

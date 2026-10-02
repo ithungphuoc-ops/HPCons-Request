@@ -146,3 +146,58 @@ body {
     overflow: visible !important;
   }
 }
+
+/* Xem nhanh Excel trong popup tệp đính kèm (components/request/office/ExcelPreview.tsx).
+   Bảng dựng bằng HTML thô (nhanh hơn React với vài nghìn ô) nên style đặt ở đây. Giữ
+   nền trắng như giấy Excel ở cả giao diện tối. `table-layout: fixed` + `.spill`: độ
+   rộng cột đúng như tệp gốc, chữ dài tràn sang ô trống bên phải như Excel. */
+.office-xl table.xl {
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-family: Calibri, "Segoe UI", Arial, sans-serif;
+  color: #1f2937;
+  background: #fff;
+}
+.office-xl table.xl td,
+.office-xl table.xl th {
+  border: 1px solid #d4d4d4;
+  padding: 0 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  line-height: 1.2;
+  vertical-align: bottom;
+}
+.office-xl table.xl td.num {
+  text-align: right;
+}
+.office-xl table.xl td.mc {
+  text-align: center;
+  font-weight: 600;
+}
+.office-xl table.xl td.spill {
+  overflow: visible;
+  position: relative;
+  z-index: 1;
+}
+.office-xl table.xl th {
+  height: 20px;
+  background: #f3f3f3;
+  color: #555;
+  font-weight: 400;
+  text-align: center;
+  position: sticky;
+  top: 0;
+  z-index: 4;
+}
+.office-xl table.xl th:first-child {
+  left: 0;
+  z-index: 5;
+}
+.office-xl table.xl td.rn {
+  background: #f3f3f3;
+  color: #555;
+  text-align: center;
+  position: sticky;
+  left: 0;
+  z-index: 3;
+}

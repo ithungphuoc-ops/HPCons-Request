@@ -4,31 +4,13 @@ import { createSignedReadUrl } from "@/lib/r2";
 import { apiErrorResponse } from "@/lib/http";
 import { MAX_DIRECT_UPLOAD_FILE_SIZE } from "@/lib/constants";
 import { canManageGroupsAtAppScope, canSupplementAfterApproval } from "@/lib/permissions";
-import { canView, loadRequest } from "@/lib/server/requests";
+import { canView, collectAttachmentPaths, loadRequest } from "@/lib/server/requests";
 import { verifyUploadedAttachment } from "@/lib/server/verify-upload";
 import { requireSession } from "@/lib/session";
 import { ATTACHMENT_SUPPLEMENT_HISTORY_PREFIX } from "@/lib/request-history-labels";
-import type { RequestAttachment, RequestHistoryEntry, RequestInstance } from "@/lib/types";
+import type { RequestAttachment, RequestHistoryEntry } from "@/lib/types";
 
 export const runtime = "nodejs";
-
-/** Chỉ cho tải về đúng path đang thật sự nằm trong values HOẶC `attachments`
- * (cấp đề xuất, mới — xem capability request-level-attachments) của đề xuất
- * này — chặn đoán/truy cập path tuỳ ý dù đã qua canView. */
-function collectAttachmentPaths(found: RequestInstance): Set<string> {
-  const paths = new Set<string>();
-  for (const value of Object.values(found.values)) {
-    if (!Array.isArray(value)) continue;
-    for (const item of value) {
-      const path = (item as Partial<RequestAttachment> | undefined)?.path;
-      if (typeof path === "string") paths.add(path);
-    }
-  }
-  for (const att of found.attachments ?? []) {
-    if (att?.path) paths.add(att.path);
-  }
-  return paths;
-}
 
 export async function GET(
   request: Request,
