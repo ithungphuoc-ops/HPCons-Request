@@ -246,23 +246,41 @@ export default function SubmitRequestPage() {
   // điền sẵn người đó nếu người gửi CHƯA tự chọn ai. Vẫn bấm "Đổi" để chọn
   // người khác như trước. Không điền khi bước báo lỗi (luật trả null) — ô để
   // trống, người gửi phải tự chọn, giống hệt hành vi cũ.
+  // Sửa theo CodeRabbit PR #65: khi preview đổi (người gửi đổi field điều kiện) thì ô nào VẪN là
+  // mặc định tự điền phải theo người mới tính ra — giữ người cũ là gửi nhầm người duyệt dưới dạng
+  // "chọn tay". Preview không còn ra ai thì gỡ người mặc định cũ (ô trống, bắt chọn tay như cũ).
+  // Ô người gửi đã tự chọn (cờ false) không bao giờ bị thay. Cả hai setState trả lại `prev` khi
+  // không đổi nên đưa `defaultManagerSteps` vào deps không gây vòng lặp render.
   useEffect(() => {
     if (approverPreview.status !== "ok") return;
-    const defaults = approverPreview.steps.filter(
-      (st) => st.kind === "submitter_manager" && st.user && !st.error,
-    );
-    if (defaults.length === 0) return;
+    const managerSteps = approverPreview.steps.filter((st) => st.kind === "submitter_manager");
+    if (managerSteps.length === 0) return;
+    const laMacDinh = (idx: number) => defaultManagerSteps[idx] !== false;
     setManagerOverrides((prev) => {
       const next = { ...prev };
-      for (const st of defaults) if (!next[st.index]) next[st.index] = st.user!;
-      return next;
+      let changed = false;
+      for (const st of managerSteps) {
+        if (!laMacDinh(st.index)) continue;
+        const moi = st.user && !st.error ? st.user : null;
+        if (moi) {
+          if (prev[st.index]?.id !== moi.id) { next[st.index] = moi; changed = true; }
+        } else if (prev[st.index] && defaultManagerSteps[st.index] === true) {
+          delete next[st.index]; changed = true;
+        }
+      }
+      return changed ? next : prev;
     });
     setDefaultManagerSteps((prev) => {
       const next = { ...prev };
-      for (const st of defaults) if (next[st.index] === undefined) next[st.index] = true;
-      return next;
+      let changed = false;
+      for (const st of managerSteps) {
+        const coNguoi = !!st.user && !st.error;
+        if (coNguoi && prev[st.index] === undefined) { next[st.index] = true; changed = true; }
+        else if (!coNguoi && prev[st.index] === true) { delete next[st.index]; changed = true; }
+      }
+      return changed ? next : prev;
     });
-  }, [approverPreview]);
+  }, [approverPreview, defaultManagerSteps]);
 
   // Field "tự tính" (computedFrom): tự tính lại giá trị theo THỜI GIAN THỰC
   // mỗi khi bất kỳ field nào đổi — phép tính chỉ là ghép chuỗi trên vài field
@@ -857,8 +875,8 @@ export default function SubmitRequestPage() {
                             setManagerOverrides((prev) => ({ ...prev, [step.index]: users[0] }));
                             setDefaultManagerSteps((prev) => ({
                               ...prev,
-                              [step.index]:
-                                step.kind === "submitter_manager" && !!step.user && users[0].id === step.user.id,
+                              // Chọn tay luôn là lựa chọn của người gửi (kể cả trùng người mặc định) — preview đổi sau đó không thay.
+                              [step.index]: false,
                             }));
                             setEditingStepIndex(null);
                           }}
