@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isUserInGroupScope } from "@/lib/server/hpcore-org";
+import { canUseGroupHelpers } from "@/lib/server/hpcore-org";
 import { adminDb } from "@/lib/firebase/admin";
 import { apiErrorResponse } from "@/lib/http";
 import { requireSession } from "@/lib/session";
@@ -41,7 +41,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
     const group = groupSnap.data() as ProposalGroup;
 
-    if (!(await isUserInGroupScope(group, session.uid))) {
+    if (!(await canUseGroupHelpers(group, session))) {
       return NextResponse.json(
         { error: "Bạn không nằm trong phạm vi sử dụng của nhóm đề xuất này." },
         { status: 403 },

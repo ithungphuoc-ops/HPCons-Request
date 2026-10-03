@@ -8,6 +8,7 @@ import {
   type ScopeMembership,
 } from "@/lib/used-for-scope";
 import type { ProposalGroup } from "@/lib/types";
+import { canManageGroupsAtAppScope, type Role } from "@/lib/permissions";
 
 /**
  * Cơ cấu tổ chức đọc từ App Tổng (project hpcons-portal) — NGUỒN DUY NHẤT
@@ -95,6 +96,20 @@ export function createScopeChecker(
     membership ??= getScopeMembership(uid);
     return isInUsedForScope({ ...group, usedFor }, uid, await membership);
   };
+}
+
+/**
+ * Kiểm phạm vi cho các route GỢI Ý/tra cứu của nhóm (field-suggestions,
+ * external-code-suggestions, congno-subcontractors): Owner/Admin (người cài
+ * đặt nhóm, vd xem trước nguồn mã ngoài ở hộp sửa trường) luôn được dùng,
+ * người khác phải nằm trong phạm vi sử dụng.
+ */
+export async function canUseGroupHelpers(
+  group: Pick<ProposalGroup, "usedFor" | "usedForIncludeSecondary">,
+  session: { uid: string; role: Role },
+): Promise<boolean> {
+  if (canManageGroupsAtAppScope(session.role)) return true;
+  return isUserInGroupScope(group, session.uid);
 }
 
 export const OUT_OF_SCOPE_MESSAGE = "Bạn không nằm trong phạm vi sử dụng của nhóm đề xuất này.";

@@ -157,7 +157,11 @@ function EditGeneralModal({
       category,
       slaHours: slaValue,
       usedFor,
-      usedForIncludeSecondary,
+      // Chỉ gửi khi khác giá trị hiện có (thiếu field = true) — tránh ghi
+      // dòng lịch sử thừa "— → Có" ở lần lưu đầu của nhóm cũ.
+      ...(usedForIncludeSecondary !== (group.usedForIncludeSecondary !== false)
+        ? { usedForIncludeSecondary }
+        : {}),
       requiresSubmissionForm,
       descriptionHtml,
       status,

@@ -121,11 +121,6 @@ function GroupPermissionsPageInner() {
               ))}
             </div>
           )}
-          {group.usedFor.some((u) => u.kind === "group") && (
-            <p className="mt-2 text-[12px] text-gray-500">
-              {group.usedForIncludeSecondary === false ? "Không tính người kiêm nhiệm." : "Tính cả người kiêm nhiệm."}
-            </p>
-          )}
           <p className="mt-2 text-[12px] text-gray-400">Chỉnh sửa ở tab &quot;Thiết lập chung&quot;.</p>
         </div>
       </div>

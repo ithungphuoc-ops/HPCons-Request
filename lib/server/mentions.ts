@@ -97,8 +97,11 @@ export async function expandMentionsToUids(
         db.collection("users").where("departmentId", "in", chunk).get(),
         db.collection("users").where("secondaryDepartmentIds", "array-contains-any", chunk).get(),
       ]);
-      mainSnap.docs.forEach((d) => result.add(d.id));
-      secondarySnap.docs.forEach((d) => result.add(d.id));
+      // Bỏ tài khoản đã khoá (isActive: false) — khớp danh sách gợi ý chỉ có
+      // người đang hoạt động; hồ sơ thiếu field vẫn tính như trước.
+      for (const d of [...mainSnap.docs, ...secondarySnap.docs]) {
+        if (d.data().isActive !== false) result.add(d.id);
+      }
     }
   }
 

@@ -27,7 +27,9 @@ export async function GET() {
     const groupsSnap = await adminDb.collection("groups").where("status", "==", "active").get();
     const all = groupsSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }) as ProposalGroup);
     const canSubmit = createScopeChecker(session.uid);
-    const inScope = await Promise.all(all.map((g) => canSubmit(g)));
+    // Lỗi đọc App Tổng khi kiểm 1 nhóm → coi như hiện (giống GET /api/groups),
+    // không làm hỏng cả trang cài đặt email.
+    const inScope = await Promise.all(all.map((g) => canSubmit(g).catch(() => true)));
     const eligible = all.filter((_, i) => inScope[i]);
 
     const prefsByGroup = await getEmailPreferencesByGroup(session.uid);
