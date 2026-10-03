@@ -17,6 +17,12 @@ import { adminDb } from "@/lib/firebase/admin";
 import { evaluateConditionGroup, filterApplicableSteps } from "@/lib/server/conditions";
 import { getHpcoreDb } from "@/lib/hpcore";
 import {
+  resolveDirectManagerIdWith,
+  type DirectManagerDepartmentDoc,
+  type DirectManagerSource,
+  type DirectManagerUserDoc,
+} from "@/lib/direct-manager";
+import {
   EXTERNAL_CODE_SOURCES,
   resolveExternalCodeLookup,
   type ExternalCodeRecord,
@@ -425,61 +431,78 @@ export async function generateGroupRequestCode(groupId: string): Promise<string>
 
 /** Ném khi không xác định được người duyệt bước "quản lý phòng ban người gửi". */
 export class MissingApproverError extends Error {}
+/**
+ * Nguồn dữ liệu Firestore App Tổng cho luật "Quản lý trực tiếp"
+ * (lib/direct-manager.ts). Mỗi lượt gọi tạo 1 nguồn MỚI có bộ nhớ đệm riêng
+ * trong phạm vi lượt đó (không dùng chung giữa người dùng/lượt gửi khác
+ * nhau), chỉ để không đọc lại cùng 1 document 2 lần trong 1 lượt.
+ */
+function hpcoreDirectManagerSource(): DirectManagerSource {
+  const db = getHpcoreDb();
+  const users = new Map<string, Promise<DirectManagerUserDoc | null>>();
+  const depts = new Map<string, Promise<DirectManagerDepartmentDoc | null>>();
+  return {
+    getUser(uid) {
+      if (!users.has(uid)) {
+        users.set(
+          uid,
+          db.collection("users").doc(uid).get().then((s) => (s.exists ? (s.data() ?? {}) : null)),
+        );
+      }
+      return users.get(uid)!;
+    },
+    getDepartment(id) {
+      if (!depts.has(id)) {
+        depts.set(
+          id,
+          db.collection("departments").doc(id).get().then((s) => (s.exists ? (s.data() ?? {}) : null)),
+        );
+      }
+      return depts.get(id)!;
+    },
+  };
+}
 
 /**
- * Tra cứu trưởng đơn vị của CHÍNH NGƯỜI GỬI (users/{uid}.departmentId →
- * departments/{id}.leaderId) trong Firestore app tổng. Ném MissingApproverError
- * nếu người gửi chưa có phòng ban, hoặc phòng ban chưa có trưởng đơn vị —
- * quyết định: chặn gửi rõ ràng thay vì âm thầm bỏ qua bước duyệt.
+ * Quản lý trực tiếp của NGƯỜI GỬI theo luật chung (hợp đồng 03/10/2026):
+ * users/{uid}.directManagerIds → trưởng đơn vị chính → trưởng nhóm cha (xem
+ * lib/direct-manager.ts). Ném MissingApproverError khi luật trả null — giữ
+ * quyết định cũ: chặn gửi rõ ràng thay vì âm thầm bỏ qua bước duyệt.
  */
 async function resolveSubmitterManager(submitterUid: string): Promise<TaggedUser> {
-  const userSnap = await getHpcoreDb().collection("users").doc(submitterUid).get();
-  const departmentId = userSnap.data()?.departmentId as string | null | undefined;
-  if (!departmentId) {
+  const managerId = await resolveDirectManagerIdWith(submitterUid, hpcoreDirectManagerSource());
+  if (!managerId) {
     throw new MissingApproverError(
-      "Bạn chưa thuộc phòng ban nào nên không xác định được người duyệt (quản lý phòng ban). Liên hệ admin để được gán phòng ban.",
+      "Chưa xác định được quản lý trực tiếp của bạn: hồ sơ chưa gán quản lý trực tiếp và phòng ban (cùng các nhóm cha) chưa có trưởng đơn vị. Hãy chọn tay người duyệt, hoặc liên hệ admin.",
     );
   }
 
-  const deptSnap = await getHpcoreDb().collection("departments").doc(departmentId).get();
-  const leaderId = deptSnap.data()?.leaderId as string | null | undefined;
-  if (!leaderId) {
+  const managerSnap = await getHpcoreDb().collection("users").doc(managerId).get();
+  const managerData = managerSnap.data();
+  if (!managerSnap.exists || !managerData) {
     throw new MissingApproverError(
-      "Phòng ban của bạn chưa có trưởng đơn vị nên không xác định được người duyệt. Liên hệ admin để gán trưởng đơn vị.",
+      "Không tìm thấy hồ sơ quản lý trực tiếp của bạn. Liên hệ admin.",
     );
   }
 
-  const leaderSnap = await getHpcoreDb().collection("users").doc(leaderId).get();
-  const leaderData = leaderSnap.data();
-  if (!leaderSnap.exists || !leaderData) {
-    throw new MissingApproverError(
-      "Không tìm thấy hồ sơ trưởng đơn vị của phòng ban bạn. Liên hệ admin.",
-    );
-  }
-
-  const fullName = (leaderData.fullName as string | undefined)?.trim() || leaderId;
-  const email = (leaderData.email as string | undefined) ?? "";
+  const fullName = (managerData.fullName as string | undefined)?.trim() || managerId;
+  const email = (managerData.email as string | undefined) ?? "";
   return {
-    id: leaderId,
+    id: managerId,
     name: fullName,
-    username: email ? email.split("@")[0] : leaderId,
+    username: email ? email.split("@")[0] : managerId,
     avatarInitial: fullName.charAt(0).toUpperCase(),
   };
 }
 
 /**
- * Tra `leaderId` của phòng ban người gửi — KHÔNG throw (khác resolveSubmitterManager),
- * trả `null` nếu thiếu departmentId/leaderId. Dùng cho scope=manager-bypassed
- * (chỉ cần biết ai là quản lý trực tiếp HIỆN TẠI để so sánh, không chặn gì cả).
+ * Uid quản lý trực tiếp của người gửi theo luật chung — KHÔNG throw (khác
+ * resolveSubmitterManager), trả `null` nếu luật không ra ai. Dùng cho
+ * scope=manager-bypassed (báo quản lý trực tiếp khi người gửi chọn người khác
+ * duyệt thay — chỉ cần biết ai là quản lý trực tiếp HIỆN TẠI để so sánh).
  */
 export async function resolveDirectManagerId(submitterUid: string): Promise<string | null> {
-  const userSnap = await getHpcoreDb().collection("users").doc(submitterUid).get();
-  const departmentId = userSnap.data()?.departmentId as string | null | undefined;
-  if (!departmentId) return null;
-
-  const deptSnap = await getHpcoreDb().collection("departments").doc(departmentId).get();
-  const leaderId = deptSnap.data()?.leaderId as string | null | undefined;
-  return leaderId ?? null;
+  return resolveDirectManagerIdWith(submitterUid, hpcoreDirectManagerSource());
 }
 
 /**

@@ -146,6 +146,11 @@ export default function SubmitRequestPage() {
   // @ thêm bao nhiêu người cũng được, TẤT CẢ (quản lý + người thêm) đều phải
   // duyệt — gửi kèm managerOverrides dạng mảng uid, server tự xác thực lại.
   const [extraApprovers, setExtraApprovers] = useState<Record<number, TaggedUser[]>>({});
+  // Bước "submitter_manager" nào đang dùng GỢI Ý MẶC ĐỊNH (Quản lý trực tiếp
+  // máy chủ đã resolve theo luật chung lib/direct-manager.ts: directManagerIds
+  // → trưởng đơn vị chính → trưởng nhóm cha) chứ không phải người gửi tự chọn
+  // — chỉ để ghi rõ nhãn "Mặc định" trên form (change quan-ly-truc-tiep).
+  const [defaultManagerSteps, setDefaultManagerSteps] = useState<Record<number, boolean>>({});
   const [editingStepIndex, setEditingStepIndex] = useState<number | null>(null);
   // Đánh số "Luồng duyệt 1/2/3..." — logic tách sang lib/manager-flow-numbering.ts
   // (test riêng ở manager-flow-numbering.test.ts, kể cả đúng kịch bản bug đã
@@ -234,6 +239,30 @@ export default function SubmitRequestPage() {
       );
     // eslint-disable-next-line react-hooks/exhaustive-deps -- chỉ cần chạy lại khi đổi nhóm hoặc giá trị field liên quan điều kiện đổi, không phải mọi lần values đổi tham chiếu.
   }, [group?.id, relevantValuesKey]);
+
+  // Gợi ý MẶC ĐỊNH cho ô "Quản lý trực tiếp" (Sếp duyệt 03/10/2026, change
+  // quan-ly-truc-tiep — thay hành vi cũ "luôn để trống như Base.vn"): khi
+  // preview đã resolve được quản lý trực tiếp cho bước "submitter_manager",
+  // điền sẵn người đó nếu người gửi CHƯA tự chọn ai. Vẫn bấm "Đổi" để chọn
+  // người khác như trước. Không điền khi bước báo lỗi (luật trả null) — ô để
+  // trống, người gửi phải tự chọn, giống hệt hành vi cũ.
+  useEffect(() => {
+    if (approverPreview.status !== "ok") return;
+    const defaults = approverPreview.steps.filter(
+      (st) => st.kind === "submitter_manager" && st.user && !st.error,
+    );
+    if (defaults.length === 0) return;
+    setManagerOverrides((prev) => {
+      const next = { ...prev };
+      for (const st of defaults) if (!next[st.index]) next[st.index] = st.user!;
+      return next;
+    });
+    setDefaultManagerSteps((prev) => {
+      const next = { ...prev };
+      for (const st of defaults) if (next[st.index] === undefined) next[st.index] = true;
+      return next;
+    });
+  }, [approverPreview]);
 
   // Field "tự tính" (computedFrom): tự tính lại giá trị theo THỜI GIAN THỰC
   // mỗi khi bất kỳ field nào đổi — phép tính chỉ là ghép chuỗi trên vài field
@@ -523,8 +552,9 @@ export default function SubmitRequestPage() {
       return;
     }
 
-    // Ô "Quản lý trực tiếp" LUÔN bắt chọn tay (không tự điền sẵn, khớp đúng
-    // hành vi Base.vn thật) — chặn gửi nếu còn bước bắt chọn tay nào (gồm cả
+    // Ô "Quản lý trực tiếp" được điền sẵn gợi ý mặc định nếu máy chủ resolve
+    // được (xem effect "Gợi ý MẶC ĐỊNH" phía trên); không resolve được thì
+    // vẫn bắt chọn tay — chặn gửi nếu còn bước bắt chọn tay nào (gồm cả
     // "Linh động" có bật `submitterAssigns`, 28/08/2026) chưa được chọn. Tra
     // `group.approverSteps[s.index]` vì preview trả về từ API không mang theo
     // field cấu hình `submitterAssigns`, chỉ có `kind`.
@@ -719,11 +749,11 @@ export default function SubmitRequestPage() {
           )}
           {approverPreview.status === "ok" &&
             approverPreview.steps.map((step) => {
-              // "submitter_manager": KHÔNG tự điền sẵn giá trị auto-resolve —
-              // ảnh chụp thật từ request.base.vn (Base.vn gốc) cho thấy ô này
-              // LUÔN để trống, bắt người gửi tự tag tay mỗi lần, dù server vẫn
-              // có auto-resolve theo department.leaderId làm lưới an toàn lúc
-              // gửi nếu người dùng bỏ trống (xem lib/server/requests.ts).
+              // "submitter_manager": từ 03/10/2026 (change quan-ly-truc-tiep)
+              // ĐIỀN SẴN gợi ý mặc định = Quản lý trực tiếp máy chủ đã resolve
+              // (directManagerIds → trưởng đơn vị chính → trưởng nhóm cha), ghi
+              // rõ nhãn "Mặc định", người gửi vẫn bấm "Đổi" để chọn người khác.
+              // Không resolve được thì ô trống, bắt tag tay như trước.
               // "flexible_approver" có bật `submitterAssigns` (tra `group.
               // approverSteps` — preview không mang field cấu hình này) CŨNG
               // bắt người gửi tự chọn, khớp đúng cơ chế "Linh động" thật của
@@ -825,6 +855,11 @@ export default function SubmitRequestPage() {
                           onChange={(users) => {
                             if (!users[0]) return;
                             setManagerOverrides((prev) => ({ ...prev, [step.index]: users[0] }));
+                            setDefaultManagerSteps((prev) => ({
+                              ...prev,
+                              [step.index]:
+                                step.kind === "submitter_manager" && !!step.user && users[0].id === step.user.id,
+                            }));
                             setEditingStepIndex(null);
                           }}
                           placeholder={
@@ -876,6 +911,11 @@ export default function SubmitRequestPage() {
                             Đổi
                           </button>
                         </div>
+                        {step.kind === "submitter_manager" && defaultManagerSteps[step.index] && (
+                          <p className="text-[12px] text-gray-500">
+                            Mặc định: Quản lý trực tiếp của bạn theo hồ sơ App Tổng. Bấm “Đổi” nếu cần người khác duyệt.
+                          </p>
+                        )}
                         {/* Người duyệt THÊM cùng hàng — @ được nhiều người, tất
                             cả (người đã chọn + người thêm) đều phải duyệt mới qua. */}
                         <TagUserInput

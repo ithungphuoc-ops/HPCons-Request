@@ -118,7 +118,8 @@ export async function GET(request: Request) {
     if (scope === "manager-bypassed") {
       // Quản lý trực tiếp thấy thông báo khi bị "qua mặt": nhóm bật
       // notifyManager, có bước submitter_manager, người gửi hiện có quản lý
-      // trực tiếp (departmentId → leaderId), quản lý đó CHÍNH LÀ session.uid,
+      // trực tiếp (luật chung lib/direct-manager.ts: directManagerIds → trưởng
+      // đơn vị chính → trưởng nhóm cha), quản lý đó CHÍNH LÀ session.uid,
       // và KHÔNG có mặt trong approversSnapshot (bị chọn người khác thay).
       // Tính lại lúc đọc (không lưu sẵn lúc gửi) — xem design.md.
       const snap = await adminDb.collection("requests").get();
