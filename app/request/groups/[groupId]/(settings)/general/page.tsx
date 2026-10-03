@@ -6,6 +6,7 @@ import { ChevronDown, Plus, Users } from "lucide-react";
 import { useRequestContext } from "@/context/RequestContext";
 import Modal from "@/components/shared/Modal";
 import TagUserInput from "@/components/shared/TagUserInput";
+import UsedForScopeEditor, { describeUsedFor } from "@/components/request/UsedForScopeEditor";
 import RichTextEditor from "@/components/shared/RichTextEditor";
 import ApproverStepsEditor, {
   fromApproverSteps,
@@ -114,7 +115,7 @@ function GeneralInfoCard({ group, onEdit }: { group: ProposalGroup; onEdit: () =
         <InfoRow label="Thời hạn xử lý" value={group.slaHours != null ? `${group.slaHours} giờ` : "—"} />
         <InfoRow
           label="Sử dụng cho"
-          value={group.usedFor.length > 0 ? group.usedFor.map((u) => u.name).join(", ") : "Toàn công ty"}
+          value={describeUsedFor(group.usedFor, group.usedForIncludeSecondary !== false)}
         />
         <InfoRow label="Trạng thái" value={group.status === "active" ? "🟢 Đang khả dụng" : "🔴 Đang tạm đóng"} />
       </dl>
@@ -136,6 +137,7 @@ function EditGeneralModal({
   const [category, setCategory] = useState(group.category);
   const [slaHours, setSlaHours] = useState(group.slaHours != null ? String(group.slaHours) : "");
   const [usedFor, setUsedFor] = useState<TaggedUser[]>(group.usedFor);
+  const [usedForIncludeSecondary, setUsedForIncludeSecondary] = useState(group.usedForIncludeSecondary !== false);
   const [requiresSubmissionForm, setRequiresSubmissionForm] = useState(group.requiresSubmissionForm ?? true);
   const [descriptionHtml, setDescriptionHtml] = useState(group.descriptionHtml ?? "");
   const [status, setStatus] = useState<ProposalGroup["status"]>(group.status);
@@ -155,6 +157,11 @@ function EditGeneralModal({
       category,
       slaHours: slaValue,
       usedFor,
+      // Chỉ gửi khi khác giá trị hiện có (thiếu field = true) — tránh ghi
+      // dòng lịch sử thừa "— → Có" ở lần lưu đầu của nhóm cũ.
+      ...(usedForIncludeSecondary !== (group.usedForIncludeSecondary !== false)
+        ? { usedForIncludeSecondary }
+        : {}),
       requiresSubmissionForm,
       descriptionHtml,
       status,
@@ -218,8 +225,16 @@ function EditGeneralModal({
           {errors.sla && <ErrorText>{errors.sla}</ErrorText>}
         </Field>
 
-        <Field label="Sử dụng cho" description="Để trống nghĩa là toàn công ty được tạo.">
-          <TagUserInput value={usedFor} onChange={setUsedFor} />
+        <Field
+          label="Phạm vi sử dụng"
+          description="Ai được thấy và tạo loại đề xuất này. Người ngoài phạm vi không thấy loại đề xuất trong danh sách tạo mới."
+        >
+          <UsedForScopeEditor
+            value={usedFor}
+            onChange={setUsedFor}
+            includeSecondary={usedForIncludeSecondary}
+            onIncludeSecondaryChange={setUsedForIncludeSecondary}
+          />
         </Field>
 
         <Field label="Mẫu form đề xuất?" description="Người gửi có bắt buộc điền các trường tuỳ chỉnh của nhóm không?">

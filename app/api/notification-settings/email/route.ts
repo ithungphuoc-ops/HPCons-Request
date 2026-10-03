@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebase/admin";
 import { apiErrorResponse } from "@/lib/http";
-import { isWithinUsedForScope } from "@/lib/permissions";
+import { createScopeChecker } from "@/lib/server/hpcore-org";
 import { getEmailPreferencesByGroup, updateEmailPreferenceByGroup } from "@/lib/server/notificationSettings";
 import { requireSession } from "@/lib/session";
 import type { EmailNotifyCategory, ProposalGroup } from "@/lib/types";
@@ -25,9 +25,12 @@ export async function GET() {
     const session = await requireSession();
 
     const groupsSnap = await adminDb.collection("groups").where("status", "==", "active").get();
-    const eligible = groupsSnap.docs
-      .map((doc) => ({ id: doc.id, ...doc.data() }) as ProposalGroup)
-      .filter((g) => isWithinUsedForScope(g.usedFor, { userId: session.uid, groupIds: [] }));
+    const all = groupsSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }) as ProposalGroup);
+    const canSubmit = createScopeChecker(session.uid);
+    // Lỗi đọc App Tổng khi kiểm 1 nhóm → coi như hiện (giống GET /api/groups),
+    // không làm hỏng cả trang cài đặt email.
+    const inScope = await Promise.all(all.map((g) => canSubmit(g).catch(() => true)));
+    const eligible = all.filter((_, i) => inScope[i]);
 
     const prefsByGroup = await getEmailPreferencesByGroup(session.uid);
 

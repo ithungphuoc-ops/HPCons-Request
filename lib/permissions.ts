@@ -1,4 +1,5 @@
 import type { RequestInstance, TaggedUser } from "./types";
+import { isInUsedForScope } from "./used-for-scope";
 
 /**
  * Vai trò TOÀN CỤC của app tổng hpcons-portal (users/{uid}.role) — dùng thẳng,
@@ -21,16 +22,19 @@ export function canManageGroupsAtAppScope(role: Role): boolean {
 
 /**
  * §5.3 quy tắc 2: người dùng chỉ nhìn thấy/tạo đề xuất trong nhóm nằm trong phạm vi "Sử dụng cho".
- * usedFor rỗng nghĩa là toàn công ty được dùng.
+ * usedFor rỗng nghĩa là toàn công ty được dùng. Bản gọn giữ cho tương thích —
+ * `groupIds` coi như nhóm của ĐƠN VỊ CHÍNH (đã gồm nhóm cha). Nơi gọi thật ở
+ * máy chủ dùng `isUserInGroupScope` (lib/server/scope-membership.ts) để có cả
+ * kiêm nhiệm theo công tắc từng loại đề xuất.
  */
 export function isWithinUsedForScope(
   usedFor: TaggedUser[],
   user: ScopeUser,
 ): boolean {
-  if (usedFor.length === 0) return true;
-  const usedForIds = new Set(usedFor.map((u) => u.id));
-  if (usedForIds.has(user.userId)) return true;
-  return user.groupIds.some((id) => usedForIds.has(id));
+  return isInUsedForScope({ usedFor }, user.userId, {
+    primaryGroupIds: user.groupIds,
+    secondaryGroupIds: [],
+  });
 }
 
 /**

@@ -27,6 +27,7 @@ const FIELD_LABELS: Record<string, string> = {
   slaHours: "Thời hạn xử lý (giờ)",
   notifyManager: "Báo quản lý trực tiếp",
   usedFor: "Phạm vi sử dụng",
+  usedForIncludeSecondary: "Phạm vi: tính cả người kiêm nhiệm",
   approverSteps: "Người xét duyệt",
   followers: "Người theo dõi",
   fields: "Mẫu biểu (trường dữ liệu)",

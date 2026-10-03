@@ -1,6 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
+import { Users } from "lucide-react";
 import RequireAdminRole from "@/components/request/RequireAdminRole";
 import { useRequestContext } from "@/context/RequestContext";
 import { selectClass } from "@/components/shared/form-styles";
@@ -80,12 +81,27 @@ function GroupPermissionsPageInner() {
             <p className="text-[14px] text-gray-600">Toàn công ty</p>
           ) : (
             <div className="flex flex-wrap gap-1.5">
-              {group.usedFor.map((u) => (
-                <span key={u.id} className="rounded-full bg-gray-100 px-2 py-1 text-[12px] text-gray-700">
-                  {u.name}
-                </span>
-              ))}
+              {group.usedFor.map((u) =>
+                u.kind === "group" ? (
+                  <span
+                    key={`g-${u.id}`}
+                    className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-1 text-[12px] font-medium text-[var(--color-action-blue)]"
+                    title="Nhóm (gồm cả nhóm con)"
+                  >
+                    <Users size={12} /> {u.name}
+                  </span>
+                ) : (
+                  <span key={`u-${u.id}`} className="rounded-full bg-gray-100 px-2 py-1 text-[12px] text-gray-700">
+                    {u.name}
+                  </span>
+                ),
+              )}
             </div>
+          )}
+          {group.usedFor.some((u) => u.kind === "group") && (
+            <p className="mt-2 text-[12px] text-gray-500">
+              {group.usedForIncludeSecondary === false ? "Không tính người kiêm nhiệm." : "Tính cả người kiêm nhiệm."}
+            </p>
           )}
           <p className="mt-2 text-[12px] text-gray-400">Chỉnh sửa ở tab &quot;Thiết lập chung&quot;.</p>
         </div>

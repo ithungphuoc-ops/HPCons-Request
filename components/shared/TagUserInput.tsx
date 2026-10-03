@@ -14,7 +14,7 @@ interface TagUserInputProps {
   placeholder?: string;
   /** Nguồn danh bạ — mặc định `/api/directory` (chỉ người, dùng cho usedFor/
    * approverSteps/followers). Truyền `/api/directory/mentionable` để gồm cả
-   * nhóm thành viên/phòng ban (mention bình luận). */
+   * phòng ban App Tổng (mention bình luận). */
   directoryUrl?: string;
   /** Nếu truyền, hiện 1 link text dưới ô nhập (vd "Chọn quản lý trực tiếp");
    * bấm vào mở dropdown với TOÀN BỘ danh bạ RIÊNG (xem browseAllDirectoryUrl,

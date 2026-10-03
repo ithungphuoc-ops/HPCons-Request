@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isUserInGroupScope, OUT_OF_SCOPE_MESSAGE } from "@/lib/server/hpcore-org";
 import { adminDb } from "@/lib/firebase/admin";
 import { apiErrorResponse } from "@/lib/http";
 import { dedupeApproversWithMeta } from "@/lib/approval-logic";
@@ -150,6 +151,12 @@ export async function PATCH(
         );
       }
       const group = toProposalGroup(groupSnap.id, groupSnap.data()!);
+      // Phạm vi sử dụng — chặn khi gửi CHÍNH THỨC LẦN ĐẦU từ nháp (nháp tạo
+      // trước khi loại đề xuất bị thu hẹp phạm vi, hoặc nháp nhân bản). Đề
+      // xuất bị trả lại / đang chờ duyệt đã gửi rồi nên KHÔNG chặn gửi lại.
+      if (found.status === "draft" && !(await isUserInGroupScope(group, session.uid))) {
+        return NextResponse.json({ error: OUT_OF_SCOPE_MESSAGE }, { status: 403 });
+      }
       // Máy chủ tự tính lại giá trị field "tự tính" ngay khi gửi/gửi lại
       // chính thức — không tin giá trị client gửi lên (xem app/api/requests/route.ts).
       for (const field of group.fields) {

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isUserInGroupScope, OUT_OF_SCOPE_MESSAGE } from "@/lib/server/hpcore-org";
 import { adminDb } from "@/lib/firebase/admin";
 import { apiErrorResponse } from "@/lib/http";
 import { canView, loadRequest, toProposalGroup } from "@/lib/server/requests";
@@ -63,7 +64,13 @@ export async function POST(
     if (source.groupId) {
       const groupSnap = await adminDb.collection("groups").doc(source.groupId).get();
       if (groupSnap.exists) {
-        defaultFollowers = toProposalGroup(groupSnap.id, groupSnap.data()!).followers;
+        const group = toProposalGroup(groupSnap.id, groupSnap.data()!);
+        // Nhân bản = tạo đề xuất mới → phải nằm trong phạm vi sử dụng (người
+        // duyệt/người theo dõi ngoài phạm vi vẫn XEM được đề xuất gốc).
+        if (!(await isUserInGroupScope(group, session.uid))) {
+          return NextResponse.json({ error: OUT_OF_SCOPE_MESSAGE }, { status: 403 });
+        }
+        defaultFollowers = group.followers;
       }
     }
 
