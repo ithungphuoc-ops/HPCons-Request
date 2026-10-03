@@ -11,9 +11,9 @@ import { useRequestContext } from "@/context/RequestContext";
 /**
  * Cửa sổ chọn nhóm khi bấm "Tạo đề xuất" — xem
  * openspec/changes/add-core-request-flow-and-hpcore-sso/design.md Decision 10.
- * Đợt này lọc theo nhóm đang "active"; phạm vi usedFor chính xác vẫn được
- * máy chủ enforce khi gửi thật (POST /api/requests) — đây chỉ là danh sách
- * gợi ý, không phải chốt quyền cuối cùng.
+ * Lọc theo nhóm đang "active" + trong "Phạm vi sử dụng" của người đang xem
+ * (cờ `viewerCanSubmit` máy chủ tính ở GET /api/groups). Máy chủ vẫn chặn
+ * lần nữa khi gửi thật (POST /api/requests) — đây chỉ là danh sách hiển thị.
  */
 export default function GroupPickerModal({ onClose }: { onClose: () => void }) {
   const router = useRouter();
@@ -28,6 +28,9 @@ export default function GroupPickerModal({ onClose }: { onClose: () => void }) {
         groups: cat.groups.filter(
           (g) =>
             g.status === "active" &&
+            // Ngoài "Phạm vi sử dụng" → ẩn hẳn (Sếp chốt 03/10/2026). Cờ do
+            // máy chủ tính theo người đang xem; thiếu cờ = hiện như cũ.
+            g.viewerCanSubmit !== false &&
             (term === "" ||
               normalizeSearch(g.name).includes(term) ||
               normalizeSearch(g.description).includes(term)),

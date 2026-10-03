@@ -4,7 +4,7 @@ import { listMentionableEntries } from "@/lib/server/mentions";
 import { requireSession } from "@/lib/session";
 
 /**
- * Danh sách người + nhóm thành viên/phòng ban để @mention trong bình luận —
+ * Danh sách người + phòng ban (App Tổng) để @mention trong bình luận —
  * route RIÊNG, không sửa `/api/directory` hiện có (giữ nguyên chỉ-người cho
  * usedFor/approverSteps/followers).
  */

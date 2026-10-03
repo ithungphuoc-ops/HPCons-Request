@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Modal from "@/components/shared/Modal";
 import TagUserInput from "@/components/shared/TagUserInput";
+import UsedForScopeEditor from "@/components/request/UsedForScopeEditor";
 import ApproverStepsEditor, {
   toApproverSteps,
   type DraftApproverStep,
@@ -41,6 +42,7 @@ export default function CreateGroupModal() {
   const [category, setCategory] = useState("");
   const [slaHours, setSlaHours] = useState<string>("");
   const [usedFor, setUsedFor] = useState<TaggedUser[]>([]);
+  const [usedForIncludeSecondary, setUsedForIncludeSecondary] = useState(true);
   const [followers, setFollowers] = useState<TaggedUser[]>([]);
   const [description, setDescription] = useState("");
 
@@ -76,6 +78,7 @@ export default function CreateGroupModal() {
         slaHours: slaValue,
         notifyManager,
         usedFor,
+        usedForIncludeSecondary,
         approverSteps: steps,
         followers,
       });
@@ -99,6 +102,7 @@ export default function CreateGroupModal() {
     setCategory("");
     setSlaHours("");
     setUsedFor([]);
+    setUsedForIncludeSecondary(true);
     setFollowers([]);
     setDescription("");
     setAdvancedOpen(false);
@@ -217,8 +221,13 @@ export default function CreateGroupModal() {
               {errors.sla && <p className="mt-1 text-[12px] text-[var(--color-danger-red)]">{errors.sla}</p>}
             </FieldRow>
 
-            <FieldRow label="Sử dụng cho" description="Để trống nghĩa là toàn công ty được tạo.">
-              <TagUserInput value={usedFor} onChange={setUsedFor} placeholder="Gõ @ để tìm người dùng" />
+            <FieldRow label="Phạm vi sử dụng" description="Ai được thấy và tạo loại đề xuất này.">
+              <UsedForScopeEditor
+                value={usedFor}
+                onChange={setUsedFor}
+                includeSecondary={usedForIncludeSecondary}
+                onIncludeSecondaryChange={setUsedForIncludeSecondary}
+              />
             </FieldRow>
 
             <FieldRow label="Người theo dõi" description="Nhận cập nhật mặc định của mọi đề xuất trong nhóm.">

@@ -9,10 +9,10 @@ export const HPCORE_DASHBOARD_URL = "https://account.hpcore.vn/dashboard";
 // đã dùng ở pkd_crm-next/KhoUNICE_Web.
 export const CURRENT_APP_HOST = "request.hpcore.vn";
 
-// Danh sách "Nhóm thành viên" (linh hoạt, cắt ngang phòng ban) do app tổng
-// quản lý tại account.hpcore.vn/dashboard/member-groups — public, chỉ trả
-// id + tên, dùng cho trường "Chọn bộ phận (tự động)".
-export const HPCORE_MEMBER_GROUPS_API = "https://account.hpcore.vn/api/member-groups/public";
+// Danh sách phòng ban App Tổng cho trường "Chọn bộ phận (tự động)" — route
+// nội bộ có đăng nhập (thay endpoint public "Nhóm thành viên" đã bỏ
+// 03/10/2026). Giá trị lưu vào đề xuất vẫn là TÊN phòng ban như trước.
+export const DEPARTMENTS_API = "/api/directory/departments";
 
 // Tên công ty đầy đủ — dùng cho thẻ ${company} trong mẫu in và các nơi hiển
 // thị letterhead. Trước đây hardcode rời rạc ở nhiều trang, giờ gom về 1 nơi.

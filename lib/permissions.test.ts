@@ -24,8 +24,13 @@ describe("isWithinUsedForScope", () => {
     expect(isWithinUsedForScope([alice], { userId: "u2", groupIds: [] })).toBe(false);
   });
 
-  it("cho phép người dùng thuộc nhóm nằm trong usedFor", () => {
-    expect(isWithinUsedForScope([bob], { userId: "u1", groupIds: ["u2"] })).toBe(true);
+  it("cho phép người dùng thuộc nhóm (kind: group) nằm trong usedFor", () => {
+    const team: TaggedUser = { ...bob, id: "d1", kind: "group" };
+    expect(isWithinUsedForScope([team], { userId: "u1", groupIds: ["d1"] })).toBe(true);
+  });
+
+  it("phần tử người lẻ chỉ khớp theo uid, không khớp nhầm id nhóm", () => {
+    expect(isWithinUsedForScope([bob], { userId: "u1", groupIds: ["u2"] })).toBe(false);
   });
 });
 

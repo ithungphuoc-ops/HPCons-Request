@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isUserInGroupScope } from "@/lib/server/hpcore-org";
 import { unstable_cache } from "next/cache";
 import { adminDb } from "@/lib/firebase/admin";
 import { apiErrorResponse } from "@/lib/http";
-import { isWithinUsedForScope, type Role } from "@/lib/permissions";
+import type { Role } from "@/lib/permissions";
 import { canView } from "@/lib/server/requests";
 import { requireSession } from "@/lib/session";
 import type { ProposalGroup, RequestInstance } from "@/lib/types";
@@ -92,7 +93,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     // §5.3 quy tắc 2 (usedFor) — cùng chặn đã áp dụng lúc gửi đề xuất thật ở
     // app/api/requests/route.ts: không nằm trong phạm vi "Sử dụng cho" của
     // nhóm thì không được đọc bất cứ gì của nhóm này, kể cả gợi ý.
-    if (!isWithinUsedForScope(group.usedFor, { userId: session.uid, groupIds: [] })) {
+    if (!(await isUserInGroupScope(group, session.uid))) {
       return NextResponse.json(
         { error: "Bạn không nằm trong phạm vi sử dụng của nhóm đề xuất này." },
         { status: 403 },

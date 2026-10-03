@@ -2,60 +2,59 @@ import { NextResponse } from "next/server";
 import { unstable_cache } from "next/cache";
 import { prioritizeDirectManagers, readDirectManagerIds } from "@/lib/direct-manager";
 import { getHpcoreDb } from "@/lib/hpcore";
+import { getCachedDepartments } from "@/lib/server/hpcore-org";
 import { apiErrorResponse } from "@/lib/http";
 import { requireSession } from "@/lib/session";
 import type { TaggedUser } from "@/lib/types";
 
 /**
- * Danh bạ "quản lý trực tiếp" — CHỈ gồm người hiện đang là `managerId` của ít
- * nhất 1 "Nhóm thành viên" (collection memberGroups ở app tổng, quản trị tại
- * account.hpcore.vn/dashboard/member-groups) — KHÔNG còn dùng
- * departments/{id}.leaderId nữa (đổi theo yêu cầu Sếp, 29/07/2026: nguồn
- * "quản lý trực tiếp" lấy từ Nhóm thành viên, không phải đơn vị org-chart).
- * Dùng cho picker "Chọn quản lý trực tiếp" ở bước duyệt submitter_manager —
- * xem openspec/changes/improve-request-approver-ux.
+ * Danh bạ "quản lý trực tiếp" cho picker "Chọn quản lý trực tiếp" ở bước
+ * duyệt submitter_manager — xem openspec/changes/improve-request-approver-ux.
  *
- * Từ 03/10/2026 (change quan-ly-truc-tiep): người trong
- * users/{uid}.directManagerIds của chính người đang mở picker được đưa lên ĐẦU
- * danh sách — xem getCachedOwnDirectManagers bên dưới.
+ * Từ 03/10/2026 (Sếp duyệt demo bo-nhom-thanh-vien-pham-vi-nhom): BỎ HẲN
+ * nguồn "Nhóm thành viên" (memberGroups). Danh sách gốc = các TRƯỞNG ĐƠN VỊ
+ * (departments/{id}.leaderId) của App Tổng, chức danh "Trưởng đơn vị <tên>"
+ * (1 người làm trưởng nhiều đơn vị → nối các chức danh). Người trong
+ * users/{uid}.directManagerIds của chính người đang mở picker được đưa lên
+ * ĐẦU — xem getCachedOwnDirectManagers bên dưới. Gõ @ vẫn tìm được BẤT KỲ ai
+ * (browseAllDirectoryUrl ở submit/page.tsx dùng /api/directory).
  *
- * Cache 60 giây (thêm 21/08/2026) — mỗi lần picker mở là 1 lượt đọc toàn bộ
- * memberGroups + 1 lượt đọc riêng cho MỖI quản lý (N+1), không có Timestamp
- * nên an toàn cache trực tiếp.
+ * Cache 60 giây — 1 lượt đọc departments (dùng chung cache) + 1 lượt đọc
+ * riêng cho MỖI trưởng đơn vị, không có Timestamp nên an toàn cache.
  */
 const getCachedManagerDirectory = unstable_cache(
   async (): Promise<TaggedUser[]> => {
     const db = getHpcoreDb();
-    const groupsSnap = await db.collection("memberGroups").get();
+    const departments = await getCachedDepartments();
 
-    const groupNamesByManagerId = new Map<string, string[]>();
-    for (const doc of groupsSnap.docs) {
-      const data = doc.data() as { name?: string; managerId?: string | null };
-      if (!data.managerId) continue;
-      const list = groupNamesByManagerId.get(data.managerId) ?? [];
-      list.push(data.name?.trim() || "(Nhóm không tên)");
-      groupNamesByManagerId.set(data.managerId, list);
+    const deptNamesByLeaderId = new Map<string, string[]>();
+    for (const dept of departments) {
+      if (!dept.leaderId) continue;
+      const list = deptNamesByLeaderId.get(dept.leaderId) ?? [];
+      list.push(dept.name);
+      deptNamesByLeaderId.set(dept.leaderId, list);
     }
 
-    const managerIds = Array.from(groupNamesByManagerId.keys());
-    const managerSnaps = await Promise.all(managerIds.map((id) => db.collection("users").doc(id).get()));
+    const leaderIds = Array.from(deptNamesByLeaderId.keys());
+    const leaderSnaps = await Promise.all(leaderIds.map((id) => db.collection("users").doc(id).get()));
 
-    return managerSnaps
-      .filter((snap) => snap.exists)
+    return leaderSnaps
+      .filter((snap) => snap.exists && snap.data()?.isActive !== false)
       .map((snap) => {
         const data = snap.data() as { fullName?: string; email?: string; username?: string | null };
         const name = data.fullName?.trim() || data.email?.split("@")[0] || snap.id;
-        const groupNames = groupNamesByManagerId.get(snap.id) ?? [];
+        const deptNames = deptNamesByLeaderId.get(snap.id) ?? [];
         return {
           id: snap.id,
           name,
           username: data.username || data.email?.split("@")[0] || snap.id,
           avatarInitial: name.charAt(0).toUpperCase(),
-          title: groupNames.map((n) => `Quản lý nhóm "${n}"`).join(", "),
+          title: deptNames.map((n) => `Trưởng đơn vị ${n}`).join(", "),
         };
-      });
+      })
+      .sort((a, b) => a.name.localeCompare(b.name, "vi"));
   },
-  ["request-manager-directory"],
+  ["request-manager-directory-departments"],
   { revalidate: 60 },
 );
 
@@ -97,9 +96,9 @@ export async function GET() {
       getCachedManagerDirectory(),
       getCachedOwnDirectManagers(session.uid),
     ]);
-    // Giữ nguồn memberGroups như cũ, chỉ đưa người trong directManagerIds lên
-    // đầu (đúng thứ tự). Người đã có trong danh sách gốc vẫn giữ chức danh
-    // "Quản lý nhóm ..." và thêm nhãn "Quản lý trực tiếp".
+    // Đưa người trong directManagerIds lên đầu (đúng thứ tự). Người đã có
+    // trong danh sách gốc vẫn giữ chức danh "Trưởng đơn vị ..." và thêm nhãn
+    // "Quản lý trực tiếp".
     const ownIds = new Set(own.ids);
     const extra = own.users.map((u) => ({ ...u, title: "Quản lý trực tiếp" }));
     const directory = prioritizeDirectManagers(base, own.ids, extra).map((u) =>

@@ -20,9 +20,10 @@ export interface TaggedUser {
   name: string;
   username: string;
   avatarInitial: string;
-  /** "group" = nhóm thành viên/phòng ban (chỉ dùng cho mention bình luận,
-   * xem lib/server/mentions.ts) — thiếu field = người (mặc định, tương thích
-   * ngược với usedFor/approverSteps/followers hiện có). */
+  /** "group" = phòng ban App Tổng (departments/{id}) — dùng cho mention bình
+   * luận (lib/server/mentions.ts) và cho "Phạm vi sử dụng" `usedFor` (chọn
+   * nhóm, xem lib/used-for-scope.ts). Thiếu field = người (mặc định, tương
+   * thích ngược với usedFor/approverSteps/followers hiện có). */
   kind?: "user" | "group";
   /** Chức danh phụ hiện dưới tên (vd "Trưởng phòng Hành chính Nhân sự") —
    * chỉ /api/directory/managers trả field này, các nguồn danh bạ khác để
@@ -286,7 +287,7 @@ export const fieldDataTypeLabels: Record<FieldDataType, string> = {
   formula: "Công thức",
   base_table: "Base Table",
   section_title: "Tiêu đề phân đoạn",
-  department_select: "Chọn bộ phận (tự động từ Nhóm thành viên)",
+  department_select: "Chọn bộ phận (tự động từ phòng ban App Tổng)",
   user_select: "Chọn người dùng (@)",
 };
 
@@ -425,7 +426,17 @@ export interface ProposalGroup {
   approvalFlow: ApprovalFlowType;
   slaHours: number | null;
   notifyManager: boolean;
+  /** Phạm vi sử dụng — rỗng = toàn công ty. Gồm người lẻ (không `kind`/
+   * `kind: "user"`) và nhóm (`kind: "group"`, id = departments/{id} App
+   * Tổng; chọn nhóm cha = gồm nhóm con). Luật: lib/used-for-scope.ts. */
   usedFor: TaggedUser[];
+  /** Tính cả người KIÊM NHIỆM ở nhóm đã chọn trong `usedFor` — thiếu field =
+   * true (Sếp chốt 03/10/2026: mặc định tính, tắt được từng loại đề xuất). */
+  usedForIncludeSecondary?: boolean;
+  /** CHỈ ĐỌC, máy chủ tính theo người đang xem ở GET /api/groups — người này
+   * có nằm trong phạm vi sử dụng (được tạo đề xuất) không. KHÔNG lưu
+   * Firestore (PATCH nhóm bỏ field này). */
+  viewerCanSubmit?: boolean;
   approverSteps: ApproverStepDef[];
   followers: TaggedUser[];
   /** Danh sách người theo dõi CHỈ được thêm khi nhóm điều kiện tương ứng thoả
@@ -688,7 +699,8 @@ export interface RequestComment {
   avatarInitial: string;
   text: string;
   at: string;
-  /** uid người + id nhóm thành viên/phòng ban được @mention trong bình luận này. */
+  /** uid người + id phòng ban (App Tổng) được @mention trong bình luận này —
+   * bình luận cũ có thể còn id "Nhóm thành viên" đã bỏ (giãn ra rỗng). */
   mentionIds?: string[];
   /** Bình luận trả lời cũ (dữ liệu lịch sử) từng trỏ về 1 bình luận gốc — tính
    * năng "Trả lời" đã bị BỎ (24/08/2026, xem design.md), không còn đường tạo

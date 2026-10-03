@@ -508,9 +508,9 @@ export async function resolveDirectManagerId(submitterUid: string): Promise<stri
 /**
  * Xác thực 1 lựa chọn thủ công cho bước "quản lý trực tiếp" — chấp nhận BẤT
  * KỲ nhân viên hợp lệ nào trong hồ sơ app tổng (KHÔNG còn giới hạn phải là
- * managerId của memberGroups — Sếp cần chọn người KHÁC quản lý trực tiếp
+ * trưởng đơn vị — Sếp cần chọn người KHÁC quản lý trực tiếp
  * "chính thức" duyệt thay trong 1 số trường hợp thực tế, vd nút "Chọn quản
- * lý trực tiếp" chỉ gợi ý nhanh managerId của Nhóm thành viên, nhưng gõ @
+ * lý trực tiếp" chỉ gợi ý nhanh trưởng đơn vị (departments.leaderId), nhưng gõ @
  * vẫn phải tag được BẤT KỲ ai trong toàn công ty — xem TagUserInput
  * browseAllDirectoryUrl ở submit/page.tsx). KHÔNG tin nguyên giá trị client
  * gửi, tự query lại users/{uid} để xác nhận tồn tại thật. Trả null nếu

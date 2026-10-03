@@ -1,8 +1,9 @@
 import { after, NextResponse } from "next/server";
+import { isUserInGroupScope } from "@/lib/server/hpcore-org";
 import { canApproverAct, hasUnseenUpdate } from "@/lib/approval-logic";
 import { adminDb } from "@/lib/firebase/admin";
 import { apiErrorResponse } from "@/lib/http";
-import { canManageGroupsAtAppScope, isWithinUsedForScope } from "@/lib/permissions";
+import { canManageGroupsAtAppScope } from "@/lib/permissions";
 import { mergeFollowers } from "@/lib/server/conditions";
 import { resolveComputedValue } from "@/lib/server/computed-fields";
 import { dedupeApproversWithMeta } from "@/lib/approval-logic";
@@ -282,7 +283,7 @@ export async function POST(request: Request) {
       }
       group = toProposalGroup(groupSnap.id, groupSnap.data()!);
 
-      if (!isWithinUsedForScope(group.usedFor, { userId: session.uid, groupIds: [] })) {
+      if (!(await isUserInGroupScope(group, session.uid))) {
         return NextResponse.json(
           { error: "Bạn không nằm trong phạm vi sử dụng của nhóm đề xuất này." },
           { status: 403 },

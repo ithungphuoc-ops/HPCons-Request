@@ -6,11 +6,12 @@ import { FileDown, Loader2, Paperclip, Plus, Trash2, Upload, X } from "lucide-re
 import { DateLeadTimeZonesNote } from "@/components/request/DateLeadTimeZonesNote";
 import { useRequestContext } from "@/context/RequestContext";
 import {
-  HPCORE_MEMBER_GROUPS_API,
+  DEPARTMENTS_API,
   MAX_DIRECT_UPLOAD_FILE_SIZE,
   MAX_DIRECT_UPLOAD_FILE_SIZE_LABEL,
 } from "@/lib/constants";
 import { uploadAttachments } from "@/lib/upload-client";
+import { flattenDepartmentTree } from "@/lib/used-for-scope";
 import type { TableColumnType } from "@/lib/types";
 import {
   deserializeTableRows,
@@ -632,6 +633,20 @@ export default function SubmitRequestPage() {
       setSubmitting(false);
     }
   };
+
+  // Ngoài "Phạm vi sử dụng" (cờ máy chủ tính ở GET /api/groups): không cho
+  // tạo mới / gửi nháp. Đề xuất đã gửi (bị trả lại, đang chờ duyệt) vẫn sửa
+  // & gửi lại được — khớp chặn ở máy chủ (POST /api/requests, PATCH nháp).
+  if (group.viewerCanSubmit === false && (loadedStatus === null || loadedStatus === "draft")) {
+    return (
+      <div className="mx-auto max-w-[960px] px-4 py-6 sm:px-8">
+        <h1 className="text-[20px] font-bold text-gray-900">Gửi đề xuất: {group.name}</h1>
+        <p className="mt-3 rounded-[6px] border border-amber-200 bg-amber-50 px-4 py-3 text-[14px] text-amber-900">
+          Bạn không nằm trong phạm vi sử dụng của loại đề xuất này. Liên hệ Owner/Admin nếu cần được thêm vào.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-[960px] px-8 py-6">
@@ -2281,37 +2296,47 @@ function DepartmentSelectControl({
   value: unknown;
   onChange: (value: unknown) => void;
 }) {
-  const [groups, setGroups] = useState<{ id: string; name: string }[] | null>(null);
+  const [departments, setDepartments] = useState<{ id: string; name: string; parentId: string | null }[] | null>(null);
   const [error, setError] = useState(false);
 
   useEffect(() => {
-    fetch(HPCORE_MEMBER_GROUPS_API)
+    fetch(DEPARTMENTS_API)
       .then((res) => (res.ok ? res.json() : Promise.reject(new Error("fetch failed"))))
-      .then((data: { groups: { id: string; name: string }[] }) => setGroups(data.groups ?? []))
+      .then((data: { departments?: { id: string; name: string; parentId: string | null }[] }) =>
+        setDepartments(data.departments ?? []),
+      )
       .catch(() => setError(true));
   }, []);
+
+  const rows = useMemo(() => (departments ? flattenDepartmentTree(departments) : []), [departments]);
+  const current = typeof value === "string" ? value : "";
+  // Nháp/đề xuất cũ lưu TÊN "Nhóm thành viên" đã bỏ (vd "Phòng Kỹ thuật Thi
+  // công (HP Cons)") — vẫn hiện đúng giá trị đang lưu thay vì ô trống, để
+  // người dùng tự chọn lại phòng ban mới nếu muốn.
+  const isLegacyValue = current !== "" && departments !== null && !departments.some((d) => d.name === current);
 
   if (error) {
     return (
       <p className="text-[12px] text-[var(--color-danger-red)]">
-        Không tải được danh sách bộ phận từ account.hpcore.vn, vui lòng thử lại sau.
+        Không tải được danh sách bộ phận từ App Tổng, vui lòng thử lại sau.
       </p>
     );
   }
-  if (!groups) {
+  if (!departments) {
     return <p className="text-[12px] text-gray-400">Đang tải danh sách bộ phận...</p>;
   }
 
   return (
     <select
       className={selectClass}
-      value={(value as string) ?? ""}
+      value={current}
       onChange={(e) => onChange(e.target.value)}
     >
       <option value="">Chọn bộ phận</option>
-      {groups.map((g) => (
-        <option key={g.id} value={g.name}>
-          {g.name}
+      {isLegacyValue && <option value={current}>{current} (tên cũ)</option>}
+      {rows.map(({ dept, depth }) => (
+        <option key={dept.id} value={dept.name}>
+          {`${"   ".repeat(depth)}${depth > 0 ? "└ " : ""}${dept.name}`}
         </option>
       ))}
     </select>

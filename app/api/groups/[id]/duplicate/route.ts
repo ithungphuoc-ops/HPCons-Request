@@ -68,6 +68,9 @@ export async function POST(
       slaHours: source.slaHours,
       notifyManager: source.notifyManager,
       usedFor: JSON.parse(JSON.stringify(source.usedFor)),
+      ...(source.usedForIncludeSecondary !== undefined
+        ? { usedForIncludeSecondary: source.usedForIncludeSecondary }
+        : {}),
       approverSteps: JSON.parse(JSON.stringify(approverSteps)),
       followers: JSON.parse(JSON.stringify(source.followers)),
       followersConditional: source.followersConditional

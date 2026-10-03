@@ -618,8 +618,8 @@ export default function AddFieldModal() {
           <Row label="Danh sách bộ phận">
             <p className="text-[12px] text-gray-500">
               Không cần nhập tay — khi gửi đề xuất, trường này tự lấy danh sách{" "}
-              <span className="font-medium">Nhóm thành viên</span> đang có ở
-              account.hpcore.vn/dashboard/member-groups để người dùng chọn.
+              <span className="font-medium">phòng ban (Nhóm)</span> đang có ở App Tổng
+              (account.hpcore.vn/dashboard/units) để người dùng chọn. Giá trị lưu là tên phòng ban.
             </p>
           </Row>
         )}

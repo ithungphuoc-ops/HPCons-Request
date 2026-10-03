@@ -1,6 +1,8 @@
 import "server-only";
 import { unstable_cache } from "next/cache";
 import { getHpcoreDb } from "@/lib/hpcore";
+import { getCachedDepartments } from "@/lib/server/hpcore-org";
+import { collectDescendantIds } from "@/lib/used-for-scope";
 import type { TaggedUser } from "@/lib/types";
 
 export type MentionableKind = "user" | "group";
@@ -10,22 +12,22 @@ export interface MentionableEntry extends TaggedUser {
 }
 
 /**
- * Danh sách người + nhóm thành viên/phòng ban để @mention trong bình luận —
- * đọc trực tiếp từ Firestore hpcore (cùng nguồn `/api/directory` đang dùng
- * cho users, mở rộng thêm memberGroups + departments). Dùng RIÊNG cho mention
- * bình luận — KHÔNG dùng để mở rộng usedFor/approverSteps/followers (những
- * chỗ đó vẫn chỉ nhận cá nhân qua /api/directory hiện có).
+ * Danh sách người + phòng ban để @mention trong bình luận — đọc trực tiếp từ
+ * Firestore hpcore (cùng nguồn `/api/directory` đang dùng cho users, thêm
+ * departments). Từ 03/10/2026 BỎ HẲN "Nhóm thành viên" (memberGroups) — Sếp
+ * duyệt demo bo-nhom-thanh-vien-pham-vi-nhom; @nhóm chỉ còn là phòng ban.
+ * Dùng RIÊNG cho mention bình luận — KHÔNG dùng để mở rộng
+ * approverSteps/followers (những chỗ đó vẫn chỉ nhận cá nhân).
  *
- * Cache 60 giây (thêm 21/08/2026) — đọc 3 collection toàn bộ mỗi lần ô @mention
- * hiện ra, không có field Timestamp nên an toàn cache trực tiếp.
+ * Cache 60 giây (thêm 21/08/2026) — đọc toàn bộ mỗi lần ô @mention hiện ra,
+ * không có field Timestamp nên an toàn cache trực tiếp.
  */
 export const listMentionableEntries = unstable_cache(
   async (): Promise<MentionableEntry[]> => {
   const db = getHpcoreDb();
-  const [usersSnap, groupsSnap, deptsSnap] = await Promise.all([
+  const [usersSnap, deptList] = await Promise.all([
     db.collection("users").where("isActive", "==", true).get(),
-    db.collection("memberGroups").get(),
-    db.collection("departments").get(),
+    getCachedDepartments(),
   ]);
 
   const users: MentionableEntry[] = usersSnap.docs.map((doc) => {
@@ -43,42 +45,31 @@ export const listMentionableEntries = unstable_cache(
     };
   });
 
-  const groups: MentionableEntry[] = groupsSnap.docs.map((doc) => {
-    const data = doc.data() as { name?: string };
-    const name = data.name?.trim() || "(Nhóm không tên)";
+  const departments: MentionableEntry[] = deptList.map((dept) => {
+    const name = dept.name;
     return {
       kind: "group",
-      id: doc.id,
+      id: dept.id,
       name,
       username: name.toLowerCase().replace(/\s+/g, "-"),
       avatarInitial: name.charAt(0).toUpperCase(),
     };
   });
 
-  const departments: MentionableEntry[] = deptsSnap.docs.map((doc) => {
-    const data = doc.data() as { name?: string };
-    const name = data.name?.trim() || "(Phòng ban không tên)";
-    return {
-      kind: "group",
-      id: doc.id,
-      name,
-      username: name.toLowerCase().replace(/\s+/g, "-"),
-      avatarInitial: name.charAt(0).toUpperCase(),
-    };
-  });
-
-  return [...users, ...groups, ...departments];
+  return [...users, ...departments];
   },
   ["mentionable-entries"],
   { revalidate: 60 },
 );
 
 /**
- * Giãn `mentionIds` (uid người HOẶC id nhóm thành viên/phòng ban) thành tập
- * hợp uid người thật — tra `users` trước, không thấy thì `memberGroups`
- * (memberIds), không thấy nữa thì `departments` (users.departmentId == id).
- * Loại trùng + loại trừ `excludeUid` (người vừa viết bình luận, tránh tự báo
- * cho chính mình — xem design.md Open Questions).
+ * Giãn `mentionIds` (uid người HOẶC id phòng ban) thành tập hợp uid người
+ * thật — tra `users` trước; không phải người thì coi là phòng ban: gồm người
+ * có ĐƠN VỊ CHÍNH hoặc KIÊM NHIỆM (secondaryDepartmentIds) ở phòng ban đó
+ * hoặc ở bất kỳ nhóm con nào của nó (theo parentId). Id không tồn tại (vd id
+ * "Nhóm thành viên" cũ trong bình luận cũ) → rỗng, không lỗi. Loại trùng +
+ * loại trừ `excludeUid` (người vừa viết bình luận, tránh tự báo cho chính
+ * mình — xem design.md Open Questions).
  */
 export async function expandMentionsToUids(
   mentionIds: string[],
@@ -87,6 +78,7 @@ export async function expandMentionsToUids(
   if (mentionIds.length === 0) return [];
   const db = getHpcoreDb();
   const result = new Set<string>();
+  let departments: Awaited<ReturnType<typeof getCachedDepartments>> | null = null;
 
   for (const id of mentionIds) {
     const userDoc = await db.collection("users").doc(id).get();
@@ -95,15 +87,19 @@ export async function expandMentionsToUids(
       continue;
     }
 
-    const groupDoc = await db.collection("memberGroups").doc(id).get();
-    if (groupDoc.exists) {
-      const memberIds = (groupDoc.data()?.memberIds as string[] | undefined) ?? [];
-      memberIds.forEach((uid) => result.add(uid));
-      continue;
+    departments ??= await getCachedDepartments();
+    if (!departments.some((d) => d.id === id)) continue;
+    const deptIds = [id, ...collectDescendantIds([id], departments)];
+    // Firestore giới hạn "in"/"array-contains-any" 30 giá trị — chia lô.
+    for (let i = 0; i < deptIds.length; i += 30) {
+      const chunk = deptIds.slice(i, i + 30);
+      const [mainSnap, secondarySnap] = await Promise.all([
+        db.collection("users").where("departmentId", "in", chunk).get(),
+        db.collection("users").where("secondaryDepartmentIds", "array-contains-any", chunk).get(),
+      ]);
+      mainSnap.docs.forEach((d) => result.add(d.id));
+      secondarySnap.docs.forEach((d) => result.add(d.id));
     }
-
-    const deptUsers = await db.collection("users").where("departmentId", "==", id).get();
-    deptUsers.docs.forEach((d) => result.add(d.id));
   }
 
   result.delete(excludeUid);

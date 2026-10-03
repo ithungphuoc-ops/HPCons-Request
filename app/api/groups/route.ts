@@ -7,18 +7,20 @@ import {
   ensureFieldCodes,
   sanitizeDescriptionHtml,
 } from "@/lib/server/groups";
+import { createScopeChecker } from "@/lib/server/hpcore-org";
 import { requireSession, requireWriteAccess } from "@/lib/session";
 import type { CategoryGroup, ProposalGroup } from "@/lib/types";
 
 export async function GET() {
   try {
-    await requireSession();
+    const session = await requireSession();
 
     const [categoriesSnap, groupsSnap] = await Promise.all([
       adminDb.collection("categories").orderBy("code").get(),
       adminDb.collection("groups").orderBy("createdAt").get(),
     ]);
 
+    const canSubmit = createScopeChecker(session.uid);
     const groups = await Promise.all(
       groupsSnap.docs.map(async (doc) => {
         const group = { id: doc.id, ...doc.data() } as ProposalGroup;
@@ -32,6 +34,11 @@ export async function GET() {
         }
         group.fields = fields;
         group.approverSteps = steps;
+        // Cờ CHỈ ĐỌC cho người đang xem — danh sách "Tạo đề xuất" ẩn loại
+        // ngoài phạm vi; trang cài đặt (Owner/Admin) vẫn thấy đủ mọi nhóm.
+        // Lỗi đọc App Tổng → không ẩn (máy chủ vẫn chặn khi gửi thật), tránh
+        // làm hỏng cả danh sách nhóm của mọi người.
+        group.viewerCanSubmit = await canSubmit(group).catch(() => true);
         return group;
       }),
     );
@@ -67,7 +74,8 @@ type CreateGroupBody = Omit<
 export async function POST(request: Request) {
   try {
     const session = await requireWriteAccess();
-    const body = (await request.json()) as CreateGroupBody;
+    const body = (await request.json()) as CreateGroupBody & { viewerCanSubmit?: unknown };
+    delete body.viewerCanSubmit;
 
     const categoryName = body.category?.trim() || "Chưa phân loại";
     await ensureCategoryExists(categoryName);

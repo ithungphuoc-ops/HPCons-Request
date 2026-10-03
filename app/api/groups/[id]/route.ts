@@ -29,6 +29,11 @@ export async function PATCH(
     // `createdBy` chỉ set 1 LẦN lúc tạo nhóm (POST /api/groups) — không tin
     // client, luôn bỏ qua field này nếu lỡ có trong body PATCH.
     delete patch.createdBy;
+    // Cờ chỉ đọc tính theo người xem (GET /api/groups) — không bao giờ lưu.
+    delete patch.viewerCanSubmit;
+    if (patch.usedForIncludeSecondary !== undefined && typeof patch.usedForIncludeSecondary !== "boolean") {
+      return NextResponse.json({ error: "usedForIncludeSecondary phải là true/false." }, { status: 400 });
+    }
 
     const ref = adminDb.collection("groups").doc(id);
     const snap = await ref.get();

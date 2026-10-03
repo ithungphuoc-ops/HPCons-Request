@@ -241,7 +241,7 @@ function RequestListPageInner() {
               {scope === "group" ? "Đề xuất trong nhóm này" : (scopeLabels[scope] ?? scope)}
             </p>
           </div>
-          {scope === "group" && groupId && (
+          {scope === "group" && groupId && group?.viewerCanSubmit !== false && (
             <Link
               href={`/request/groups/${groupId}/submit`}
               className={`${primaryButtonClass} shrink-0 gap-1 px-3`}
