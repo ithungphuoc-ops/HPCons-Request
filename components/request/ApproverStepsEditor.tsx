@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ChevronDown, Plus, Trash2, Users } from "lucide-react";
+import { ChevronDown, Plus, Search, Trash2, Users } from "lucide-react";
 import TagUserInput from "@/components/shared/TagUserInput";
 import { inputClass, selectClass } from "@/components/shared/form-styles";
 import { decodeMultiValue, encodeMultiValue } from "@/lib/condition-multi-value";
@@ -574,6 +574,7 @@ function MultiValueDropdown({
   placeholder: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const selected = decodeMultiValue(value);
 
   const toggle = (opt: string) => {
@@ -587,14 +588,23 @@ function MultiValueDropdown({
     ? [...new Set([...knownOptions, ...selected])]
     : [...knownOptions, ...selected.filter((s) => !knownOptions.includes(s))];
 
+  const normalizedQuery = query.trim().toLowerCase();
+  const visibleOptions =
+    normalizedQuery === "" ? allOptions : allOptions.filter((opt) => opt.toLowerCase().includes(normalizedQuery));
+
   return (
     <div className="relative">
       <button
         type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
-        className={`${selectClass} flex min-w-[200px] max-w-[280px] items-center justify-between gap-2 text-left`}
+        onClick={() =>
+          setOpen((o) => {
+            if (!o) setQuery("");
+            return !o;
+          })
+        }
+        className={`${selectClass} flex min-w-[200px] max-w-[300px] items-center justify-between gap-2 text-left`}
       >
         <span className="truncate">{selected.length === 0 ? placeholder : selected.join(", ")}</span>
         <ChevronDown size={13} className="shrink-0 text-gray-400" />
@@ -602,20 +612,40 @@ function MultiValueDropdown({
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 top-full z-20 mt-1 max-h-60 w-[260px] overflow-y-auto rounded border border-[var(--color-border)] bg-white py-1 shadow-lg">
-            {allOptions.length === 0 && <p className="px-3 py-1.5 text-[12px] text-gray-400">Chưa có lựa chọn nào.</p>}
-            {allOptions.map((opt) => (
-              <label
-                key={opt}
-                className="flex items-center gap-2 px-3 py-1.5 text-[13px] text-gray-700 hover:bg-gray-50"
-              >
-                <input type="checkbox" checked={selected.includes(opt)} onChange={() => toggle(opt)} />
-                {opt}
-                {!isLoading && !knownOptions.includes(opt) && (
-                  <span className="text-[11px] text-gray-400">(không còn trong danh sách)</span>
-                )}
-              </label>
-            ))}
+          <div
+            className="absolute left-0 top-full z-20 mt-1 w-[340px] overflow-hidden rounded-lg border border-[var(--color-border)] bg-white shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="relative border-b border-[var(--color-border)]">
+              <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                autoFocus
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Tìm..."
+                className="h-[38px] w-full bg-white pl-8 pr-3 text-[14px] outline-none"
+              />
+            </div>
+            <div className="max-h-[280px] overflow-y-auto p-1">
+              {visibleOptions.length === 0 && (
+                <p className="px-3 py-2 text-[13px] text-gray-400">Không tìm thấy lựa chọn nào.</p>
+              )}
+              {visibleOptions.map((opt) => (
+                <label
+                  key={opt}
+                  className="flex min-h-[36px] items-center gap-2 rounded px-2.5 py-1.5 text-[14px] text-gray-700 hover:bg-gray-50"
+                >
+                  <input type="checkbox" className="h-4 w-4 shrink-0" checked={selected.includes(opt)} onChange={() => toggle(opt)} />
+                  <span className="min-w-0 flex-1 truncate">{opt}</span>
+                  {!isLoading && !knownOptions.includes(opt) && (
+                    <span className="shrink-0 text-[11px] text-gray-400">(không còn)</span>
+                  )}
+                </label>
+              ))}
+            </div>
+            <div className="border-t border-[var(--color-border)] bg-gray-50 px-3 py-1.5 text-[12px] text-gray-500">
+              Đã chọn: {selected.length}
+            </div>
           </div>
         </>
       )}
