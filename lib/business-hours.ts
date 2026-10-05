@@ -1,6 +1,6 @@
 /**
  * Cộng dồn SLA CHỈ trong giờ hành chính thật của công ty — 7:45–12:00 và
- * 13:00–17:15, Thứ 2 đến Thứ 7 (Chủ nhật nghỉ hoàn toàn, không tính). Dùng
+ * 13:00–17:15 GIỜ VIỆT NAM, Thứ 2 đến Thứ 7 (Chủ nhật nghỉ hoàn toàn). Dùng
  * cho "SLA theo lịch làm việc" (ProposalGroup.slaByWorkCalendar) — xem
  * design.md của change add-base-vn-group-settings-parity, Decision #7.
  *
@@ -14,21 +14,43 @@ const AFTERNOON_START = 13 * 60; // 13:00
 const AFTERNOON_END = 17 * 60 + 15; // 17:15
 const SUNDAY = 0;
 
+/**
+ * Mọi phép tính giờ hành chính đi theo GIỜ VIỆT NAM cố định (UTC+7, VN không
+ * đổi giờ mùa hè) — KHÔNG dùng getHours()/setHours() vì đó là giờ của MÁY
+ * ĐANG CHẠY: máy chủ Vercel chạy UTC nên trước 05/10/2026 khung 7:45–17:15 bị
+ * hiểu thành 14:45–00:15 giờ VN (hạn SLA lệch, có hạn rơi vào 0h Chủ nhật).
+ * Cách làm: dời mốc +7h rồi đọc/ghi bằng getUTC*()/setUTC*().
+ */
+const VN_OFFSET_MS = 7 * 60 * 60 * 1000;
+
+function vnWall(date: Date): Date {
+  return new Date(date.getTime() + VN_OFFSET_MS);
+}
+
+function fromVnWall(wall: Date): Date {
+  return new Date(wall.getTime() - VN_OFFSET_MS);
+}
+
+function dayOfWeekVn(date: Date): number {
+  return vnWall(date).getUTCDay();
+}
+
 function minutesOfDay(date: Date): number {
-  return date.getHours() * 60 + date.getMinutes();
+  const wall = vnWall(date);
+  return wall.getUTCHours() * 60 + wall.getUTCMinutes();
 }
 
 function atMinutesOfDay(date: Date, minutes: number): Date {
-  const next = new Date(date);
-  next.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
-  return next;
+  const wall = vnWall(date);
+  wall.setUTCHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
+  return fromVnWall(wall);
 }
 
 function startOfNextDay(date: Date): Date {
-  const next = new Date(date);
-  next.setDate(next.getDate() + 1);
-  next.setHours(0, 0, 0, 0);
-  return next;
+  const wall = vnWall(date);
+  wall.setUTCDate(wall.getUTCDate() + 1);
+  wall.setUTCHours(0, 0, 0, 0);
+  return fromVnWall(wall);
 }
 
 /**
@@ -40,7 +62,7 @@ function toNextBusinessMoment(date: Date): Date {
   let cursor = new Date(date);
   // Giới hạn vòng lặp để không treo nếu có lỗi logic — tối đa 14 ngày là dư sức.
   for (let guard = 0; guard < 14; guard += 1) {
-    if (cursor.getDay() === SUNDAY) {
+    if (dayOfWeekVn(cursor) === SUNDAY) {
       cursor = atMinutesOfDay(startOfNextDay(cursor), MORNING_START);
       continue;
     }

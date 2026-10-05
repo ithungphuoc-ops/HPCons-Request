@@ -14,6 +14,8 @@ import type { RequestHistoryEntry, RequestInstance, TaggedUser } from "./types";
 const NAMES = ["Trương Văn Vũ Em", "Phan Đình Trí", "Đỗ Ngọc Tấn", "Hồ Văn Thi", "Bùi Thị Trí Tâm", "Hồ Minh Sang"];
 const SLA = [5, 5, 16, 7, 8, 8];
 const H = 3_600_000;
+/** Giờ VN tường minh (tháng 0-based như Date), không phụ thuộc múi giờ máy chạy test. */
+const vnt = (y: number, mo: number, d: number, h = 0, mi = 0) => new Date(Date.UTC(y, mo, d, h - 7, mi));
 const T0 = new Date("2026-10-05T07:13:00.000Z"); // 14:13 giờ VN
 const at = (hours: number) => new Date(T0.getTime() + hours * H).toISOString();
 
@@ -279,8 +281,8 @@ describe("buildApproverProgress — SLA", () => {
 
   it("lịch làm việc vs giờ đồng hồ: qua đêm chỉ tính giờ hành chính", () => {
     // Thứ 2 16:15 → Thứ 3 08:45 (giờ máy) = 1h chiều T2 + 1h sáng T3 = 2h làm việc; đồng hồ = 16.5h
-    const monday = new Date(2026, 9, 5, 16, 15); // 05/10/2026 là Thứ 2
-    const tuesday = new Date(2026, 9, 6, 8, 45);
+    const monday = vnt(2026, 9, 5, 16, 15); // 05/10/2026 là Thứ 2
+    const tuesday = vnt(2026, 9, 6, 8, 45);
     const req: Req = {
       approvalFlow: "sequential",
       approversSnapshot: [user(0)],
@@ -306,15 +308,15 @@ describe("buildApproverProgress — SLA", () => {
 
 describe("businessHoursBetween", () => {
   it("là chiều ngược của addBusinessHours", () => {
-    const from = new Date(2026, 9, 3, 15, 20); // Thứ 7
+    const from = vnt(2026, 9, 3, 15, 20); // Thứ 7
     for (const h of [0.5, 3, 8.5, 17, 40]) {
       expect(businessHoursBetween(from, addBusinessHours(from, h))).toBeCloseTo(h, 5);
     }
   });
 
   it("bỏ nghỉ trưa và Chủ nhật; to <= from → 0", () => {
-    expect(businessHoursBetween(new Date(2026, 9, 5, 11, 0), new Date(2026, 9, 5, 14, 0))).toBeCloseTo(2, 5);
-    expect(businessHoursBetween(new Date(2026, 9, 4, 9, 0), new Date(2026, 9, 4, 15, 0))).toBe(0); // Chủ nhật
-    expect(businessHoursBetween(new Date(2026, 9, 5, 9), new Date(2026, 9, 5, 8))).toBe(0);
+    expect(businessHoursBetween(vnt(2026, 9, 5, 11, 0), vnt(2026, 9, 5, 14, 0))).toBeCloseTo(2, 5);
+    expect(businessHoursBetween(vnt(2026, 9, 4, 9, 0), vnt(2026, 9, 4, 15, 0))).toBe(0); // Chủ nhật
+    expect(businessHoursBetween(vnt(2026, 9, 5, 9, 0), vnt(2026, 9, 5, 8, 0))).toBe(0);
   });
 });
