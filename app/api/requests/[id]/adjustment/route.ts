@@ -2,13 +2,14 @@ import { after, NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebase/admin";
 import { apiErrorResponse } from "@/lib/http";
 import { guiCacViec, taoViecDongBo } from "@/lib/dong-bo/hang-cho";
-import { canSupplementAfterApproval } from "@/lib/permissions";
+import { loadAdjustmentApprovalRules, resolveAdjustmentPlanForActor } from "@/lib/server/adjustment-approval-rules";
+import { ghiDieuChinhVaoLichSu } from "@/lib/server/adjustment";
 import { loadRequest } from "@/lib/server/requests";
 import { requireSession, ForbiddenError } from "@/lib/session";
-import { ADJUSTMENT_HISTORY_PREFIX, ADJUSTMENT_MAX_LENGTH } from "@/lib/request-history-labels";
+import { ADJUSTMENT_MAX_LENGTH } from "@/lib/request-history-labels";
 import { MAX_DIRECT_UPLOAD_FILE_SIZE } from "@/lib/constants";
 import { verifyUploadedAttachment } from "@/lib/server/verify-upload";
-import type { RequestAttachment, RequestHistoryEntry, RequestInstance } from "@/lib/types";
+import type { RequestAttachment, RequestInstance } from "@/lib/types";
 
 export const runtime = "nodejs";
 // Báo Kho / Thu mua chạy trong after() — cho đủ thời gian gửi (gói miễn phí tối đa 60 giây).
@@ -34,9 +35,12 @@ interface AdjustmentBody {
  * chiếu được "duyệt cái gì" với "cuối cùng lấy cái gì". Nội dung điều chỉnh đi
  * vào `history` — có tên người, có giờ, không bao giờ mất.
  *
- * Quyền: DÙNG CHUNG `canSupplementAfterApproval` với route table-supplement và
- * attachments — chỉ CHÍNH người làm đề xuất, Owner/Admin cũng không thao tác
- * thay. Đổi luật thì sửa một chỗ ở lib/permissions.ts.
+ * Quyền (từ change add-adjustment-approval-conditions, 05/10/2026): nhóm đề
+ * xuất TỰ CẤU HÌNH bảng "nhánh" phòng ban → người duyệt (`ProposalGroup.
+ * adjustmentApprovalRules`, tab "Điều chỉnh sau duyệt"). Nhóm KHÔNG cấu hình
+ * (hoặc đề xuất trực tiếp, không có nhóm) → hành vi CŨ Y NGUYÊN (chỉ
+ * submitter, lưu thẳng ngay) — route table-supplement/attachments KHÔNG đổi,
+ * vẫn dùng riêng `canSupplementAfterApproval`, không đụng.
  */
 export async function POST(
   request: Request,
@@ -58,8 +62,17 @@ export async function POST(
         { status: 400 },
       );
     }
-    if (!canSupplementAfterApproval(found, session.uid)) {
-      throw new ForbiddenError("Chỉ chính người làm đề xuất mới ghi được điều chỉnh.");
+
+    const isSubmitter = found.submittedBy.uid === session.uid;
+    const isFollower = found.followers.some((f) => f.id === session.uid);
+    if (!isSubmitter && !isFollower) {
+      throw new ForbiddenError("Bạn không có quyền ghi điều chỉnh cho đề xuất này.");
+    }
+
+    const rules = await loadAdjustmentApprovalRules(found.groupId);
+    const plan = await resolveAdjustmentPlanForActor(found, session.uid, rules);
+    if (plan.kind === "none") {
+      throw new ForbiddenError("Bạn không có quyền ghi điều chỉnh cho đề xuất này.");
     }
 
     const body = (await request.json()) as AdjustmentBody;
@@ -100,57 +113,53 @@ export async function POST(
       return NextResponse.json({ error: "Chưa nhập nội dung điều chỉnh." }, { status: 400 });
     }
 
-    const nowIso = new Date().toISOString();
-    const ref = adminDb.collection("requests").doc(id);
-
-    /**
-     * 🔴 GHI TRONG GIAO DỊCH, không đọc-rồi-ghi-đè (CodeRabbit bắt trên PR #27).
-     *
-     * Trước đó `soLan` tính từ bản đọc lúc đầu rồi ghi đè CẢ mảng `history`.
-     * Hai lần gửi chạy song song — người dùng mở 2 tab, hoặc bấm "Cập nhật
-     * điều chỉnh" cùng lúc với "Thêm tệp tin" ở khối ngay dưới — sẽ cùng đọc
-     * một bản, cùng tính ra "lần N", rồi lần ghi sau XOÁ MẤT lần ghi trước.
-     * Mất hẳn một dòng điều chỉnh mà không có dấu vết nào.
-     *
-     * Giao dịch Firestore tự chạy lại khi tài liệu đổi giữa chừng, nên cả hai
-     * dòng đều được giữ và đánh số đúng thứ tự.
-     */
-    const ketQua = await adminDb.runTransaction(async (tx) => {
-      const snap = await tx.get(ref);
-      if (!snap.exists) return { loi: "Không tìm thấy đề xuất." as const, ma: 404 };
-      const moiNhat = { id: snap.id, ...snap.data() } as RequestInstance;
-
-      // Kiểm lại trên bản MỚI NHẤT: giữa lúc tải tệp lên R2 (mất vài giây với
-      // tệp lớn) đề xuất có thể đã bị xoá, hoặc trạng thái đã đổi.
-      if (moiNhat.deletedAt) return { loi: "Đề xuất này đã bị xoá." as const, ma: 409 };
-      if (moiNhat.status !== "approved") {
-        return { loi: "Chỉ ghi điều chỉnh được cho đề xuất đã duyệt." as const, ma: 400 };
+    if (plan.kind === "gated") {
+      // CHƯA ghi history, CHƯA báo Kho/Thu mua — chỉ tạo trạng thái chờ đủ
+      // người duyệt (AND). Đọc lại bản MỚI NHẤT trong transaction (không tin
+      // `found` đọc trước khi tải tệp lên R2) để tránh 2 điều chỉnh chồng nhau.
+      const nowIso = new Date().toISOString();
+      const ref = adminDb.collection("requests").doc(id);
+      const ketQua = await adminDb.runTransaction(async (tx) => {
+        const snap = await tx.get(ref);
+        if (!snap.exists) return { loi: "Không tìm thấy đề xuất." as const, ma: 404 };
+        const moiNhat = { id: snap.id, ...snap.data() } as RequestInstance;
+        if (moiNhat.deletedAt) return { loi: "Đề xuất này đã bị xoá." as const, ma: 409 };
+        if (moiNhat.status !== "approved") {
+          return { loi: "Chỉ ghi điều chỉnh được cho đề xuất đã duyệt." as const, ma: 400 };
+        }
+        if (moiNhat.pendingAdjustment) {
+          return {
+            loi: "Đã có 1 điều chỉnh khác đang chờ duyệt, vui lòng đợi xử lý xong." as const,
+            ma: 409,
+          };
+        }
+        const pendingAdjustment: NonNullable<RequestInstance["pendingAdjustment"]> = {
+          noiDung,
+          attachment: attachmentMoi,
+          requestedByUid: session.uid,
+          requestedByName: session.name,
+          createdAt: nowIso,
+          approvers: plan.approvers.map((a) => ({ uid: a.uid, name: a.name, approvedAt: null })),
+        };
+        tx.update(ref, { pendingAdjustment, updatedAt: nowIso });
+        return { request: { ...moiNhat, pendingAdjustment, updatedAt: nowIso } };
+      });
+      if ("loi" in ketQua) {
+        return NextResponse.json({ error: ketQua.loi }, { status: ketQua.ma });
       }
+      return NextResponse.json({ request: ketQua.request });
+    }
 
-      const lichSuCu = moiNhat.history ?? [];
-      const soLan = lichSuCu.filter((h) => h.action.startsWith(ADJUSTMENT_HISTORY_PREFIX)).length + 1;
-      const entry: RequestHistoryEntry = {
-        at: nowIso,
-        actor: session.name,
-        action: `${ADJUSTMENT_HISTORY_PREFIX} (lần ${soLan})`,
-        note: noiDung || "(chỉ đính tệp)",
-        ...(attachmentMoi ? { attachmentName: attachmentMoi.name } : {}),
-      };
-      const history = [...lichSuCu, entry];
-      const attachments = attachmentMoi
-        ? [...(moiNhat.attachments ?? []), attachmentMoi]
-        : (moiNhat.attachments ?? []);
-
-      tx.update(ref, { history, attachments, updatedAt: nowIso });
-      return { request: { ...moiNhat, history, attachments, updatedAt: nowIso } };
+    // plan.kind === "direct" — hành vi CŨ Y NGUYÊN: ghi thẳng vào history
+    // ngay, báo Kho/Thu mua ngay (★ 03/10/2026, đợt 1 "liên kết 4 app").
+    const ketQua = await ghiDieuChinhVaoLichSu(id, {
+      noiDung,
+      attachment: attachmentMoi,
+      actorName: session.name,
     });
-
     if ("loi" in ketQua) {
       return NextResponse.json({ error: ketQua.loi }, { status: ketQua.ma });
     }
-    /* ★ 03/10/2026 (đợt 1 "liên kết 4 app", L07/L08) — báo Kho + Thu mua nội dung điều chỉnh (kèm tệp
-       nếu có). Bên nhận chỉ HIỂN THỊ, không tự sửa bảng vật tư gốc. Lỗi tạo việc không được làm hỏng
-       thao tác ghi điều chỉnh. */
     try {
       const ids = await taoViecDongBo({
         requestId: id,

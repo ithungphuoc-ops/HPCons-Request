@@ -41,6 +41,7 @@ import ForwardModal, { type ForwardMode } from "@/components/request/ForwardModa
 import ReasonModal from "@/components/request/ReasonModal";
 import ApproveConfirmModal from "@/components/request/ApproveConfirmModal";
 import AddFollowerModal from "@/components/request/modals/AddFollowerModal";
+import AdjustmentForwardModal from "@/components/request/modals/AdjustmentForwardModal";
 import FilePreviewModal from "@/components/request/FilePreviewModal";
 import CommentSection from "@/components/request/CommentSection";
 import AvatarWithCard from "@/components/request/AvatarWithCard";
@@ -172,10 +173,16 @@ function formatCountdown(deadlineAt: string, now: number): string {
 export default function RequestDetailView({
   request,
   currentUid,
+  viewerAdjustmentAccess,
   onActed,
 }: {
   request: RequestInstance;
   currentUid: string | null;
+  /** Server tính sẵn (đọc nhóm + phòng ban App Tổng) ở GET /api/requests/[id]
+   * — nơi KHÔNG truyền prop này (vd preview trong list) rơi về đúng hành vi
+   * CŨ (chỉ submitter, lưu thẳng ngay) qua `canSupplementAfterApproval` phía
+   * dưới. Xem design.md của change add-adjustment-approval-conditions. */
+  viewerAdjustmentAccess?: "direct" | "gated" | "none";
   onActed: () => void;
 }) {
   const router = useRouter();
@@ -188,6 +195,9 @@ export default function RequestDetailView({
   const [actingOn, setActingOn] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [forwardOpen, setForwardOpen] = useState(false);
+  const [adjForwardTarget, setAdjForwardTarget] = useState<string | null>(null);
+  const [adjDecisionBusy, setAdjDecisionBusy] = useState(false);
+  const [adjDecisionError, setAdjDecisionError] = useState<string | null>(null);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [returnOpen, setReturnOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
@@ -311,6 +321,13 @@ export default function RequestDetailView({
   // (lib/permissions.ts) — đổi luật chỉ cần sửa 1 chỗ, xem design.md của
   // change add-post-approval-supplement.
   const canSupplementAfterApproval = currentUid !== null && canSupplementAfterApprovalCheck(request, currentUid);
+  // "Điều chỉnh đề nghị sau duyệt" dùng luật RIÊNG (bảng nhánh phòng ban Admin
+  // tự cấu hình theo nhóm, change add-adjustment-approval-conditions) — KHÁC
+  // `canSupplementAfterApproval` ở trên (vẫn giữ nguyên cho table-supplement/
+  // attachments). Server đã tính sẵn qua `viewerAdjustmentAccess`; nơi CHƯA
+  // truyền prop này (preview trong danh sách) rơi về đúng hành vi CŨ.
+  const resolvedAdjustmentAccess: "direct" | "gated" | "none" =
+    viewerAdjustmentAccess ?? (canSupplementAfterApproval ? "direct" : "none");
   const attachmentSupplementEntries = history.filter((h) =>
     h.action.startsWith(ATTACHMENT_SUPPLEMENT_HISTORY_PREFIX),
   );
@@ -618,6 +635,31 @@ export default function RequestDetailView({
     }
     setForwardOpen(false);
     onActed();
+  };
+
+  /** Duyệt/Từ chối/Chuyển tiếp ĐÚNG slot của mình trong `pendingAdjustment.
+   * approvers[]` — route RIÊNG, KHÁC `/decision` (luồng duyệt chính) ở trên.
+   * Xem design.md của change add-adjustment-approval-conditions. */
+  const decideAdjustment = async (decision: "approved" | "rejected" | "forward", target?: TaggedUser) => {
+    setAdjDecisionBusy(true);
+    setAdjDecisionError(null);
+    try {
+      const res = await fetch(`/api/requests/${request.id}/adjustment/decision`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision, ...(target ? { target } : {}) }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}) as { error?: string });
+        throw new Error(body.error ?? "Không xử lý được.");
+      }
+      setAdjForwardTarget(null);
+      onActed();
+    } catch (err) {
+      setAdjDecisionError(err instanceof Error ? err.message : "Có lỗi xảy ra.");
+    } finally {
+      setAdjDecisionBusy(false);
+    }
   };
 
   return (
@@ -1069,13 +1111,103 @@ export default function RequestDetailView({
                 />
               ))}
 
-            {canSupplementAfterApproval && (
-              <AdjustmentControl
-                requestId={request.id}
-                onDone={(data) => {
-                  setAttachments(data.attachments);
-                  setHistory(data.history);
-                }}
+            {request.pendingAdjustment ? (
+              <div className="mb-3 rounded border border-amber-200 bg-amber-50 p-3">
+                <p className="mb-1 text-[13px] text-gray-700">
+                  <span className="font-medium">{request.pendingAdjustment.requestedByName}</span> đề nghị điều
+                  chỉnh:
+                </p>
+                <p className="mb-2 text-[14px] text-gray-800">
+                  {request.pendingAdjustment.noiDung || "(chỉ đính tệp)"}
+                </p>
+                {request.pendingAdjustment.attachment && (
+                  <p className="mb-2 flex items-center gap-1 text-[12px] text-[var(--color-action-blue)]">
+                    <Paperclip size={11} className="shrink-0" />
+                    {request.pendingAdjustment.attachment.name}
+                  </p>
+                )}
+                <div className="flex flex-col gap-1.5">
+                  {request.pendingAdjustment.approvers.map((a) => {
+                    const isDone = a.approvedAt !== null;
+                    const isMine = a.uid === currentUid && !isDone;
+                    return (
+                      <div
+                        key={a.uid}
+                        className={`flex items-center gap-2 rounded border px-2.5 py-1.5 text-[13px] ${
+                          isDone
+                            ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                            : "border-amber-200 bg-white text-amber-700"
+                        }`}
+                      >
+                        <span
+                          className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
+                            isDone ? "bg-emerald-500 text-white" : "bg-amber-200 text-amber-700"
+                          }`}
+                        >
+                          {isDone ? "✓" : "…"}
+                        </span>
+                        <span className="flex-1">
+                          {a.name}
+                          {isDone ? " đã duyệt" : " — chưa duyệt"}
+                        </span>
+                        {isMine && (
+                          <div className="flex shrink-0 items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => decideAdjustment("approved")}
+                              disabled={adjDecisionBusy}
+                              className="rounded bg-[var(--color-confirm-green)] px-2.5 py-1 text-[12px] font-medium text-white hover:brightness-95 disabled:opacity-60"
+                            >
+                              Duyệt
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setAdjForwardTarget(a.uid)}
+                              disabled={adjDecisionBusy}
+                              className="rounded bg-teal-500 px-2.5 py-1 text-[12px] font-medium text-white hover:brightness-95 disabled:opacity-60"
+                            >
+                              Chuyển tiếp
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => decideAdjustment("rejected")}
+                              disabled={adjDecisionBusy}
+                              className="rounded bg-[var(--color-danger-red)] px-2.5 py-1 text-[12px] font-medium text-white hover:brightness-95 disabled:opacity-60"
+                            >
+                              Từ chối
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                {adjDecisionError && (
+                  <p className="mt-2 text-[12px] text-[var(--color-danger-red)]">{adjDecisionError}</p>
+                )}
+              </div>
+            ) : (
+              resolvedAdjustmentAccess !== "none" && (
+                <AdjustmentControl
+                  requestId={request.id}
+                  submitLabel={resolvedAdjustmentAccess === "gated" ? "Gửi duyệt điều chỉnh" : "Cập nhật điều chỉnh"}
+                  onDone={(data) => {
+                    setAttachments(data.attachments);
+                    setHistory(data.history);
+                    // "gated": chuyển sang trạng thái chờ duyệt — nạp lại để
+                    // lấy đúng `pendingAdjustment` mới (xem design.md).
+                    if (resolvedAdjustmentAccess === "gated") onActed();
+                  }}
+                />
+              )
+            )}
+            {adjForwardTarget && request.pendingAdjustment && (
+              <AdjustmentForwardModal
+                currentApproverName={
+                  request.pendingAdjustment.approvers.find((a) => a.uid === adjForwardTarget)?.name ?? ""
+                }
+                onClose={() => setAdjForwardTarget(null)}
+                onConfirm={(user) => decideAdjustment("forward", user)}
               />
             )}
 
@@ -1608,9 +1740,14 @@ function TableSupplementControl({
  */
 function AdjustmentControl({
   requestId,
+  submitLabel = "Cập nhật điều chỉnh",
   onDone,
 }: {
   requestId: string;
+  /** "Gửi duyệt điều chỉnh" khi phải qua duyệt (gated), giữ nhãn cũ khi ghi
+   * thẳng ngay (direct) — xem design.md của change
+   * add-adjustment-approval-conditions. */
+  submitLabel?: string;
   onDone: (data: { attachments: RequestAttachment[]; history: RequestHistoryEntry[] }) => void;
 }) {
   const [noiDung, setNoiDung] = useState("");
@@ -1704,7 +1841,7 @@ function AdjustmentControl({
           disabled={dangGui}
           className="flex h-9 shrink-0 items-center rounded bg-[var(--color-action-blue)] px-4 text-[14px] font-medium text-white hover:brightness-95 disabled:opacity-50"
         >
-          {dangGui ? "Đang gửi..." : "Cập nhật điều chỉnh"}
+          {dangGui ? "Đang gửi..." : submitLabel}
         </button>
       </div>
       {tep && (

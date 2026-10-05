@@ -9,6 +9,7 @@ export default function RequestDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const [request, setRequest] = useState<RequestInstance | null>(null);
+  const [viewerAdjustmentAccess, setViewerAdjustmentAccess] = useState<"direct" | "gated" | "none">("none");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [currentUid, setCurrentUid] = useState<string | null>(null);
 
@@ -19,9 +20,15 @@ export default function RequestDetailPage() {
           const body = await res.json().catch(() => ({}) as { error?: string });
           throw new Error(body.error ?? "Không thể tải đề xuất.");
         }
-        return res.json() as Promise<{ request: RequestInstance }>;
+        return res.json() as Promise<{
+          request: RequestInstance;
+          viewerAdjustmentAccess?: "direct" | "gated" | "none";
+        }>;
       })
-      .then((data) => setRequest(data.request))
+      .then((data) => {
+        setRequest(data.request);
+        setViewerAdjustmentAccess(data.viewerAdjustmentAccess ?? "none");
+      })
       .catch((err) => setLoadError(err instanceof Error ? err.message : "Có lỗi xảy ra."));
   };
 
@@ -47,7 +54,12 @@ export default function RequestDetailPage() {
       {loadError && <p className="text-[14px] text-[var(--color-danger-red)]">{loadError}</p>}
       {!loadError && !request && <p className="text-[14px] text-gray-400">Đang tải...</p>}
       {request && (
-        <RequestDetailView request={request} currentUid={currentUid} onActed={load} />
+        <RequestDetailView
+          request={request}
+          currentUid={currentUid}
+          viewerAdjustmentAccess={viewerAdjustmentAccess}
+          onActed={load}
+        />
       )}
     </div>
   );
