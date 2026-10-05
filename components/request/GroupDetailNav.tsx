@@ -9,6 +9,7 @@ const settingsNavItems = [
   { key: "print", label: "In đề xuất" },
   { key: "webhook", label: "Chuyển tiếp và Webhook" },
   { key: "permissions", label: "Tùy chỉnh về phân quyền" },
+  { key: "adjustment-approval", label: "Điều chỉnh sau duyệt" },
   { key: "counter", label: "Bộ đếm" },
   { key: "notifications", label: "Thông báo" },
 ];

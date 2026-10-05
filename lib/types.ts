@@ -514,6 +514,11 @@ export interface ProposalGroup {
   /** 7 cờ + 2 vị trí QR cho tab "In đề xuất" — CHỈ lưu cấu hình/ẩn-hiện nút,
    * KHÔNG tự sinh PDF/chèn QR thật (PDF chờ capability `pdf-export` riêng). */
   printOptions?: GroupPrintOptions;
+  /** Tab "Điều chỉnh sau duyệt" — thiếu field (hoặc `null`, dùng khi Admin bấm
+   * "Tắt" — PATCH JSON bỏ qua key `undefined` nên phải dùng `null` làm tín
+   * hiệu xoá) = tính năng TẮT cho nhóm này, giữ nguyên hành vi cũ (chỉ
+   * submitter, lưu thẳng ngay). Xem `AdjustmentApprovalRules`. */
+  adjustmentApprovalRules?: AdjustmentApprovalRules | null;
 }
 
 /**
@@ -830,6 +835,79 @@ export interface RequestInstance {
    * "sai dữ liệu" — chỗ đó gửi lại y nguyên thì không bao giờ đổi được gì.
    */
   qlkCtrSyncStatus?: "synced" | "failed" | "bo_qua" | "dung";
+  /**
+   * "Chỉ huy trưởng" — `approversSnapshot[0]` tại ĐÚNG thời điểm `approversSnapshot`
+   * được dựng lần đầu (gửi chính thức từ nháp, hoặc tạo không phải nháp), TRƯỚC
+   * khi "Chuyển tiếp và Duyệt" có cơ hội chèn người vào đầu mảng. Ghi 1 LẦN DUY
+   * NHẤT, không bao giờ ghi đè lại — dùng làm `{ kind: "chi_huy_truong" }` khi
+   * tra người duyệt điều chỉnh sau duyệt, xem design.md của change
+   * add-adjustment-approval-conditions. `null` = đề xuất nháp chưa có approver
+   * nào lúc tạo; `undefined` = đề xuất tạo TRƯỚC change này.
+   */
+  originalFirstApprover?: TaggedUser | null;
+  /**
+   * Điều chỉnh sau duyệt đang chờ đủ người duyệt (AND — mọi người trong mảng
+   * `approvers` phải duyệt mới có hiệu lực) — chỉ tồn tại khi nhóm có cấu hình
+   * `ProposalGroup.adjustmentApprovalRules` khớp người gửi điều chỉnh. Rỗng/
+   * null = không có gì đang chờ. Xem design.md của change
+   * add-adjustment-approval-conditions.
+   */
+  pendingAdjustment?: {
+    noiDung: string;
+    attachment: RequestAttachment | null;
+    requestedByUid: string;
+    requestedByName: string;
+    createdAt: string;
+    /** Chốt cứng uid/name lúc tạo (hoặc lúc Chuyển tiếp gần nhất) — KHÔNG tính
+     * lại theo vai trò mỗi lần hiển thị, tránh đổi người duyệt âm thầm giữa
+     * lúc đang có 1 điều chỉnh dở dang. */
+    approvers: { uid: string; name: string; approvedAt: string | null }[];
+  } | null;
+}
+
+/**
+ * 1 "ô" người duyệt YÊU CẦU cho 1 nhánh điều kiện của Điều chỉnh sau duyệt —
+ * CỐ Ý không có lựa chọn "1 người cụ thể cố định" (Sếp chốt 05/10/2026: đổi
+ * người xử lý dùng nút "Chuyển tiếp" lúc đang chờ duyệt, không cấu hình người
+ * dự phòng trước) — chỉ 2 vai trò ĐỘNG, tra lại tại thời điểm cần dùng.
+ */
+export type AdjustmentApproverRef =
+  | { kind: "chi_huy_truong" }
+  | { kind: "department_leader"; departmentId: string; departmentName: string };
+
+/**
+ * 1 nhánh trong bảng điều kiện "Điều chỉnh sau duyệt" của 1 nhóm đề xuất —
+ * xét theo THỨ TỰ trong mảng `AdjustmentApprovalRules.branches`, nhánh nào
+ * khớp phòng ban người điều chỉnh TRƯỚC thì dùng nhánh đó (giống
+ * `ComputedFieldConfig.branches`). `requiredApprovers` rỗng = khớp nhánh
+ * nhưng không cần ai duyệt (lưu thẳng ngay, như hành vi cũ).
+ */
+export interface AdjustmentApprovalBranch {
+  id: string;
+  /** Tên phòng ban giữ kèm CHỈ để hiển thị lại đúng tên lúc Admin mở sửa —
+   * không dùng để so khớp (so khớp theo id). */
+  departments: { id: string; name: string }[];
+  requiredApprovers: AdjustmentApproverRef[];
+}
+
+/**
+ * Cấu hình "Điều chỉnh sau duyệt" RIÊNG theo từng nhóm đề xuất — Sếp chốt
+ * 05/10/2026 (thay bản hard-code "Thi công"/"Thu mua cung ứng" ở PR #67, đã
+ * đóng): nhóm nào KHÔNG có field này (`undefined`) = giữ nguyên hành vi cũ
+ * hoàn toàn (chỉ submitter, lưu thẳng ngay), không bắt buộc nhóm nào cũng
+ * phải thiết lập. Xem design.md của change add-adjustment-approval-conditions.
+ */
+export interface AdjustmentApprovalRules {
+  /** "Cho phép người theo dõi (không phải người gửi) cũng bấm Điều chỉnh" —
+   * tắt thì chỉ submitter bấm được (vẫn áp dụng branches/catchAll cho CHÍNH
+   * submitter nếu phòng ban của họ khớp). */
+  allowFollowers: boolean;
+  branches: AdjustmentApprovalBranch[];
+  /** Áp dụng cho NGƯỜI THEO DÕI (không phải submitter) khi không khớp branch
+   * nào ở trên — rỗng = người đó không được bấm (an toàn, giữ tinh thần hành
+   * vi cũ). Submitter không khớp branch nào LUÔN LUÔN là "direct", không đọc
+   * field này. */
+  catchAllApprovers: AdjustmentApproverRef[];
 }
 
 export type ModalWindowStatus =
