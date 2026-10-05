@@ -31,10 +31,8 @@ import { canManageGroupsAtAppScope, type Role } from "@/lib/permissions";
 import {
   deserializeTableRows,
   isNumericColumnType,
-  isQuantityColumn,
   isValidCellValue,
-  normalizeColumnName,
-  REQUIRED_TABLE_COLUMN_NAMES,
+  resolveTableColumnRequired,
   resolveTableColumnTypes,
 } from "@/lib/table-field";
 import { nextCounterCode, requestCodeCandidates } from "@/lib/validation";
@@ -143,7 +141,8 @@ export interface InvalidTableRowIssue {
 
 /**
  * Dòng ĐÃ có ít nhất 1 ô điền dữ liệu (dòng trống hẳn thì bỏ qua, không phải
- * lỗi) nhưng thiếu 1 trong 4 cột bắt buộc, hoặc "Số lượng" không phải số —
+ * lỗi) nhưng bỏ trống 1 cột được tick "Bắt buộc" (trường cũ chưa tick → luật
+ * cũ, xem `resolveTableColumnRequired`), hoặc ô cột số nhập sai định dạng —
  * dùng khi gửi chính thức (không dùng khi lưu nháp), cùng cách với
  * `findMissingRequiredFields`.
  */
@@ -157,44 +156,33 @@ export function findInvalidTableRows(
     if (field.visibleWhen && !evaluateConditionGroup(field.visibleWhen, values ?? {}, fields)) continue;
 
     const columns = field.tableColumns ?? [];
-    const normalizedColumns = columns.map(normalizeColumnName);
-    const requiredIndexes = REQUIRED_TABLE_COLUMN_NAMES.map((name) => ({
-      name,
-      index: normalizedColumns.indexOf(normalizeColumnName(name)),
-    })).filter((c) => c.index >= 0);
+    // Cột bắt buộc theo tick của Admin (Sếp duyệt demo 05/10/2026) — trường
+    // cũ chưa tick lần nào → resolve suy đúng luật cũ (4 tên cột "then chốt"
+    // + "Số lượng"), không mẫu nào bị đổi hành vi.
+    const requiredFlags = resolveTableColumnRequired(columns, field.tableColumnRequired);
     // Từ 13/09/2026 kiểm theo KIỂU cột admin khai, không còn chỉ soi mỗi cột
     // tên "Số lượng". Nhóm cũ chưa khai kiểu → resolveTableColumnTypes trả về
     // đúng 1 cột số là "Số lượng", y hệt hành vi trước đây.
     const columnTypes = resolveTableColumnTypes(columns, field.tableColumnTypes);
-    const numericIndexes = columnTypes
-      .map((type, index) => ({ type, index, name: columns[index] }))
-      .filter((c) => isNumericColumnType(c.type));
-    if (requiredIndexes.length === 0 && numericIndexes.length === 0) continue;
+    const checkedColumns = columns
+      .map((name, index) => ({ name, index, type: columnTypes[index], required: requiredFlags[index] }))
+      .filter((c) => c.required || isNumericColumnType(c.type));
+    if (checkedColumns.length === 0) continue;
 
     const rows = deserializeTableRows(values?.[field.id]);
     rows.forEach((row, rowIndex) => {
       if (!row.some((cell) => cell?.trim())) return;
-      for (const { name, index } of requiredIndexes) {
-        if (!row[index]?.trim()) {
-          issues.push({ field, rowIndex, message: `Dòng ${rowIndex + 1} của "${field.name}": "${name}" chưa nhập.` });
-        }
-      }
-      for (const { index, name, type } of numericIndexes) {
+      for (const { name, index, type, required } of checkedColumns) {
         const raw = row[index]?.trim() ?? "";
-        // Cột "Số lượng" vốn là cột BẮT BUỘC theo quy ước công ty — giữ nguyên
-        // luật đó; các cột số khác (đơn giá, thành tiền...) chỉ cần đúng định
-        // dạng, bỏ trống vẫn được.
+        // Ô trống: chỉ lỗi khi cột được tick bắt buộc; cột số không bắt buộc
+        // (đơn giá, thành tiền...) bỏ trống vẫn được.
         if (!raw) {
-          if (isQuantityColumn(name)) {
-            issues.push({
-              field,
-              rowIndex,
-              message: `Dòng ${rowIndex + 1} của "${field.name}": "${name}" chưa nhập.`,
-            });
+          if (required) {
+            issues.push({ field, rowIndex, message: `Dòng ${rowIndex + 1} của "${field.name}": "${name}" chưa nhập.` });
           }
           continue;
         }
-        if (!isValidCellValue(raw, type)) {
+        if (isNumericColumnType(type) && !isValidCellValue(raw, type)) {
           const wanted = type === "int" ? "số nguyên" : "số";
           issues.push({
             field,
