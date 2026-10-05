@@ -43,6 +43,9 @@ const scopeLabels: Record<RequestListScope, string> = {
 };
 
 
+/** Mã đề xuất so bỏ số 0 đầu ("184" khớp "000000184") — giống trang /request/<mã>. */
+const codeKey = (code: string) => code.trim().replace(/^0+(?=\d)/, "");
+
 export default function RequestListPage() {
   return (
     <Suspense fallback={null}>
@@ -57,6 +60,12 @@ function RequestListPageInner() {
   const scope = (searchParams.get("scope") as RequestListScope) || "all";
   const groupId = searchParams.get("groupId");
   const selectedId = searchParams.get("id");
+  // Link mở đề xuất ghi MÃ ĐỀ XUẤT cho dễ đọc/dễ gửi: ...&ma=000000184 (Sếp 05/10/2026).
+  // `id=` (mã nội bộ Firestore) vẫn nhận cho link cũ / Trang chủ / thông báo — mở xong tự
+  // đổi thanh địa chỉ sang `ma=` (xem effect bên dưới). Mã CÓ THỂ TRÙNG (nhóm bật "Bộ đếm
+  // riêng" đánh số lại từ đầu, xem lib/server/requests.ts) → khi trùng, link giữ kèm `id=`
+  // và `id` luôn được ưu tiên để không mở nhầm (QA 05/10/2026).
+  const selectedCode = searchParams.get("ma");
   const { getGroupById } = useRequestContext();
   const group = scope === "group" && groupId ? getGroupById(groupId) : undefined;
   const { isAdmin } = useCurrentSession();
@@ -119,10 +128,21 @@ function RequestListPageInner() {
 
   // KHÔNG tự chọn sẵn đề xuất đầu tiên (Sếp chốt 16/08/2026): mặc định danh
   // sách chiếm toàn bộ chiều rộng, box nội dung chỉ hiện khi bấm vào 1 đề xuất.
-  const selectedRequest = useMemo(
-    () => requests.find((r) => r.id === selectedId) ?? null,
-    [requests, selectedId],
+  const codeCount = useMemo(() => {
+    const count = new Map<string, number>();
+    for (const r of requests) if (r.code) count.set(codeKey(r.code), (count.get(codeKey(r.code)) ?? 0) + 1);
+    return count;
+  }, [requests]);
+  const codeMatches = useMemo(
+    () => (selectedCode ? requests.filter((r) => r.code && codeKey(r.code) === codeKey(selectedCode)) : []),
+    [requests, selectedCode],
   );
+  const selectedRequest = useMemo(() => {
+    if (selectedId) return requests.find((r) => r.id === selectedId) ?? null;
+    return codeMatches.length === 1 ? codeMatches[0] : null;
+  }, [requests, selectedId, codeMatches]);
+  // Link chỉ có mã mà danh sách có nhiều đề xuất cùng mã → không tự mở (tránh mở nhầm), báo để chọn.
+  const ambiguousCode = !selectedId && codeMatches.length > 1 ? selectedCode : null;
 
   /** Danh sách tên nhóm duy nhất trong trang hiện tại — làm option cho bộ lọc Nhóm. */
   const groupOptions = useMemo(
@@ -208,9 +228,23 @@ function RequestListPageInner() {
   };
 
   const baseQuery = scope === "group" && groupId ? `scope=group&groupId=${groupId}` : `scope=${scope}`;
-  const selectRequest = (id: string) => {
-    router.replace(`/request/list?${baseQuery}&id=${id}`);
+  /** Đề xuất có mã → `ma=<mã>`; mã bị trùng trong danh sách → `ma=<mã>&id=<id>` (luôn mở
+   * đúng); chưa có mã (hiếm, vd dữ liệu cũ) → `id=` như trước. */
+  const selectQuery = (r: RequestInstance) => {
+    if (!r.code) return `id=${r.id}`;
+    const ma = `ma=${encodeURIComponent(r.code)}`;
+    return (codeCount.get(codeKey(r.code)) ?? 0) > 1 ? `${ma}&id=${r.id}` : ma;
   };
+  const selectRequest = (r: RequestInstance) => {
+    router.replace(`/request/list?${baseQuery}&${selectQuery(r)}`);
+  };
+  // Mở bằng link cũ `id=` mà đề xuất có mã → đổi thanh địa chỉ sang `ma=` (không tải lại trang).
+  useEffect(() => {
+    if (!selectedCode && selectedId && selectedRequest?.code) {
+      router.replace(`/request/list?${baseQuery}&${selectQuery(selectedRequest)}`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- chỉ chạy khi đề xuất đang mở đổi
+  }, [selectedCode, selectedId, selectedRequest]);
   const closeDetail = () => {
     router.replace(`/request/list?${baseQuery}`);
   };
@@ -305,6 +339,11 @@ function RequestListPageInner() {
 
         {/* Thanh công cụ: tìm kiếm (không dấu) + lọc trạng thái/nhóm + Xuất
             Excel — chỉ hiện ở chế độ bảng toàn màn hình (Sếp yêu cầu 17/08/2026). */}
+        {ambiguousCode && status === "loaded" && (
+          <p className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-[13px] text-amber-800">
+            Có {codeMatches.length} đề xuất cùng mang mã {ambiguousCode} — bấm chọn đề xuất cần xem trong danh sách.
+          </p>
+        )}
         {status === "loaded" && !selectedRequest && (
           <div className="flex flex-wrap items-center gap-2 border-b border-[var(--color-border)] px-4 py-2.5">
             <label className="relative">
@@ -416,14 +455,14 @@ function RequestListPageInner() {
                         <tr
                           key={r.id}
                           tabIndex={0}
-                          onClick={() => (isDraft ? router.push(draftLinkFor(r)) : selectRequest(r.id))}
+                          onClick={() => (isDraft ? router.push(draftLinkFor(r)) : selectRequest(r))}
                           onKeyDown={(e) => {
                             // Cho phép mở bằng bàn phím (Tab tới dòng, Enter/Space mở)
                             // — tr onClick suông không focus được bằng Tab.
                             if (e.key === "Enter" || e.key === " ") {
                               e.preventDefault();
                               if (isDraft) router.push(draftLinkFor(r));
-                              else selectRequest(r.id);
+                              else selectRequest(r);
                             }
                           }}
                           className="group cursor-pointer transition-colors duration-150 hover:bg-blue-50/40 focus-visible:bg-blue-50/60 focus-visible:outline-none"
@@ -540,12 +579,12 @@ function RequestListPageInner() {
                   </Link>
                 );
               }
-              const isActive = r.id === selectedId;
+              const isActive = r.id === selectedRequest?.id;
               return (
                 <button
                   key={r.id}
                   type="button"
-                  onClick={() => selectRequest(r.id)}
+                  onClick={() => selectRequest(r)}
                   className={`flex w-full cursor-pointer items-center gap-2.5 border-b border-l-[3px] border-gray-100 px-3 py-2.5 text-left transition-colors duration-150 ${
                     isActive
                       ? "border-l-[var(--color-action-blue)] bg-blue-50"
