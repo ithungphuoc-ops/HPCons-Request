@@ -80,6 +80,9 @@ export async function POST(
       moiNhat: RequestInstance,
     ): { pendingNow: NonNullable<RequestInstance["pendingAdjustment"]>; idx: number } | { loi: string; ma: number } {
       if (moiNhat.deletedAt) return { loi: "Đề xuất này đã bị xoá." as const, ma: 409 };
+      if (moiNhat.status !== "approved") {
+        return { loi: "Đề xuất này không còn ở trạng thái đã duyệt." as const, ma: 409 };
+      }
       const pendingNow = moiNhat.pendingAdjustment;
       if (!pendingNow || pendingNow.createdAt !== expectedCreatedAt) {
         return {
