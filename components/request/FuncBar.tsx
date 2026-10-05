@@ -17,6 +17,7 @@ import {
   Webhook,
 } from "lucide-react";
 import { useRequestContext } from "@/context/RequestContext";
+import { sortGroupsByNumber } from "@/lib/group-sort";
 import { useCurrentSession } from "@/lib/useCurrentSession";
 import type { RequestListScope } from "@/lib/types";
 
@@ -213,7 +214,8 @@ export default function FuncBar() {
         </p>
         <div className="flex flex-col gap-2">
           {categoryGroups.map((cat) => {
-            const activeGroups = cat.groups.filter((g) => g.status === "active");
+            // Xếp theo số đầu tên nhóm (0. → 1.0. → 1.1. …), Sếp chốt 05/10/2026 — xem lib/group-sort.ts.
+            const activeGroups = sortGroupsByNumber(cat.groups.filter((g) => g.status === "active"));
             if (activeGroups.length === 0) return null;
             return (
               <div key={cat.id}>

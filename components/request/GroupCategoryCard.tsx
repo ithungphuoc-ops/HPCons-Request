@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, Settings } from "lucide-react";
 import { useRequestContext } from "@/context/RequestContext";
 import CategorySettingsModal from "@/components/request/CategorySettingsModal";
 import GroupRow from "@/components/request/GroupRow";
+import { sortGroupsByNumber } from "@/lib/group-sort";
 import type { CategoryGroup } from "@/lib/types";
 
 export default function GroupCategoryCard({
@@ -23,6 +24,8 @@ export default function GroupCategoryCard({
   // 03-EQUI...) — sửa trong popup CategorySettingsModal (Sếp chốt 01/10 + 05/10/2026).
   const letterheadName = category.letterheadImageName;
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Xếp theo số đầu tên nhóm (0. → 1.0. → 1.1. …), Sếp chốt 05/10/2026 — xem lib/group-sort.ts.
+  const groups = useMemo(() => sortGroupsByNumber(category.groups), [category.groups]);
 
   return (
     <div className="mb-4 overflow-hidden rounded-[3px] border border-[var(--color-border)] bg-[var(--color-card-bg)] shadow-sm">
@@ -79,7 +82,7 @@ export default function GroupCategoryCard({
             <span className="w-[110px] shrink-0">Trạng thái</span>
             <span className="w-8 shrink-0" />
           </div>
-          {category.groups.map((group, index) => (
+          {groups.map((group, index) => (
             <GroupRow
               key={group.id}
               group={group}
