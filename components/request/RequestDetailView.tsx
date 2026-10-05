@@ -41,6 +41,7 @@ import ForwardModal, { type ForwardMode } from "@/components/request/ForwardModa
 import ReasonModal from "@/components/request/ReasonModal";
 import ApproveConfirmModal from "@/components/request/ApproveConfirmModal";
 import AddFollowerModal from "@/components/request/modals/AddFollowerModal";
+import AdjustmentForwardModal from "@/components/request/modals/AdjustmentForwardModal";
 import FilePreviewModal from "@/components/request/FilePreviewModal";
 import CommentSection from "@/components/request/CommentSection";
 import AvatarWithCard from "@/components/request/AvatarWithCard";
@@ -172,10 +173,16 @@ function formatCountdown(deadlineAt: string, now: number): string {
 export default function RequestDetailView({
   request,
   currentUid,
+  viewerAdjustmentAccess,
   onActed,
 }: {
   request: RequestInstance;
   currentUid: string | null;
+  /** Server tính sẵn (đọc phòng ban App Tổng) ở GET /api/requests/[id] — nơi
+   * KHÔNG truyền prop này (vd preview trong list) rơi về đúng hành vi CŨ (chỉ
+   * submitter, lưu thẳng ngay) qua `canSupplementAfterApproval` phía dưới, xem
+   * design.md của change add-adjustment-approval-gate. */
+  viewerAdjustmentAccess?: "direct" | "gated" | "none";
   onActed: () => void;
 }) {
   const router = useRouter();
@@ -188,6 +195,9 @@ export default function RequestDetailView({
   const [actingOn, setActingOn] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [forwardOpen, setForwardOpen] = useState(false);
+  const [adjForwardOpen, setAdjForwardOpen] = useState(false);
+  const [adjDecisionBusy, setAdjDecisionBusy] = useState(false);
+  const [adjDecisionError, setAdjDecisionError] = useState<string | null>(null);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [returnOpen, setReturnOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
@@ -311,6 +321,13 @@ export default function RequestDetailView({
   // (lib/permissions.ts) — đổi luật chỉ cần sửa 1 chỗ, xem design.md của
   // change add-post-approval-supplement.
   const canSupplementAfterApproval = currentUid !== null && canSupplementAfterApprovalCheck(request, currentUid);
+  // "Điều chỉnh đề nghị sau duyệt" dùng luật RIÊNG (resolveAdjustmentAccess,
+  // change add-adjustment-approval-gate) — KHÁC `canSupplementAfterApproval`
+  // ở trên (vẫn giữ nguyên cho table-supplement/attachments). Server đã tính
+  // sẵn qua `viewerAdjustmentAccess` (cần đọc phòng ban App Tổng); nơi CHƯA
+  // truyền prop này (preview trong danh sách) rơi về đúng hành vi CŨ.
+  const resolvedAdjustmentAccess: "direct" | "gated" | "none" =
+    viewerAdjustmentAccess ?? (canSupplementAfterApproval ? "direct" : "none");
   const attachmentSupplementEntries = history.filter((h) =>
     h.action.startsWith(ATTACHMENT_SUPPLEMENT_HISTORY_PREFIX),
   );
@@ -618,6 +635,31 @@ export default function RequestDetailView({
     }
     setForwardOpen(false);
     onActed();
+  };
+
+  /** Duyệt/Từ chối/Chuyển tiếp 1 điều chỉnh sau duyệt đang chờ — route RIÊNG,
+   * KHÁC `/decision` (luồng duyệt chính đề xuất) ở trên. Xem design.md của
+   * change add-adjustment-approval-gate. */
+  const decideAdjustment = async (decision: "approved" | "rejected" | "forward", target?: TaggedUser) => {
+    setAdjDecisionBusy(true);
+    setAdjDecisionError(null);
+    try {
+      const res = await fetch(`/api/requests/${request.id}/adjustment/decision`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision, ...(target ? { target } : {}) }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}) as { error?: string });
+        throw new Error(body.error ?? "Không xử lý được.");
+      }
+      setAdjForwardOpen(false);
+      onActed();
+    } catch (err) {
+      setAdjDecisionError(err instanceof Error ? err.message : "Có lỗi xảy ra.");
+    } finally {
+      setAdjDecisionBusy(false);
+    }
   };
 
   return (
@@ -1069,13 +1111,78 @@ export default function RequestDetailView({
                 />
               ))}
 
-            {canSupplementAfterApproval && (
-              <AdjustmentControl
-                requestId={request.id}
-                onDone={(data) => {
-                  setAttachments(data.attachments);
-                  setHistory(data.history);
-                }}
+            {request.pendingAdjustment ? (
+              currentUid === request.pendingAdjustment.approverUid ? (
+                <div className="mb-3 rounded border border-amber-200 bg-amber-50 p-3">
+                  <p className="mb-1 text-[13px] text-gray-700">
+                    <span className="font-medium">{request.pendingAdjustment.requestedByName}</span> đề nghị điều
+                    chỉnh:
+                  </p>
+                  <p className="mb-1 text-[14px] text-gray-800">
+                    {request.pendingAdjustment.noiDung || "(chỉ đính tệp)"}
+                  </p>
+                  {request.pendingAdjustment.attachment && (
+                    <p className="mb-2 flex items-center gap-1 text-[12px] text-[var(--color-action-blue)]">
+                      <Paperclip size={11} className="shrink-0" />
+                      {request.pendingAdjustment.attachment.name}
+                    </p>
+                  )}
+                  <div className="mt-2 flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => decideAdjustment("approved")}
+                      disabled={adjDecisionBusy}
+                      className="flex h-8 items-center gap-1.5 rounded bg-[var(--color-confirm-green)] px-3 text-[13px] font-medium text-white hover:brightness-95 disabled:opacity-60"
+                    >
+                      <Check size={14} /> Duyệt điều chỉnh
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAdjForwardOpen(true)}
+                      disabled={adjDecisionBusy}
+                      className="flex h-8 items-center gap-1.5 rounded bg-teal-500 px-3 text-[13px] font-medium text-white hover:brightness-95 disabled:opacity-60"
+                    >
+                      <Forward size={14} /> Chuyển tiếp
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => decideAdjustment("rejected")}
+                      disabled={adjDecisionBusy}
+                      className="flex h-8 items-center gap-1.5 rounded bg-[var(--color-danger-red)] px-3 text-[13px] font-medium text-white hover:brightness-95 disabled:opacity-60"
+                    >
+                      <X size={14} /> Từ chối
+                    </button>
+                  </div>
+                  {adjDecisionError && (
+                    <p className="mt-2 text-[12px] text-[var(--color-danger-red)]">{adjDecisionError}</p>
+                  )}
+                </div>
+              ) : (
+                <p className="mb-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] text-amber-800">
+                  ⏳ Đang chờ <span className="font-medium">{request.pendingAdjustment.approverName}</span> duyệt
+                  điều chỉnh
+                </p>
+              )
+            ) : (
+              resolvedAdjustmentAccess !== "none" && (
+                <AdjustmentControl
+                  requestId={request.id}
+                  submitLabel={resolvedAdjustmentAccess === "gated" ? "Gửi duyệt điều chỉnh" : "Cập nhật điều chỉnh"}
+                  onDone={(data) => {
+                    setAttachments(data.attachments);
+                    setHistory(data.history);
+                    // "gated": chuyển sang trạng thái chờ duyệt — nạp lại để lấy
+                    // đúng `pendingAdjustment` mới (xem design.md).
+                    if (resolvedAdjustmentAccess === "gated") onActed();
+                  }}
+                />
+              )
+            )}
+            {adjForwardOpen && request.pendingAdjustment && (
+              <AdjustmentForwardModal
+                currentApproverName={request.pendingAdjustment.approverName}
+                onClose={() => setAdjForwardOpen(false)}
+                onConfirm={(user) => decideAdjustment("forward", user)}
               />
             )}
 
@@ -1608,9 +1715,13 @@ function TableSupplementControl({
  */
 function AdjustmentControl({
   requestId,
+  submitLabel = "Cập nhật điều chỉnh",
   onDone,
 }: {
   requestId: string;
+  /** "Gửi duyệt điều chỉnh" khi phải qua duyệt (gated), giữ nhãn cũ khi ghi
+   * thẳng ngay (direct) — xem design.md của change add-adjustment-approval-gate. */
+  submitLabel?: string;
   onDone: (data: { attachments: RequestAttachment[]; history: RequestHistoryEntry[] }) => void;
 }) {
   const [noiDung, setNoiDung] = useState("");
@@ -1704,7 +1815,7 @@ function AdjustmentControl({
           disabled={dangGui}
           className="flex h-9 shrink-0 items-center rounded bg-[var(--color-action-blue)] px-4 text-[14px] font-medium text-white hover:brightness-95 disabled:opacity-50"
         >
-          {dangGui ? "Đang gửi..." : "Cập nhật điều chỉnh"}
+          {dangGui ? "Đang gửi..." : submitLabel}
         </button>
       </div>
       {tep && (

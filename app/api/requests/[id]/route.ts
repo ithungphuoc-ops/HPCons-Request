@@ -6,7 +6,8 @@ import { apiErrorResponse } from "@/lib/http";
 import { dedupeApproversWithMeta } from "@/lib/approval-logic";
 import { mergeFollowers } from "@/lib/server/conditions";
 import { resolveComputedValue } from "@/lib/server/computed-fields";
-import { canManageGroupsAtAppScope } from "@/lib/permissions";
+import { canManageGroupsAtAppScope, resolveAdjustmentAccess } from "@/lib/permissions";
+import { resolveGateDepartment } from "@/lib/server/adjustment-gate";
 import {
   buildInitialApprovers,
   canView,
@@ -57,7 +58,18 @@ export async function GET(
     /* ★ 03/10/2026 — hàng chờ đồng bộ: có người mở đề xuất thì máy chủ tranh thủ gửi các việc đã tới
        hạn (của MỌI đề xuất, tối đa 1 lần/phút). Xem lib/dong-bo/hang-cho.ts. */
     after(() => quetViecToiHan());
-    return NextResponse.json({ request: found });
+    // Chỉ tra phòng ban (đọc Firestore App Tổng, có cache 60s) khi THẬT SỰ cần
+    // — người xem là submitter/follower của đúng đề xuất đã duyệt này. Field
+    // phái sinh theo người xem, KHÔNG lưu vào `found`/Firestore — xem
+    // design.md của change add-adjustment-approval-gate.
+    const isSubmitterOrFollower =
+      found.submittedBy.uid === session.uid || found.followers.some((f) => f.id === session.uid);
+    const department =
+      found.status === "approved" && isSubmitterOrFollower
+        ? await resolveGateDepartment(session.uid)
+        : "other";
+    const viewerAdjustmentAccess = resolveAdjustmentAccess(found, session.uid, department);
+    return NextResponse.json({ request: found, viewerAdjustmentAccess });
   } catch (error) {
     return apiErrorResponse(error);
   }
@@ -255,6 +267,11 @@ export async function PATCH(
         approversSnapshot,
         approverStepMeta,
         approvers: buildInitialApprovers(approversSnapshot),
+        // "Chỉ huy trưởng" — CHỈ chốt lúc gửi chính thức LẦN ĐẦU từ nháp
+        // (found.status === "draft"). Gửi lại từ "pending"/"returned" (đã có
+        // approver từ lần gửi đầu) KHÔNG được đụng tới field này — xem
+        // design.md của change add-adjustment-approval-gate.
+        ...(found.status === "draft" ? { originalFirstApprover: approversSnapshot[0] ?? null } : {}),
         // Giữ đúng người theo dõi người gửi đã chỉnh (mặc định + thêm tay),
         // không ghi đè về danh sách mặc định của nhóm khi gửi chính thức từ
         // nháp — nhất quán với nhánh "chỉ lưu nháp" ở trên (dòng `followers`).
@@ -307,6 +324,7 @@ export async function PATCH(
       groupNameSnapshot,
       approversSnapshot,
       approvers: buildInitialApprovers(approversSnapshot),
+      ...(found.status === "draft" ? { originalFirstApprover: approversSnapshot[0] ?? null } : {}),
       followers,
       status: "pending" as const,
       deadlineAt: null,

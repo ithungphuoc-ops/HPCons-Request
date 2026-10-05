@@ -58,3 +58,32 @@ export function canSupplementAfterApproval(
 ): boolean {
   return request.status === "approved" && request.submittedBy.uid === uid;
 }
+
+/**
+ * Quyền RIÊNG cho hành động "Điều chỉnh đề nghị sau duyệt" — KHÁC HẲN
+ * `canSupplementAfterApproval` ở trên (hàm đó vẫn dùng NGUYÊN cho
+ * table-supplement/attachments, không đụng). Hàm THUẦN: `department` đã được
+ * tra sẵn ở nơi gọi (`lib/server/adjustment-gate.ts`, cần đọc Firestore App
+ * Tổng) — xem design.md của change add-adjustment-approval-gate.
+ *
+ * - `"direct"`: hành vi CŨ — ghi thẳng ngay, không qua duyệt. Chỉ `submittedBy`,
+ *   và chỉ khi KHÔNG thuộc 2 phòng ban "gated".
+ * - `"gated"`: phải qua duyệt (Trưởng phòng Thu mua cung ứng / Chỉ huy
+ *   trưởng) — `submittedBy` HOẶC `followers[]`, miễn thuộc phòng Thi công/Thu
+ *   mua cung ứng.
+ * - `"none"`: không được bấm — người ngoài submitter/followers, HOẶC follower
+ *   thuộc phòng khác (follower chỉ được cấp quyền vì lý do 2 phòng ban này,
+ *   không có quyền chung chung).
+ */
+export function resolveAdjustmentAccess(
+  request: Pick<RequestInstance, "status" | "submittedBy" | "followers">,
+  uid: string,
+  department: "thi_cong" | "thu_mua_cung_ung" | "other",
+): "direct" | "gated" | "none" {
+  if (request.status !== "approved") return "none";
+  const isSubmitter = request.submittedBy.uid === uid;
+  const isFollower = request.followers.some((f) => f.id === uid);
+  if (!isSubmitter && !isFollower) return "none";
+  if (department === "thi_cong" || department === "thu_mua_cung_ung") return "gated";
+  return isSubmitter ? "direct" : "none";
+}

@@ -454,6 +454,10 @@ export async function POST(request: Request) {
       approversSnapshot,
       approverStepMeta,
       approvers: isDraft ? [] : buildInitialApprovers(approversSnapshot),
+      // "Chỉ huy trưởng" — chốt NGAY LÚC approversSnapshot có giá trị thật lần
+      // đầu (gửi chính thức), không bao giờ tính lại sau — xem design.md của
+      // change add-adjustment-approval-gate.
+      originalFirstApprover: isDraft ? null : (approversSnapshot[0] ?? null),
       followers,
       status: isDraft ? "draft" : "pending",
       deadlineAt,

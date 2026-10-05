@@ -817,6 +817,33 @@ export interface RequestInstance {
    * "sai dữ liệu" — chỗ đó gửi lại y nguyên thì không bao giờ đổi được gì.
    */
   qlkCtrSyncStatus?: "synced" | "failed" | "bo_qua" | "dung";
+  /**
+   * "Chỉ huy trưởng" — `approversSnapshot[0]` tại ĐÚNG thời điểm `approversSnapshot`
+   * được dựng lần đầu (gửi chính thức từ nháp, hoặc tạo không phải nháp), TRƯỚC
+   * khi "Chuyển tiếp và Duyệt" có cơ hội chèn người vào đầu mảng. Ghi 1 LẦN DUY
+   * NHẤT, không bao giờ ghi đè lại — xem design.md của change
+   * add-adjustment-approval-gate. `null` = đề xuất nháp chưa có approver nào lúc
+   * tạo; `undefined` = đề xuất tạo TRƯỚC change này, coi như không xác định được.
+   */
+  originalFirstApprover?: TaggedUser | null;
+  /**
+   * Điều chỉnh sau duyệt đang chờ 1 người xử lý (Duyệt/Từ chối/Chuyển tiếp) —
+   * chỉ tồn tại cho người gửi thuộc phòng Thi công/Thu mua cung ứng
+   * (`resolveAdjustmentAccess` trả `"gated"`), xem
+   * design.md của change add-adjustment-approval-gate. `approverUid`/`approverName`
+   * CHỐT CỨNG lúc tạo hoặc lúc Chuyển tiếp gần nhất — không tính lại theo phòng ban
+   * mỗi lần hiển thị.
+   */
+  pendingAdjustment?: {
+    noiDung: string;
+    attachment: RequestAttachment | null;
+    requestedByUid: string;
+    requestedByName: string;
+    createdAt: string;
+    routedVia: "thi_cong" | "thu_mua_cung_ung";
+    approverUid: string;
+    approverName: string;
+  } | null;
 }
 
 export type ModalWindowStatus =
