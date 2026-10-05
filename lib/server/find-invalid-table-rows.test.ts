@@ -65,13 +65,22 @@ describe("findInvalidTableRows — cột Bắt buộc theo tick (05/10/2026)", (
     expect(issues[0].message).toContain('"Số tiền" phải là số');
   });
 
-  it("đã tick rõ: cột tên 'Tên hàng' KHÔNG tick thì không còn bắt buộc", () => {
+  it("đã tick rõ: cột tên 'ĐVT' KHÔNG tick thì không còn bắt buộc", () => {
+    const field = tableField({
+      tableColumns: ["ĐVT", "Ghi chú"],
+      tableColumnRequired: [false, true],
+    });
+    const issues = findInvalidTableRows([field], { f1: rowsValue([["", "x"]]) });
+    expect(issues).toEqual([]);
+  });
+
+  it("'Tên hàng' luôn bắt buộc dù dữ liệu lưu bỏ tick (khoá — Sếp chốt 05/10/2026)", () => {
     const field = tableField({
       tableColumns: ["Tên hàng", "Ghi chú"],
       tableColumnRequired: [false, true],
     });
     const issues = findInvalidTableRows([field], { f1: rowsValue([["", "x"]]) });
-    expect(issues).toEqual([]);
+    expect(issues.map((i) => i.message)).toEqual(['Dòng 1 của "Bảng": "Tên hàng" chưa nhập.']);
   });
 });
 

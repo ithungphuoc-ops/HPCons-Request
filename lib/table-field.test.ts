@@ -186,8 +186,16 @@ describe("resolveTableColumnRequired", () => {
     expect(resolveTableColumnRequired(legacyColumns)).toEqual([true, true, true, true, false, true, false]);
   });
 
-  it("đã có mảng → theo đúng tick, kể cả bỏ tick cột tên then chốt", () => {
-    expect(resolveTableColumnRequired(["Tên hàng", "Số tài khoản"], [false, true])).toEqual([false, true]);
+  it("đã có mảng → theo đúng tick, kể cả bỏ tick cột tên then chốt (trừ cột khoá)", () => {
+    expect(resolveTableColumnRequired(["ĐVT", "Số tài khoản"], [false, true])).toEqual([false, true]);
+  });
+
+  it("\"Tên hàng\" và \"Số lượng\" luôn bắt buộc dù lưu false (khoá — Sếp chốt 05/10/2026)", () => {
+    expect(resolveTableColumnRequired(["Tên hàng", "số lượng ", "Ghi chú"], [false, false, false])).toEqual([
+      true,
+      true,
+      false,
+    ]);
   });
 
   it("lệch độ dài (cột thêm sau) → cột thiếu tick suy theo luật cũ", () => {

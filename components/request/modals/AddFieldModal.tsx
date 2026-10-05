@@ -30,6 +30,7 @@ import {
 import {
   DEFAULT_TABLE_COLUMN_WIDTH_PX,
   isNumericColumnType,
+  isLockedRequiredTableColumn,
   resolveTableColumnRequired,
   resolveTableColumnSum,
   resolveTableColumnTypes,
@@ -351,7 +352,7 @@ export default function AddFieldModal() {
           name: name.trim(),
           type,
           width: tableColumnWidths[i] ?? DEFAULT_TABLE_COLUMN_WIDTH_PX,
-          required: tableColumnRequired[i] === true,
+          required: isLockedRequiredTableColumn(name) || tableColumnRequired[i] === true,
           sum: isNumericColumnType(type) && tableColumnSum[i] === true,
         };
       })
@@ -758,9 +759,17 @@ export default function AddFieldModal() {
                       <span className="flex w-[60px] shrink-0 justify-center">
                         <input
                           type="checkbox"
-                          className="h-4 w-4"
+                          className="h-4 w-4 disabled:opacity-60"
                           aria-label={`Cột ${index + 1} bắt buộc nhập`}
-                          checked={tableColumnRequired[index] === true}
+                          // "Tên hàng"/"Số lượng" luôn bắt buộc (Sếp chốt 05/10/2026) — khoá tick,
+                          // máy chủ cũng ép lại ở resolveTableColumnRequired.
+                          checked={isLockedRequiredTableColumn(col) || tableColumnRequired[index] === true}
+                          disabled={isLockedRequiredTableColumn(col)}
+                          title={
+                            isLockedRequiredTableColumn(col)
+                              ? "Luôn bắt buộc: thiếu cột này dòng vật tư sẽ không đồng bộ sang Thu mua/Kho"
+                              : undefined
+                          }
                           onChange={(e) =>
                             setTableColumnRequired((prev) => {
                               const next = [...prev];

@@ -56,6 +56,19 @@ export function isRequiredTableColumn(name: string): boolean {
   );
 }
 
+/**
+ * Cột LUÔN bắt buộc, admin KHÔNG bỏ tick được (Sếp chốt 05/10/2026, review
+ * PR #69): đồng bộ sang Thu mua/Kho lọc bỏ dòng thiếu tên hàng hoặc số lượng
+ * (`.filter(v => v.tenVatTu && v.soLuong > 0)`), nên cho bỏ trống sẽ lặng lẽ
+ * mất dòng vật tư — khoá luôn để tránh quên.
+ */
+export const LOCKED_REQUIRED_TABLE_COLUMN_NAMES = ["Tên hàng", QUANTITY_COLUMN_NAME];
+
+export function isLockedRequiredTableColumn(name: string): boolean {
+  const normalized = normalizeColumnName(name);
+  return LOCKED_REQUIRED_TABLE_COLUMN_NAMES.some((n) => normalizeColumnName(n) === normalized);
+}
+
 export function isQuantityColumn(name: string): boolean {
   return normalizeColumnName(name) === normalizeColumnName(QUANTITY_COLUMN_NAME);
 }
@@ -164,10 +177,12 @@ export function resolveTableColumnWidths(columns: string[], widths?: number[]): 
  * Trường cũ chưa có `tableColumnRequired` (hoặc lệch độ dài — vd cột vừa được
  * thêm qua nhập file) → cột đó suy theo LUẬT CŨ: tên khớp
  * `REQUIRED_TABLE_COLUMN_NAMES` hoặc "Số lượng" (`isRequiredTableColumn`), để
- * không mẫu nào bị đổi hành vi khi chưa ai mở ra sửa.
+ * không mẫu nào bị đổi hành vi khi chưa ai mở ra sửa. Riêng "Tên hàng" và
+ * "Số lượng" LUÔN bắt buộc bất kể đã lưu gì (`isLockedRequiredTableColumn`).
  */
 export function resolveTableColumnRequired(columns: string[], saved?: boolean[]): boolean[] {
   return columns.map((name, i) => {
+    if (isLockedRequiredTableColumn(name)) return true;
     const declared = saved?.[i];
     return typeof declared === "boolean" ? declared : isRequiredTableColumn(name);
   });
