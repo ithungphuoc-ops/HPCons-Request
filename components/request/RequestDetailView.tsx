@@ -68,6 +68,7 @@ import {
   formatCellForDisplay,
   isNumericColumnType,
   numericTypeForFieldDataType,
+  resolveTableColumnSum,
   resolveTableColumnTypes,
   sumColumn,
 } from "@/lib/table-field";
@@ -990,6 +991,7 @@ export default function RequestDetailView({
                         <TableValueView
                           columns={field.tableColumns ?? []}
                           columnTypes={field.tableColumnTypes}
+                          columnSum={field.tableColumnSum}
                           rows={deserializeTableRows(request.values[field.id])}
                         />
                       ) : isFile ? (
@@ -1732,10 +1734,12 @@ function AdjustmentControl({
 function TableValueView({
   columns,
   columnTypes,
+  columnSum,
   rows,
 }: {
   columns: string[];
   columnTypes?: TableColumnType[];
+  columnSum?: boolean[];
   rows: string[][];
 }) {
   if (columns.length === 0) {
@@ -1747,7 +1751,10 @@ function TableValueView({
   }
   // Ô lưu số thô, chỉ chấm phẩy lúc hiện ra — xem lib/table-field.ts.
   const types = resolveTableColumnTypes(columns, columnTypes);
-  const hasMoneyColumn = types.includes("money");
+  // Dòng TỔNG theo tick "Tổng" của Admin (05/10/2026); trường cũ chưa tick →
+  // mọi cột tiền tệ, đúng hành vi trước đây.
+  const sumFlags = resolveTableColumnSum(columns, types, columnSum);
+  const hasSumColumn = sumFlags.includes(true);
 
   return (
     <div className="mt-1 overflow-x-auto rounded border border-[var(--color-border)]">
@@ -1788,11 +1795,11 @@ function TableValueView({
               ))}
             </tr>
           ))}
-          {hasMoneyColumn && (
+          {hasSumColumn && (
             <tr className="border-t border-[var(--color-border)] bg-gray-50 font-bold">
               <td className="px-2 py-1.5" />
               {columns.map((_, colIndex) => {
-                const total = types[colIndex] === "money" ? sumColumn(filledRows, colIndex) : null;
+                const total = sumFlags[colIndex] ? sumColumn(filledRows, colIndex) : null;
                 return (
                   <td
                     key={colIndex}
@@ -1804,7 +1811,7 @@ function TableValueView({
                       ? colIndex === 0
                         ? "Tổng cộng"
                         : ""
-                      : formatCellForDisplay(String(total), "money")}
+                      : formatCellForDisplay(String(total), types[colIndex])}
                   </td>
                 );
               })}

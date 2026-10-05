@@ -158,6 +158,44 @@ export function resolveTableColumnWidths(columns: string[], widths?: number[]): 
 }
 
 /**
+ * Cột nào BẮT BUỘC nhập (dòng đã có dữ liệu thì ô cột này không được trống)
+ * — Sếp duyệt demo 05/10/2026: Admin tự tick từng cột, song song index với
+ * `tableColumns` (cùng mẫu `resolveTableColumnTypes`/`resolveTableColumnWidths`).
+ * Trường cũ chưa có `tableColumnRequired` (hoặc lệch độ dài — vd cột vừa được
+ * thêm qua nhập file) → cột đó suy theo LUẬT CŨ: tên khớp
+ * `REQUIRED_TABLE_COLUMN_NAMES` hoặc "Số lượng" (`isRequiredTableColumn`), để
+ * không mẫu nào bị đổi hành vi khi chưa ai mở ra sửa.
+ */
+export function resolveTableColumnRequired(columns: string[], saved?: boolean[]): boolean[] {
+  return columns.map((name, i) => {
+    const declared = saved?.[i];
+    return typeof declared === "boolean" ? declared : isRequiredTableColumn(name);
+  });
+}
+
+/**
+ * Cột nào có DÒNG TỔNG cuối bảng — chỉ cột kiểu số (int/decimal/money/
+ * percent); cột văn bản luôn `false` kể cả khi dữ liệu lưu `true` (vd admin
+ * đổi kiểu cột sang văn bản sau khi đã tick). Trường cũ chưa có
+ * `tableColumnSum` (hoặc lệch độ dài) → LUẬT CŨ: mọi cột tiền tệ có tổng
+ * (đúng hành vi trước 05/10/2026). `types` nên là kết quả đã resolve
+ * (`resolveTableColumnTypes`), nhận cả mảng thô cho tiện — tự resolve lại.
+ */
+export function resolveTableColumnSum(
+  columns: string[],
+  types?: TableColumnType[],
+  saved?: boolean[],
+): boolean[] {
+  const resolvedTypes = resolveTableColumnTypes(columns, types);
+  return columns.map((_, i) => {
+    const type = resolvedTypes[i];
+    if (!isNumericColumnType(type)) return false;
+    const declared = saved?.[i];
+    return typeof declared === "boolean" ? declared : type === "money";
+  });
+}
+
+/**
  * Lọc ký tự KHÔNG hợp lệ NGAY lúc gõ (Sếp phát hiện 01/10/2026: ô số/tiền tệ
  * trước đây cho gõ chữ tự do, chỉ lặng lẽ dọn dẹp lúc rời ô — dữ liệu không
  * phải số có thể lọt xuống nếu người dùng không để ý, giống lỗi đề nghị

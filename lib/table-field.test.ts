@@ -5,6 +5,8 @@ import {
   isNumericColumnType,
   isValidCellValue,
   parseCellToRaw,
+  resolveTableColumnRequired,
+  resolveTableColumnSum,
   resolveTableColumnTypes,
   resolveTableColumnWidths,
   sumColumn,
@@ -173,5 +175,52 @@ describe("resolveTableColumnWidths — tương thích ngược cho nhóm cũ", (
 
   it("giá trị không hợp lệ (0, âm, không phải số) -> dùng mặc định", () => {
     expect(resolveTableColumnWidths(["A", "B", "C"], [0, -50, NaN])).toEqual([160, 160, 160]);
+  });
+});
+
+// Bắt buộc / Tổng từng cột — Sếp duyệt demo 05/10/2026.
+describe("resolveTableColumnRequired", () => {
+  const legacyColumns = ["Tên hàng", "Quy cách/chủng loại", "ĐVT", "Số lượng", "Đơn giá", "Mục đích sử dụng", "Ghi chú"];
+
+  it("trường cũ chưa có mảng → luật cũ (4 tên cột then chốt + Số lượng)", () => {
+    expect(resolveTableColumnRequired(legacyColumns)).toEqual([true, true, true, true, false, true, false]);
+  });
+
+  it("đã có mảng → theo đúng tick, kể cả bỏ tick cột tên then chốt", () => {
+    expect(resolveTableColumnRequired(["Tên hàng", "Số tài khoản"], [false, true])).toEqual([false, true]);
+  });
+
+  it("lệch độ dài (cột thêm sau) → cột thiếu tick suy theo luật cũ", () => {
+    expect(resolveTableColumnRequired(["Số tài khoản", "Số lượng", "Ghi chú"], [true])).toEqual([
+      true,
+      true,
+      false,
+    ]);
+  });
+});
+
+describe("resolveTableColumnSum", () => {
+  it("trường cũ chưa có mảng → mọi cột tiền tệ có tổng (luật cũ)", () => {
+    expect(
+      resolveTableColumnSum(["Tên", "Số lượng", "Thành tiền"], ["text", "decimal", "money"]),
+    ).toEqual([false, false, true]);
+  });
+
+  it("đã có mảng → theo tick, bật được cho số nguyên/thập phân/phần trăm", () => {
+    expect(
+      resolveTableColumnSum(
+        ["SL", "Tỉ lệ", "Tiền", "KL"],
+        ["int", "percent", "money", "decimal"],
+        [true, true, false, true],
+      ),
+    ).toEqual([true, true, false, true]);
+  });
+
+  it("cột văn bản luôn false dù dữ liệu lưu true (đổi kiểu sang văn bản)", () => {
+    expect(resolveTableColumnSum(["Ghi chú", "Tiền"], ["text", "money"], [true, true])).toEqual([false, true]);
+  });
+
+  it("lệch độ dài → cột thiếu tick suy theo luật cũ", () => {
+    expect(resolveTableColumnSum(["Tiền", "Tiền 2"], ["money", "money"], [false])).toEqual([false, true]);
   });
 });

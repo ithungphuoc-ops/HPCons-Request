@@ -18,11 +18,12 @@ import {
   filterNumericInput,
   formatCellForDisplay,
   isNumericColumnType,
-  isRequiredTableColumn,
   isValidCellValue,
   normalizeRawForStorage,
   numericTypeForFieldDataType,
   parseCellToRaw,
+  resolveTableColumnRequired,
+  resolveTableColumnSum,
   resolveTableColumnTypes,
   resolveTableColumnWidths,
   sumColumn,
@@ -535,11 +536,14 @@ export default function SubmitRequestPage() {
           // Kiểm theo KIỂU cột admin khai (13/09/2026) — trước đây chỉ soi cột
           // tên "Số lượng". Nhóm chưa khai kiểu vẫn ra đúng như cũ.
           const cellTypes = resolveTableColumnTypes(columns, field.tableColumnTypes);
+          // Cột bắt buộc theo tick của Admin (05/10/2026) — trường cũ chưa
+          // tick → luật cũ, cùng hàm resolve với máy chủ.
+          const requiredFlags = resolveTableColumnRequired(columns, field.tableColumnRequired);
           for (const row of rows) {
             if (!row.some((cell) => cell?.trim())) continue;
             columns.forEach((col, ci) => {
               const cell = row[ci] ?? "";
-              if (isRequiredTableColumn(col) && !cell.trim()) {
+              if (requiredFlags[ci] && !cell.trim()) {
                 nextErrors[field.id] = `Bảng "${field.name}" còn dòng thiếu "${col}".`;
               } else if (cell.trim() && !isValidCellValue(cell, cellTypes[ci])) {
                 const wanted = cellTypes[ci] === "int" ? "số nguyên" : "số";
@@ -1472,8 +1476,12 @@ function FieldControl({
       // min-110/max-240 áp đều mọi cột trước đây, vd cột "Ghi chú" không đủ
       // chỗ trong khi cột "Số lượng" lại thừa).
       const columnWidths = resolveTableColumnWidths(columns, field.tableColumnWidths);
-      // Dòng TỔNG chỉ hiện khi có ít nhất 1 cột tiền tệ (Sếp chốt 13/09/2026).
-      const hasMoneyColumn = columnTypes.includes("money");
+      // Cột bắt buộc (dấu *) và cột có dòng TỔNG theo tick của Admin (Sếp
+      // duyệt demo 05/10/2026). Trường cũ chưa tick → luật cũ: 5 tên cột
+      // "then chốt" bắt buộc, mọi cột tiền tệ có tổng (như 13/09/2026).
+      const requiredFlags = resolveTableColumnRequired(columns, field.tableColumnRequired);
+      const sumFlags = resolveTableColumnSum(columns, columnTypes, field.tableColumnSum);
+      const hasSumColumn = sumFlags.includes(true);
       // CodeRabbit PR #62: `table-layout: auto` (mặc định) + `w-full` khiến
       // trình duyệt TỰ GIÃN cột cho lấp hết container (và nới rộng hơn nữa
       // nếu nội dung dài), nên độ rộng Admin chọn chỉ còn là "tối thiểu",
@@ -1504,7 +1512,7 @@ function FieldControl({
                         }`}
                       >
                         {col}
-                        {isRequiredTableColumn(col) && (
+                        {requiredFlags[i] && (
                           <span className="text-[var(--color-danger-red)]"> *</span>
                         )}
                       </th>
@@ -1551,11 +1559,11 @@ function FieldControl({
                       </td>
                     </tr>
                   ))}
-                  {hasMoneyColumn && (
+                  {hasSumColumn && (
                     <tr className="border-t border-[var(--color-border)] bg-gray-50/70 font-bold">
                       <td className="px-2 py-2 text-center text-[12px] text-gray-500" />
                       {columns.map((_, colIndex) => {
-                        const total = columnTypes[colIndex] === "money" ? sumColumn(rows, colIndex) : null;
+                        const total = sumFlags[colIndex] ? sumColumn(rows, colIndex) : null;
                         return (
                           <td
                             key={colIndex}
@@ -1567,7 +1575,7 @@ function FieldControl({
                               ? colIndex === 0
                                 ? "Tổng cộng"
                                 : ""
-                              : formatCellForDisplay(String(total), "money")}
+                              : formatCellForDisplay(String(total), columnTypes[colIndex])}
                           </td>
                         );
                       })}

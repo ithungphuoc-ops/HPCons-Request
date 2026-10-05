@@ -70,6 +70,19 @@ export interface ProposalField {
    * hành vi cũ cho cột đã tạo trước thời điểm này).
    */
   tableColumnWidths?: number[];
+  /**
+   * Cột BẮT BUỘC nhập, SONG SONG theo index với `tableColumns` — Sếp duyệt
+   * demo 05/10/2026 (Admin tự tick từng cột thay cho danh sách tên cột viết
+   * cứng). Thiếu/lệch độ dài → `resolveTableColumnRequired()` suy theo luật
+   * cũ (tên khớp `REQUIRED_TABLE_COLUMN_NAMES` + "Số lượng").
+   */
+  tableColumnRequired?: boolean[];
+  /**
+   * Cột có DÒNG TỔNG cuối bảng, SONG SONG theo index với `tableColumns` — chỉ
+   * có tác dụng với cột kiểu số (Sếp duyệt demo 05/10/2026). Thiếu/lệch độ
+   * dài → `resolveTableColumnSum()` suy theo luật cũ (mọi cột tiền tệ).
+   */
+  tableColumnSum?: boolean[];
   formula?: string;
   /** Chỉ hiển thị field này trên form Gửi đề xuất khi nhóm điều kiện thoả mãn
    * (dựa trên giá trị (các) field khác của CÙNG đề xuất, kết hợp AND/OR) —

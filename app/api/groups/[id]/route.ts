@@ -12,7 +12,11 @@ import {
 } from "@/lib/server/groups";
 import { sanitizeHelpText } from "@/lib/validation";
 import { resolveDateLeadTimeNumbers, validateDateLeadTimeNumbers } from "@/lib/date-lead-time";
-import { resolveTableColumnTypes } from "@/lib/table-field";
+import {
+  resolveTableColumnRequired,
+  resolveTableColumnSum,
+  resolveTableColumnTypes,
+} from "@/lib/table-field";
 import { validateConditionGroupFieldCodes } from "@/lib/server/conditions";
 import { findReferencedComputedFieldCode } from "@/lib/server/computed-fields";
 import { requireWriteAccess } from "@/lib/session";
@@ -69,6 +73,17 @@ export async function PATCH(
         tableColumnTypes:
           f.dataType === "table" || f.dataType === "base_table"
             ? resolveTableColumnTypes(f.tableColumns ?? [], f.tableColumnTypes)
+            : undefined,
+        // Bắt buộc / Tổng từng cột (Sếp duyệt demo 05/10/2026) — cũng phải
+        // đi đúng cặp với tableColumns, luôn là boolean; Tổng tự tắt ở cột
+        // không phải số. Thiếu thì ghi theo luật cũ → mẫu cũ giữ y hành vi.
+        tableColumnRequired:
+          f.dataType === "table" || f.dataType === "base_table"
+            ? resolveTableColumnRequired(f.tableColumns ?? [], f.tableColumnRequired)
+            : undefined,
+        tableColumnSum:
+          f.dataType === "table" || f.dataType === "base_table"
+            ? resolveTableColumnSum(f.tableColumns ?? [], f.tableColumnTypes, f.tableColumnSum)
             : undefined,
       }));
 
