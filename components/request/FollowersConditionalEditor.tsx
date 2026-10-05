@@ -22,7 +22,8 @@ function operatorsForField(field: ProposalField | undefined): ConditionRule["ope
 /** Trùng ApproverStepsEditor.tsx — operator không cần ô nhập giá trị. */
 const OPERATORS_WITHOUT_VALUE = new Set<ConditionRule["operator"]>(["is_empty", "is_not_empty"]);
 
-const operatorLabels: Record<ConditionRule["operator"], string> = {
+/** Export để FollowersCard (trang Thiết lập chung) viết lại điều kiện thành câu tiếng Việt — giữ đúng 1 nguồn chữ, tránh lệch dần giữa 2 nơi. */
+export const operatorLabels: Record<ConditionRule["operator"], string> = {
   equals: "bằng",
   not_equals: "khác",
   includes: "chứa",

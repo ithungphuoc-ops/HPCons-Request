@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronDown, Plus, Users } from "lucide-react";
 import { useRequestContext } from "@/context/RequestContext";
 import Modal from "@/components/shared/Modal";
@@ -14,8 +14,11 @@ import ApproverStepsEditor, {
   type DraftApproverStep,
 } from "@/components/request/ApproverStepsEditor";
 import FollowersConditionalEditor, {
+  operatorLabels,
   type FollowersConditionalItem,
 } from "@/components/request/FollowersConditionalEditor";
+import AvatarWithCard from "@/components/request/AvatarWithCard";
+import { useAvatarProfilesByUids } from "@/lib/useAvatarProfilesByUids";
 import RequireAdminRole from "@/components/request/RequireAdminRole";
 import {
   cancelButtonClass,
@@ -31,6 +34,8 @@ import {
   approvalFlowLabels,
   type ApprovalFlowType,
   type ApproverStepDef,
+  type ConditionGroup,
+  type ProposalField,
   type ProposalGroup,
   type TaggedUser,
 } from "@/lib/types";
@@ -608,7 +613,91 @@ function EditApprovalFlowModal({
 
 /* ------------------------------ Người theo dõi ----------------------------- */
 
+/** Tra tên phòng ban App Tổng theo id — chỉ cần khi có điều kiện dùng field kiểu department_select (hiển thị "Phòng Kế Toán" thay vì id thô). Lỗi tải/rỗng → map rỗng, hiển thị rơi về id gốc. */
+function useDepartmentNameById(enabled: boolean): Record<string, string> {
+  const [names, setNames] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    fetch("/api/directory/departments")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { departments?: { id: string; name: string }[] } | null) => {
+        if (cancelled || !data?.departments) return;
+        setNames(Object.fromEntries(data.departments.map((d) => [d.id, d.name])));
+      })
+      .catch(() => {
+        // Lỗi tải không chặn thẻ tóm tắt — chỉ hiện id thô thay vì tên phòng ban.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled]);
+  return names;
+}
+
+/** Viết 1 ConditionGroup thành câu tiếng Việt dễ đọc cho thẻ tóm tắt — không tái dùng cho validate/submit (chỉ hiển thị). */
+function describeFollowersCondition(
+  condition: ConditionGroup,
+  fields: ProposalField[],
+  departmentNames: Record<string, string>,
+): string {
+  if (condition.rules.length === 0) return "Luôn luôn";
+  const joiner = condition.conjunction === "all" ? " và " : " hoặc ";
+  const parts = condition.rules.map((rule) => {
+    const field = fields.find((f) => f.code === rule.fieldCode);
+    const label = field?.name ?? rule.fieldCode;
+    const opLabel = operatorLabels[rule.operator];
+    if (rule.operator === "is_empty" || rule.operator === "is_not_empty") {
+      return `"${label}" ${opLabel}`;
+    }
+    if (rule.operator === "between") {
+      return `"${label}" ${opLabel} ${rule.value} – ${rule.valueTo ?? ""}`;
+    }
+    const displayValue = field?.dataType === "department_select" ? (departmentNames[rule.value] ?? rule.value) : rule.value;
+    return `"${label}" ${opLabel} "${displayValue}"`;
+  });
+  return `Khi ${parts.join(joiner)}`;
+}
+
+function FollowersAvatarGroup({
+  users,
+  profiles,
+  size = 28,
+}: {
+  users: TaggedUser[];
+  profiles: Record<string, { url: string | null; title: string | null }>;
+  size?: number;
+}) {
+  if (users.length === 0) return <p className="text-[13px] text-gray-400">Chưa có</p>;
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {users.map((u) => (
+        <AvatarWithCard
+          key={u.id}
+          name={u.name}
+          username={u.username}
+          avatarInitial={u.avatarInitial}
+          kind={u.kind}
+          profile={profiles[u.id] ?? { url: null, title: null }}
+          size={size}
+          fallbackClassName={`font-semibold text-white ${u.kind === "group" ? "bg-teal-500" : "bg-[var(--color-action-blue)]"}`}
+        />
+      ))}
+    </div>
+  );
+}
+
 function FollowersCard({ group, onEdit }: { group: ProposalGroup; onEdit: () => void }) {
+  const followersConditional = group.followersConditional ?? [];
+  const allUids = [...group.followers, ...followersConditional.flatMap((item) => item.users)]
+    .filter((u) => u.kind !== "group")
+    .map((u) => u.id);
+  const profiles = useAvatarProfilesByUids(allUids);
+  const hasDepartmentCondition = followersConditional.some((item) =>
+    item.condition.rules.some((rule) => fieldByCode(group.fields, rule.fieldCode)?.dataType === "department_select"),
+  );
+  const departmentNames = useDepartmentNameById(hasDepartmentCondition);
+
   return (
     <div className={cardClass}>
       <div className={cardHeadClass}>
@@ -620,22 +709,34 @@ function FollowersCard({ group, onEdit }: { group: ProposalGroup; onEdit: () => 
           Chỉnh sửa
         </button>
       </div>
-      <dl className="flex flex-col">
-        <InfoRow
-          label="Mặc định"
-          value={group.followers.length > 0 ? group.followers.map((u) => u.name).join(", ") : "Chưa có"}
-        />
-        <InfoRow
-          label="Theo điều kiện"
-          value={
-            group.followersConditional?.length
-              ? `${group.followersConditional.length} điều kiện đang cấu hình`
-              : "Chưa có"
-          }
-        />
-      </dl>
+
+      <p className="mb-1.5 text-[12.5px] font-semibold text-gray-500">Mặc định</p>
+      <FollowersAvatarGroup users={group.followers} profiles={profiles} />
+
+      <p className="mb-1.5 mt-4 text-[12.5px] font-semibold text-gray-500">
+        Theo điều kiện {followersConditional.length > 0 && `(${followersConditional.length})`}
+      </p>
+      {followersConditional.length === 0 ? (
+        <p className="text-[13px] text-gray-400">Chưa có</p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {followersConditional.map((item, index) => (
+            <div key={index} className="rounded border border-[var(--color-border)] bg-gray-50/60 p-2.5">
+              <p className="mb-2 text-[13px] text-gray-700">
+                {describeFollowersCondition(item.condition, group.fields, departmentNames)}
+                {" → thêm người theo dõi:"}
+              </p>
+              <FollowersAvatarGroup users={item.users} profiles={profiles} size={24} />
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
+}
+
+function fieldByCode(fields: ProposalField[], code: string): ProposalField | undefined {
+  return fields.find((f) => f.code === code);
 }
 
 function EditFollowersModal({
