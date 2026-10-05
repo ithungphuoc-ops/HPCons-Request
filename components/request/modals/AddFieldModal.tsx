@@ -116,6 +116,10 @@ export default function AddFieldModal() {
   // null = tắt "tự động ghép giá trị"; mảng (kể cả rỗng) = đang bật, mỗi phần
   // tử là 1 nhánh { điều kiện tuỳ chọn + mẫu chuỗi ${ma_truong} }.
   const [computedBranches, setComputedBranches] = useState<ComputedTemplateBranch[] | null>(null);
+  /** 1 textarea/nhánh — dùng để chèn `${ma_truong}` ĐÚNG VỊ TRÍ con trỏ khi
+   * bấm chip mã trường, thay vì bắt gõ tay (Sếp chốt 05/10/2026, góp ý qua
+   * ảnh chụp màn hình: gõ tay dễ sai chính tả mã trường). */
+  const templateTextareaRefs = useRef<Record<number, HTMLTextAreaElement | null>>({});
   const [dateLeadTimeEnabled, setDateLeadTimeEnabled] = useState(false);
   const [suggestFromHistory, setSuggestFromHistory] = useState(false);
   // Ràng buộc mã tham chiếu ngoài (Sếp chốt 30/09/2026 — xem design.md
@@ -533,6 +537,30 @@ export default function AddFieldModal() {
     setLookupMatchField(null);
     setPreviewSample(null);
     setPreviewError(null);
+  };
+
+  /** Chèn `${ma_truong}` vào ĐÚNG vị trí con trỏ của ô mẫu chuỗi nhánh
+   * `branchIndex` — bấm chip mã trường thay vì gõ tay. */
+  const insertFieldCodeAtTemplateCursor = (branchIndex: number, code: string) => {
+    const snippet = "${" + code + "}";
+    const textarea = templateTextareaRefs.current[branchIndex];
+    setComputedBranches((prev) => {
+      if (!prev?.[branchIndex]) return prev;
+      const template = prev[branchIndex].template;
+      const start = textarea?.selectionStart ?? template.length;
+      const end = textarea?.selectionEnd ?? template.length;
+      const nextTemplate = template.slice(0, start) + snippet + template.slice(end);
+      // Khôi phục con trỏ ngay sau đoạn vừa chèn — đợi React render lại giá
+      // trị mới của textarea rồi mới set lại selection.
+      requestAnimationFrame(() => {
+        const el = templateTextareaRefs.current[branchIndex];
+        if (!el) return;
+        const pos = start + snippet.length;
+        el.focus();
+        el.setSelectionRange(pos, pos);
+      });
+      return prev.map((b, i) => (i === branchIndex ? { ...b, template: nextTemplate } : b));
+    });
   };
 
   const hasTypeConfig = typeConfigTypes.includes(dataType);
@@ -1084,6 +1112,9 @@ export default function AddFieldModal() {
                             trường khác:
                           </p>
                           <textarea
+                            ref={(el) => {
+                              templateTextareaRefs.current[index] = el;
+                            }}
                             className={textareaClass}
                             rows={2}
                             value={branch.template}
@@ -1094,6 +1125,25 @@ export default function AddFieldModal() {
                             }
                             placeholder={"Ví dụ: ${so_hop_dong}-${ten_cong_trinh}"}
                           />
+                          {/* flex-wrap: các chip mã liền nhau không có khoảng trắng nên
+                              trước đây không xuống dòng được → cuộn ngang. Bấm để CHÈN
+                              thẳng vào đúng vị trí con trỏ, thay vì chỉ hiện để đọc rồi
+                              phải tự gõ tay lại (Sếp chốt 05/10/2026). */}
+                          <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[12px] text-gray-500">
+                            Bấm để chèn:{" "}
+                            {group.fields
+                              .filter((f) => f.id !== editingField?.id && f.code && !f.computedFrom)
+                              .map((f) => (
+                                <button
+                                  key={f.id}
+                                  type="button"
+                                  onClick={() => insertFieldCodeAtTemplateCursor(index, f.code!)}
+                                  className="break-all rounded bg-gray-100 px-1 py-0.5 font-mono hover:bg-blue-50 hover:text-[var(--color-action-blue)]"
+                                >
+                                  {"${" + f.code + "}"}
+                                </button>
+                              ))}
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -1105,21 +1155,6 @@ export default function AddFieldModal() {
                     >
                       <Plus size={13} /> Thêm nhánh
                     </button>
-
-                    <div className="rounded-md bg-gray-50 p-2 text-[12px] text-gray-500">
-                      <p>Mã trường dùng được trong mẫu chuỗi:</p>
-                      {/* flex-wrap: các thẻ mã liền nhau không có khoảng trắng nên
-                          trước đây không xuống dòng được → cuộn ngang. */}
-                      <div className="mt-1 flex flex-wrap gap-1">
-                        {group.fields
-                          .filter((f) => f.id !== editingField?.id && f.code && !f.computedFrom)
-                          .map((f) => (
-                            <code key={f.id} className="break-all rounded bg-gray-100 px-1 py-0.5">
-                              {"${" + f.code + "}"}
-                            </code>
-                          ))}
-                      </div>
-                    </div>
                   </>
                 )}
                 {errors.computed && (
