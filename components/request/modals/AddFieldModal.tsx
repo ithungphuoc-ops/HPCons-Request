@@ -498,7 +498,9 @@ export default function AddFieldModal() {
   return (
     <Modal
       title={isEditMode ? "Sửa trường dữ liệu" : "Thêm trường dữ liệu"}
-      width={720}
+      // Trường Bảng cần chỗ cho 6 ô mỗi cột (Sếp 05/10/2026: "bự hơn cho dễ đọc"); màn hình
+      // nhỏ hơn Modal tự co (maxWidth), dưới lg mỗi cột chuyển thành thẻ xếp dọc.
+      width={tableTypes.includes(dataType) ? 1040 : 720}
       onClose={handleClose}
       footer={
         <>
@@ -650,15 +652,16 @@ export default function AddFieldModal() {
         {tableTypes.includes(dataType) && (
           <Row label="Cấu hình cột">
             <div className="flex flex-col gap-2">
-              {/* Hàng cột đủ 6 ô (thêm Bắt buộc/Tổng 05/10/2026) — khung hẹp
-                  thì CUỘN NGANG TRONG KHUNG NÀY (min-w ở khối bên trong), không
-                  bóp ô tên cột về 0 và không làm cuộn ngang cả trang. */}
-              <div className="-mx-1 overflow-x-auto px-1 pb-1">
-                <div className="flex min-w-[600px] flex-col gap-2">
+              {/* Từ lg (≥1024px): mỗi cột 1 hàng ngang 6 ô. Dưới lg (máy tính
+                  bảng/điện thoại — Sếp 05/10/2026): mỗi cột là 1 thẻ, tên cột
+                  rộng hết thẻ ở dòng trên, các ô còn lại xuống dòng dưới, có
+                  chữ "Bắt buộc"/"Tổng" ngay cạnh ô tick — không cuộn ngang. */}
+              <div>
+                <div className="flex flex-col gap-2">
                   {tableColumns.length > 0 && (
-                    <div className="flex items-center gap-2 text-[10.5px] font-semibold uppercase tracking-wide text-gray-400">
+                    <div className="hidden items-center gap-2 text-[10.5px] font-semibold uppercase tracking-wide text-gray-400 lg:flex">
                       <span className="min-w-[140px] flex-1">Tên cột</span>
-                      <span className="w-[130px] shrink-0">Kiểu dữ liệu</span>
+                      <span className="w-[170px] shrink-0">Kiểu dữ liệu</span>
                       <span className="w-[148px] shrink-0">Độ rộng (px)</span>
                       <span
                         className="w-[60px] shrink-0 whitespace-nowrap text-center"
@@ -676,9 +679,12 @@ export default function AddFieldModal() {
                     </div>
                   )}
                   {tableColumns.map((col, index) => (
-                    <div key={index} className="flex items-center gap-2">
+                    <div
+                      key={index}
+                      className="flex flex-wrap items-center gap-2 rounded border border-gray-200 p-2 lg:flex-nowrap lg:rounded-none lg:border-0 lg:p-0"
+                    >
                       <input
-                        className={`${inputClass} min-w-[140px] flex-1`}
+                        className={`${inputClass} basis-full lg:min-w-[140px] lg:flex-1 lg:basis-auto`}
                         value={col}
                         onChange={(e) =>
                           setTableColumns((prev) => prev.map((c, i) => (i === index ? e.target.value : c)))
@@ -693,7 +699,7 @@ export default function AddFieldModal() {
                         // khiến select giãn hết cỡ (≈ rộng bằng cả hàng) và ép ô
                         // tên cột bên cạnh (flex-1, có flex-shrink) co lại gần
                         // như biến mất — `!` ép đúng độ rộng bất kể thứ tự cascade.
-                        className={`${selectClass} !w-[130px] shrink-0`}
+                        className={`${selectClass} !w-[170px] shrink-0`}
                         value={tableColumnTypes[index] ?? "text"}
                         aria-label={`Kiểu dữ liệu cột ${index + 1}`}
                         onChange={(e) => {
@@ -756,7 +762,7 @@ export default function AddFieldModal() {
                           }
                         />
                       </div>
-                      <span className="flex w-[60px] shrink-0 justify-center">
+                      <label className="flex shrink-0 items-center gap-1 text-[12px] text-gray-600 lg:w-[60px] lg:justify-center">
                         <input
                           type="checkbox"
                           className="h-4 w-4 disabled:opacity-60"
@@ -778,8 +784,9 @@ export default function AddFieldModal() {
                             })
                           }
                         />
-                      </span>
-                      <span className="flex w-[44px] shrink-0 justify-center">
+                        <span className="lg:hidden">Bắt buộc</span>
+                      </label>
+                      <label className="flex shrink-0 items-center gap-1 text-[12px] text-gray-600 lg:w-[44px] lg:justify-center">
                         <input
                           type="checkbox"
                           className="h-4 w-4 disabled:cursor-not-allowed disabled:opacity-35"
@@ -801,7 +808,8 @@ export default function AddFieldModal() {
                             })
                           }
                         />
-                      </span>
+                        <span className="lg:hidden">Tổng</span>
+                      </label>
                       <button
                         type="button"
                         aria-label="Xóa cột"
@@ -812,7 +820,7 @@ export default function AddFieldModal() {
                           setTableColumnRequired((prev) => prev.filter((_, i) => i !== index));
                           setTableColumnSum((prev) => prev.filter((_, i) => i !== index));
                         }}
-                        className="shrink-0 text-gray-400 hover:text-[var(--color-danger-red)]"
+                        className="ml-auto shrink-0 p-1 text-gray-400 hover:text-[var(--color-danger-red)] lg:ml-0 lg:p-0"
                       >
                         <X size={14} />
                       </button>
@@ -1309,14 +1317,15 @@ function Row({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex gap-4">
-      <div className="w-[160px] shrink-0 pt-1.5">
+    // Điện thoại: nhãn nằm TRÊN ô nhập (không chiếm chỗ bên cạnh); từ sm trở lên nằm cạnh như cũ.
+    <div className="flex flex-col gap-1 sm:flex-row sm:gap-4">
+      <div className="shrink-0 sm:w-[160px] sm:pt-1.5">
         <p className="text-[14px] font-medium text-gray-700">
           {label}
           {required && <span className="ml-0.5 text-[var(--color-danger-red)]">*</span>}
         </p>
       </div>
-      <div className="flex-1">{children}</div>
+      <div className="min-w-0 flex-1">{children}</div>
     </div>
   );
 }
