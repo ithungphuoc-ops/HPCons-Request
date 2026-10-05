@@ -15,13 +15,11 @@ import { notifyFollowersFullyApproved, notifyPendingApprovers, notifySubmitterRe
 import { recomputeDeadlineForNextStep } from "@/lib/server/requests";
 import { requireSession } from "@/lib/session";
 import type { ApprovalTimeField, GroupNotificationRules, ProposalGroup, RequestInstance, TaggedUser } from "@/lib/types";
-import {
-  cauNhatKyQlkCtr,
-  guiSangQlkCtr,
-  trangThaiSauKhiGui,
-  trichXuatPayload,
-} from "@/lib/qlkctr-sync";
-import { guiSangThuMua, trichXuatPayloadThuMua } from "@/lib/thumua-sync";
+import { guiCacViec, taoViecDongBo } from "@/lib/dong-bo/hang-cho";
+
+// Gửi sang Kho / Thu mua chạy trong after() của chính lần gọi này — cho đủ thời gian (gói miễn phí
+// cho tối đa 60 giây). Xem lib/dong-bo/hang-cho.ts.
+export const maxDuration = 60;
 
 interface DecisionBody {
   decision: "approved" | "rejected" | "approve_and_forward" | "forward_then_approve" | "returned";
@@ -309,11 +307,10 @@ export async function POST(
     //
     // ⚠️ ĐỔI 21/09/2026 — dùng after() (next/server) thay vì await trước khi
     // trả response, lý do đầy đủ xem comment ở app/api/requests/route.ts
-    // (cùng thay đổi, cùng ngày). CHỈ đổi phần email — phần đồng bộ QLK CTR/
-    // Thu mua ngay dưới đây vẫn giữ await như cũ (không nằm trong yêu cầu lần
-    // này, và 2 việc đó còn ghi ngược lại `updated`/`history` trả về trong
-    // CHÍNH response này nên không đổi được sang after() mà không đổi luôn ý
-    // nghĩa dữ liệu trả về).
+    // (cùng thay đổi, cùng ngày). Từ 03/10/2026 phần đồng bộ QLK CTR / Thu mua
+    // ngay dưới đây CŨNG chạy trong after() qua hàng chờ (lib/dong-bo/hang-cho.ts)
+    // — nên dòng nhật ký "Đã đồng bộ…" không còn nằm trong response duyệt này,
+    // hàng chờ ghi thẳng vào Firestore khi gửi xong.
     after(async () => {
       try {
         if (status === "pending") {
@@ -327,87 +324,29 @@ export async function POST(
       }
     });
 
-    // ⚠️ Đoạn đồng bộ QLK CTR/Thu Mua ngay dưới đây MUTATE tiếp `updated`
-    // (updated.history, updated.qlkCtrSyncStatus, updated.thuMuaSyncStatus).
-    // Vì after() chạy SAU khi response đã trả, closure ở trên nhìn `updated`
-    // là CÙNG 1 object tham chiếu — nên callback gửi mail sẽ thấy bản đã bị
-    // mutate thêm, không phải bản tại thời điểm gọi after(). Hiện tại KHÔNG
-    // sao vì notification-emails.ts không đọc 3 field này — nhưng nếu sau
-    // này thêm nội dung email dựa vào history/sync-status thì phải đọc rõ
-    // đoạn này trước, đừng giả định `updated` còn nguyên như lúc after() được gọi.
+    // 📌 (03/10/2026) Đoạn đồng bộ ngay dưới KHÔNG còn mutate `updated` nữa — kết quả gửi Kho /
+    // Thu mua được hàng chờ ghi thẳng vào Firestore sau (arrayUnion vào history), nên `updated`
+    // mà callback email ở trên nhìn thấy giữ nguyên như lúc gọi after().
 
-    // Đồng bộ sang QLK CTR (app quản lý kho công trình) khi duyệt xong hoàn toàn — xem
-    // openspec/changes/add-qlkctr-sync-webhook. Bọc try/catch riêng, tuyệt đối không được để lỗi
-    // ở đây làm hỏng response duyệt đề xuất chính (đề xuất vẫn đã duyệt xong dù đồng bộ lỗi).
+    // ★★ (03/10/2026, Sếp chốt — đợt 1 "liên kết 4 app") Đồng bộ sang Kho (QLK CTR) + Thu mua đi qua
+    // HÀNG CHỜ (lib/dong-bo/hang-cho.ts) thay cho gọi thẳng + chờ kết quả như trước:
+    //   · Người duyệt không phải đợi 2 lượt gọi mạng (trước đây tới ~16 giây) — gửi chạy trong after().
+    //   · Lỗi thì tự gửi lại theo lịch 1p · 5p · 30p · 2h, quá 5 lần / 1 ngày thì dừng + báo — thay cho
+    //     cách cũ "chỉ gửi lại khi có người mở đúng đề xuất đó" (ca 4 đề nghị mất tích ở kho 18/09).
+    //   · Nhật ký "Đã đồng bộ sang QLK CTR / App Thu mua" + cờ qlkCtrSyncStatus/thuMuaSyncStatus vẫn
+    //     được ghi như cũ, chỉ là ghi SAU (khi gửi xong), không nằm trong response duyệt này nữa.
+    // Bọc try/catch riêng: lỗi ở đây tuyệt đối không được làm hỏng response duyệt chính.
     if (status === "approved") {
       try {
-        const payload = await trichXuatPayload(updated);
-        if (payload) {
-          const ketQua = await guiSangQlkCtr(payload);
-          /**
-           * ★★★ SỬA 18/09/2026 — TRƯỚC ĐÂY CHỖ NÀY BÁO "THÀNH CÔNG" CHO CẢ CA KHO BỎ QUA.
-           *
-           * Câu cũ: `action: ketQua.ok ? "Đã đồng bộ sang QLK CTR" : ...` — nhưng QLK CTR trả
-           * `ok: true` cho CẢ HAI kết cục "đã tạo đề nghị" và "bỏ qua vì không khớp công
-           * trình". Nên nhật ký ghi "Đã đồng bộ" trong khi kho không tạo gì, và câu
-           * *"Công trình: chờ xác nhận"* (do `congTrinh` rỗng) càng làm người đọc tưởng đang
-           * chờ ai xử lý tiếp.
-           *
-           * Hậu quả đo được 18/09/2026: bốn đề xuất công trình 000000096 · 000000098 ·
-           * 000000100 · 000000104 KHÔNG có ở kho, mà nhật ký đều ghi "Đã đồng bộ".
-           *
-           * Nay `cauNhatKyQlkCtr` phân ba ca rõ ràng, và ghi thêm cờ `qlkCtrSyncStatus` để
-           * `retryQlkCtrSyncNeuLoi` biết cái nào cần thử lại — xem `lib/qlkctr-sync.ts`.
-           */
-          const { action, note } = cauNhatKyQlkCtr(ketQua);
-          const syncEntry = { at: new Date().toISOString(), actor: "Hệ thống", action, note };
-          updated.history = [...updated.history, syncEntry];
-          updated.qlkCtrSyncStatus = trangThaiSauKhiGui(ketQua);
-          await ref.update({
-            history: updated.history,
-            qlkCtrSyncStatus: updated.qlkCtrSyncStatus,
-          });
-        }
+        const ids = await taoViecDongBo({
+          requestId: id,
+          requestCode: updated.code ?? null,
+          loai: "duyet",
+          nguoi: session.name,
+        });
+        after(() => guiCacViec(ids));
       } catch (syncError) {
-        console.error("Đồng bộ QLK CTR lỗi (không ảnh hưởng thao tác duyệt):", syncError);
-        /* Đánh dấu "failed" dù lỗi xảy ra NGOÀI `guiSangQlkCtr` (vốn tự bắt hết lỗi rồi trả
-           `{ ok:false }` — hiếm khi tới đây, nhưng nếu tới thì vẫn cần cờ này để lần sau có
-           người mở đề xuất, `retryQlkCtrSyncNeuLoi()` còn biết mà tự thử lại). Cùng nếp với
-           nhánh Thu mua ngay bên dưới. */
-        try {
-          await ref.update({ qlkCtrSyncStatus: "failed" });
-        } catch {
-          // Bỏ qua — không để lỗi ghi cờ phụ này làm hỏng response duyệt chính.
-        }
-      }
-
-      // Đồng bộ sang App Thu mua (module mua hàng) — NHÁNH SONG SONG với QLK CTR ở trên,
-      // KHÔNG phụ thuộc lẫn nhau (một cái lỗi không cản cái kia). Khác QLK CTR: Thu mua nhận
-      // MỌI đề xuất duyệt xong, có công trình hay không — xem lib/thumua-sync.ts.
-      try {
-        const payloadThuMua = await trichXuatPayloadThuMua(updated);
-        if (payloadThuMua) {
-          const ketQuaThuMua = await guiSangThuMua(payloadThuMua);
-          const syncEntryThuMua = {
-            at: new Date().toISOString(),
-            actor: "Hệ thống",
-            action: ketQuaThuMua.ok ? "Đã đồng bộ sang App Thu mua" : "Đồng bộ App Thu mua thất bại",
-            note: ketQuaThuMua.ok ? `Mã đề nghị: ${ketQuaThuMua.maDeNghi ?? "—"}` : ketQuaThuMua.error,
-          };
-          updated.history = [...updated.history, syncEntryThuMua];
-          updated.thuMuaSyncStatus = ketQuaThuMua.ok ? "synced" : "failed";
-          await ref.update({ history: updated.history, thuMuaSyncStatus: updated.thuMuaSyncStatus });
-        }
-      } catch (syncError) {
-        console.error("Đồng bộ App Thu mua lỗi (không ảnh hưởng thao tác duyệt):", syncError);
-        // Đánh dấu "failed" dù lỗi xảy ra NGOÀI guiSangThuMua (vốn tự bắt hết lỗi rồi trả
-        // { ok:false } — hiếm khi tới đây, nhưng nếu tới thì vẫn cần cờ này để lần sau có
-        // người mở đề xuất, retryThuMuaSyncNeuLoi() còn biết mà tự thử lại.
-        try {
-          await ref.update({ thuMuaSyncStatus: "failed" });
-        } catch {
-          // Bỏ qua — không để lỗi ghi cờ phụ này làm hỏng response duyệt chính.
-        }
+        console.error("Tạo việc đồng bộ Kho / Thu mua lỗi (không ảnh hưởng thao tác duyệt):", syncError);
       }
     }
 

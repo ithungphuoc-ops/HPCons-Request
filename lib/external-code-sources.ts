@@ -1,7 +1,11 @@
 import "server-only";
 import {
+  docLaiHopDongCongNo,
+  docLaiNhaThauPhuCongNo,
   loadContractCodeSuggestions,
   loadSubcontractorCodeSuggestions,
+  type ContractCodeSuggestion,
+  type SubcontractorCodeSuggestion,
 } from "@/lib/congno";
 import {
   EXTERNAL_CODE_SOURCE_FIELDS,
@@ -35,16 +39,29 @@ export interface ExternalCodeSourceDef {
   id: ExternalCodeSourceId;
   label: string;
   loadRecords(): Promise<ExternalCodeRecord[]>;
+  /** Đọc thẳng nguồn (bỏ qua nhớ tạm, có giới hạn tần suất) — chỉ dùng khi validate thấy mã không khớp,
+   * để mã vừa thêm bên Công nợ mà báo thay đổi bị trượt không bị chặn oan (xem docLaiHopDongCongNo). */
+  loadRecordsFresh(): Promise<ExternalCodeRecord[]>;
 }
+
+const banGhiHopDong = (contracts: ContractCodeSuggestion[]): ExternalCodeRecord[] =>
+  contracts.map((c) => ({
+    fields: { code: c.code, project: c.project, work: c.work, customerNameShort: c.customerNameShort },
+  }));
+
+const banGhiNhaThau = (subcontractors: SubcontractorCodeSuggestion[]): ExternalCodeRecord[] =>
+  subcontractors.map((s) => ({
+    fields: { ma: s.ma, ten: s.ten, tenVietTat: s.tenVietTat, mst: s.mst, diaChi: s.diaChi },
+  }));
 
 const congnoContracts: ExternalCodeSourceDef = {
   id: "congno_contracts",
   label: EXTERNAL_CODE_SOURCE_LABELS.congno_contracts,
   async loadRecords() {
-    const contracts = await loadContractCodeSuggestions();
-    return contracts.map((c) => ({
-      fields: { code: c.code, project: c.project, work: c.work, customerNameShort: c.customerNameShort },
-    }));
+    return banGhiHopDong(await loadContractCodeSuggestions());
+  },
+  async loadRecordsFresh() {
+    return banGhiHopDong(await docLaiHopDongCongNo());
   },
 };
 
@@ -52,10 +69,10 @@ const congnoSubcontractors: ExternalCodeSourceDef = {
   id: "congno_subcontractors",
   label: EXTERNAL_CODE_SOURCE_LABELS.congno_subcontractors,
   async loadRecords() {
-    const subcontractors = await loadSubcontractorCodeSuggestions();
-    return subcontractors.map((s) => ({
-      fields: { ma: s.ma, ten: s.ten, tenVietTat: s.tenVietTat, mst: s.mst, diaChi: s.diaChi },
-    }));
+    return banGhiNhaThau(await loadSubcontractorCodeSuggestions());
+  },
+  async loadRecordsFresh() {
+    return banGhiNhaThau(await docLaiNhaThauPhuCongNo());
   },
 };
 

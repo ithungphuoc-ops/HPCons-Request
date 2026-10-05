@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebase/admin";
+import { guiCacViec, taoViecDongBo } from "@/lib/dong-bo/hang-cho";
 import { createSignedReadUrl } from "@/lib/r2";
 import { apiErrorResponse } from "@/lib/http";
 import { MAX_DIRECT_UPLOAD_FILE_SIZE } from "@/lib/constants";
@@ -11,6 +12,8 @@ import { ATTACHMENT_SUPPLEMENT_HISTORY_PREFIX } from "@/lib/request-history-labe
 import type { RequestAttachment, RequestHistoryEntry } from "@/lib/types";
 
 export const runtime = "nodejs";
+// Báo Kho / Thu mua chạy trong after() — cho đủ thời gian gửi (gói miễn phí tối đa 60 giây).
+export const maxDuration = 60;
 
 export async function GET(
   request: Request,
@@ -140,6 +143,22 @@ export async function POST(
     }
 
     await adminDb.collection("requests").doc(id).update(patch);
+    /* ★ 03/10/2026 (đợt 1 "liên kết 4 app", L09/L10) — thêm tài liệu sau duyệt thì báo Kho + Thu mua
+       lưu thêm file. Lỗi tạo việc không được làm hỏng thao tác thêm tài liệu. */
+    if (found.status === "approved") {
+      try {
+        const ids = await taoViecDongBo({
+          requestId: id,
+          requestCode: found.code ?? null,
+          loai: "them_file",
+          nguoi: session.name,
+          taiLieu: [{ name: attachment.name, path: attachment.path }],
+        });
+        after(() => guiCacViec(ids));
+      } catch (err) {
+        console.error(`Tạo việc báo thêm tài liệu đề xuất ${id} sang Kho / Thu mua lỗi:`, err);
+      }
+    }
     return NextResponse.json({ attachments, history: patch.history });
   } catch (error) {
     return apiErrorResponse(error);

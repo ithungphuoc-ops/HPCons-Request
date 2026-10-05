@@ -35,11 +35,19 @@ import type {
   TaggedUser,
 } from "@/lib/types";
 import { dateLeadTimeBlockedMessage, resolveDateLeadTimeNumbers } from "@/lib/date-lead-time";
+import { quetViecToiHan } from "@/lib/dong-bo/hang-cho";
+
+// Hàng chờ đồng bộ chạy trong after() của GET — cho đủ thời gian gửi (gói miễn phí tối đa 60 giây).
+export const maxDuration = 60;
 
 export async function GET(request: Request) {
   try {
     const session = await requireSession();
     const scope = new URL(request.url).searchParams.get("scope") ?? "mine";
+    /* ★ 03/10/2026 — hàng chờ đồng bộ Kho / Thu mua: mọi lần mở danh sách (mọi tab) đều cho máy chủ
+       tranh thủ gửi các việc đã tới hạn (tối đa 1 lần/phút). Gói Vercel miễn phí chỉ có cron 1 lần/ngày
+       nên đây là đường gửi lại chính trong giờ làm việc. Xem lib/dong-bo/hang-cho.ts. */
+    after(() => quetViecToiHan());
 
     if (scope === "mine") {
       // Gồm cả nháp — "Đề xuất của tôi" hiển thị mọi đề xuất do người này tạo.

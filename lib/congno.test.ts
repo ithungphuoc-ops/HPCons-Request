@@ -72,9 +72,22 @@ vi.mock("firebase-admin/firestore", () => ({
   }),
 }));
 
-const { loadContractCodeSuggestions, loadSubcontractorCodeSuggestions, createSubcontractorInCongNo } = await import(
-  "./congno"
-);
+const { loadContractCodeSuggestions, loadSubcontractorCodeSuggestions, createSubcontractorInCongNo, docLaiHopDongCongNo } =
+  await import("./congno");
+
+// ★ (03/10/2026, QA đợt 2) Lưới tự lành khi nhớ tạm 12 giờ — đọc thẳng có giới hạn 1 lần/60 giây.
+describe("docLaiHopDongCongNo", () => {
+  it("lần đầu: đọc thẳng + xoá nhớ tạm hợp đồng; gọi lại ngay trong 60 giây: không xoá nhớ tạm thêm", async () => {
+    revalidateTagMock.mockClear();
+    const lan1 = await docLaiHopDongCongNo();
+    expect(lan1.map((c) => c.code)).toEqual(["01/2026/HĐXD-HPCS"]);
+    expect(revalidateTagMock).toHaveBeenCalledWith("contract-code-suggestions");
+    revalidateTagMock.mockClear();
+    const lan2 = await docLaiHopDongCongNo();
+    expect(lan2.map((c) => c.code)).toEqual(["01/2026/HĐXD-HPCS"]);
+    expect(revalidateTagMock).not.toHaveBeenCalled();
+  });
+});
 
 describe("loadContractCodeSuggestions", () => {
   it("chỉ forward đúng code/project/work/customerName(Short) — không có totalAfterTax", async () => {

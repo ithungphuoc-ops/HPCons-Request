@@ -154,7 +154,8 @@ export async function trichXuatPayload(request: RequestInstance): Promise<QlkCtr
 
 export type KetQuaGuiQlkCtr =
   | { ok: true; trangThai: string; congTrinh?: string }
-  | { ok: false; error: string };
+  /** `httpStatus` / `loaiLoi` (03/10/2026) — để hàng chờ phân biệt lỗi tạm thời với lỗi dữ liệu. */
+  | { ok: false; error: string; httpStatus?: number; loaiLoi?: string };
 
 /**
  * ★★★ QLK CTR CÓ THẬT SỰ TẠO ĐỀ NGHỊ KHÔNG — thêm 18/09/2026.
@@ -232,9 +233,15 @@ export async function guiSangQlkCtr(payload: QlkCtrPayload): Promise<KetQuaGuiQl
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(8000),
     });
-    const data = (await res.json()) as { ok?: boolean; error?: string; trangThai?: string; congTrinh?: string };
+    const data = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      error?: string;
+      trangThai?: string;
+      congTrinh?: string;
+      loaiLoi?: string;
+    };
     if (!res.ok || !data.ok) {
-      return { ok: false, error: data.error ?? `HTTP ${res.status}` };
+      return { ok: false, error: data.error ?? `HTTP ${res.status}`, httpStatus: res.status, loaiLoi: data.loaiLoi };
     }
     return { ok: true, trangThai: data.trangThai ?? "", congTrinh: data.congTrinh };
   } catch (err) {

@@ -72,6 +72,7 @@ import {
   sumColumn,
 } from "@/lib/table-field";
 import { uploadAttachments } from "@/lib/upload-client";
+import KhoiDongBo from "@/components/request/KhoiDongBo";
 import { canSupplementAfterApproval as canSupplementAfterApprovalCheck } from "@/lib/permissions";
 import {
   ADJUSTMENT_HISTORY_PREFIX,
@@ -797,14 +798,19 @@ export default function RequestDetailView({
                       <Star size={13} /> Đánh dấu đề xuất
                     </button>
                   )}
+                  {/* ★ 03/10/2026 — có hàng chờ đồng bộ rồi: bấm là cuộn tới khối "Đồng bộ sang Kho / Thu
+                      mua" (chỉ đề xuất đã duyệt mới có). */}
                   <button
                     type="button"
-                    disabled
-                    title="Chưa có hạ tầng webhook cho từng đề xuất"
-                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] text-gray-400 cursor-not-allowed"
+                    disabled={request.status !== "approved"}
+                    title={request.status === "approved" ? undefined : "Chỉ đề xuất đã duyệt mới gửi sang Kho / Thu mua"}
+                    onClick={() => {
+                      setMoreMenuOpen(false);
+                      document.getElementById("khoi-dong-bo")?.scrollIntoView({ behavior: "smooth", block: "center" });
+                    }}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400 disabled:hover:bg-transparent"
                   >
                     <Webhook size={13} /> Lịch sử webhook
-                    <span className="ml-auto shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-[12px]">⏳</span>
                   </button>
 
                   <div className="my-1 border-t border-gray-100" />
@@ -1339,6 +1345,15 @@ export default function RequestDetailView({
             </div>
           </div>
         </div>
+
+        {/* ★ 03/10/2026 — tình trạng gửi sang Kho / Thu mua (hàng chờ đồng bộ). Chỉ đề xuất đã duyệt
+            mới có gì để gửi; tự tải lại khi lịch sử / trạng thái xoá đổi. */}
+        {request.status === "approved" && (
+          <KhoiDongBo
+            requestId={request.id}
+            lamMoiKhi={history.length * 10 + (request.deletedAt ? 1 : 0) + request.history.length * 1000}
+          />
+        )}
 
         <div className="rounded-[3px] border border-[var(--color-border)] bg-white p-4">
           <h3 className="mb-3 flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide text-gray-500">

@@ -1,6 +1,7 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebase/admin";
 import { apiErrorResponse } from "@/lib/http";
+import { guiCacViec, taoViecDongBo } from "@/lib/dong-bo/hang-cho";
 import { canSupplementAfterApproval } from "@/lib/permissions";
 import { loadRequest } from "@/lib/server/requests";
 import { requireSession, ForbiddenError } from "@/lib/session";
@@ -10,6 +11,8 @@ import { verifyUploadedAttachment } from "@/lib/server/verify-upload";
 import type { RequestAttachment, RequestHistoryEntry, RequestInstance } from "@/lib/types";
 
 export const runtime = "nodejs";
+// Báo Kho / Thu mua chạy trong after() — cho đủ thời gian gửi (gói miễn phí tối đa 60 giây).
+export const maxDuration = 60;
 
 interface AdjustmentBody {
   noiDung?: unknown;
@@ -144,6 +147,22 @@ export async function POST(
 
     if ("loi" in ketQua) {
       return NextResponse.json({ error: ketQua.loi }, { status: ketQua.ma });
+    }
+    /* ★ 03/10/2026 (đợt 1 "liên kết 4 app", L07/L08) — báo Kho + Thu mua nội dung điều chỉnh (kèm tệp
+       nếu có). Bên nhận chỉ HIỂN THỊ, không tự sửa bảng vật tư gốc. Lỗi tạo việc không được làm hỏng
+       thao tác ghi điều chỉnh. */
+    try {
+      const ids = await taoViecDongBo({
+        requestId: id,
+        requestCode: ketQua.request.code ?? null,
+        loai: "dieu_chinh",
+        nguoi: session.name,
+        noiDung: noiDung || (attachmentMoi ? `(chỉ đính tệp: ${attachmentMoi.name})` : ""),
+        taiLieu: attachmentMoi ? [{ name: attachmentMoi.name, path: attachmentMoi.path }] : [],
+      });
+      after(() => guiCacViec(ids));
+    } catch (err) {
+      console.error(`Tạo việc báo điều chỉnh đề xuất ${id} sang Kho / Thu mua lỗi:`, err);
     }
     return NextResponse.json({ request: ketQua.request });
   } catch (error) {

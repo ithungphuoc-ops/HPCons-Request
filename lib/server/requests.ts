@@ -279,20 +279,32 @@ export async function findInvalidExternalCodeFields(
     }),
   );
 
-  return targets
-    .filter(({ field: f, lookup }) => {
-      const raw = values?.[f.id];
-      // Không tin kiểu dữ liệu client gửi lên (xem findBlockedDateLeadTimeFields
-      // cho cùng lý do) — giá trị không phải string thì coi là không khớp.
-      if (typeof raw !== "string") return true;
-      // KHÔNG trim trước khi so — giá trị được LƯU vào request là `raw` nguyên
-      // văn (không bị trim ở đâu khác), nên phải so đúng CHÍNH giá trị đó với
-      // tập mã hợp lệ để tránh vênh: "01/2026/HĐXD-HPCS " (thừa khoảng trắng)
-      // pass validate nhưng giá trị lưu lại không khớp mã thật (CodeRabbit PR #41).
-      const records = recordsBySource.get(lookup!.sourceId)!;
-      return !records.some((r) => r.fields[lookup!.matchField] === raw);
-    })
-    .map(({ field }) => field);
+  const khongKhop = (t: (typeof targets)[number]) => {
+    const raw = values?.[t.field.id];
+    // Không tin kiểu dữ liệu client gửi lên (xem findBlockedDateLeadTimeFields
+    // cho cùng lý do) — giá trị không phải string thì coi là không khớp.
+    if (typeof raw !== "string") return true;
+    // KHÔNG trim trước khi so — giá trị được LƯU vào request là `raw` nguyên
+    // văn (không bị trim ở đâu khác), nên phải so đúng CHÍNH giá trị đó với
+    // tập mã hợp lệ để tránh vênh: "01/2026/HĐXD-HPCS " (thừa khoảng trắng)
+    // pass validate nhưng giá trị lưu lại không khớp mã thật (CodeRabbit PR #41).
+    const records = recordsBySource.get(t.lookup!.sourceId)!;
+    return !records.some((r) => r.fields[t.lookup!.matchField] === raw);
+  };
+
+  const sai = targets.filter(khongKhop);
+  if (sai.length === 0) return [];
+
+  // ★ (03/10/2026, QA đợt 2) Nhớ tạm dữ liệu Công nợ kéo dài 12 giờ — mã KHÔNG
+  // khớp có thể chỉ vì danh sách nhớ tạm cũ (báo thay đổi từ Công nợ bị trượt).
+  // Đọc thẳng nguồn 1 lần rồi xét lại, chỉ chặn khi dữ liệu mới nhất vẫn không có.
+  const nguonCanDocLai = [...new Set(sai.filter((t) => typeof values?.[t.field.id] === "string").map((t) => t.lookup!.sourceId))];
+  await Promise.all(
+    nguonCanDocLai.map(async (sourceId) => {
+      recordsBySource.set(sourceId, await EXTERNAL_CODE_SOURCES[sourceId].loadRecordsFresh());
+    }),
+  );
+  return sai.filter(khongKhop).map(({ field }) => field);
 }
 
 /** Khởi tạo approvers "pending" theo đúng thứ tự của danh sách người duyệt. */

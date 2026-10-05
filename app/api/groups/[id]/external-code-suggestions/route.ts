@@ -29,7 +29,8 @@ function isKnownSourceId(value: string | null): value is ExternalCodeSourceId {
  * `?sample=1` (tuỳ chọn): chỉ trả về ĐÚNG 1 bản ghi đầu tiên — dùng cho bước
  * "xem trước", không cần tải toàn bộ danh sách chỉ để xem 1 dòng mẫu.
  *
- * `EXTERNAL_CODE_SOURCES[sourceId].loadRecords()` đã tự cache 5 phút — dùng
+ * `EXTERNAL_CODE_SOURCES[sourceId].loadRecords()` đã tự cache (12 giờ, Công nợ
+ * báo thay đổi thì xoá ngay — xem NHO_TAM_CONG_NO_GIAY ở lib/congno.ts) — dùng
  * CHUNG với hàm validate chặn gửi (lib/server/requests.ts), không tự cache
  * riêng ở đây (bài học CodeRabbit PR #41 — gộp về đúng 1 nguồn).
  */

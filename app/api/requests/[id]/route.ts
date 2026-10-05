@@ -1,6 +1,7 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { isUserInGroupScope, OUT_OF_SCOPE_MESSAGE } from "@/lib/server/hpcore-org";
 import { adminDb } from "@/lib/firebase/admin";
+import { guiCacViec, quetViecToiHan, taoViecDongBo } from "@/lib/dong-bo/hang-cho";
 import { apiErrorResponse } from "@/lib/http";
 import { dedupeApproversWithMeta } from "@/lib/approval-logic";
 import { mergeFollowers } from "@/lib/server/conditions";
@@ -27,6 +28,9 @@ import { retryQlkCtrSyncNeuLoi } from "@/lib/qlkctr-sync";
 import { retryThuMuaSyncNeuLoi } from "@/lib/thumua-sync";
 import { dateLeadTimeBlockedMessage, resolveDateLeadTimeNumbers } from "@/lib/date-lead-time";
 
+// Hàng chờ đồng bộ chạy trong after() của GET/DELETE — cho đủ thời gian gửi (gói miễn phí tối đa 60 giây).
+export const maxDuration = 60;
+
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -50,6 +54,9 @@ export async function GET(
        không có cơ chế này — bốn đề xuất công trình đã mất tích ở kho vì vậy (000000096 ·
        000000098 · 000000100 · 000000104). Xem lib/qlkctr-sync.ts. */
     void retryQlkCtrSyncNeuLoi(found);
+    /* ★ 03/10/2026 — hàng chờ đồng bộ: có người mở đề xuất thì máy chủ tranh thủ gửi các việc đã tới
+       hạn (của MỌI đề xuất, tối đa 1 lần/phút). Xem lib/dong-bo/hang-cho.ts. */
+    after(() => quetViecToiHan());
     return NextResponse.json({ request: found });
   } catch (error) {
     return apiErrorResponse(error);
@@ -350,6 +357,16 @@ export async function DELETE(
       { at: nowIso, actor: session.name, action: "Đã xóa đề xuất" },
     ];
     await adminDb.collection("requests").doc(id).update({ deletedAt: nowIso, history });
+    /* ★ 03/10/2026 (đợt 1 "liên kết 4 app", L03/L04) — đề xuất ĐÃ DUYỆT bị xoá thì báo Kho + Thu mua.
+       Chưa duyệt thì chưa từng sang app nào, không cần báo. Lỗi tạo việc không được làm hỏng thao tác xoá. */
+    if (found.status === "approved") {
+      try {
+        const ids = await taoViecDongBo({ requestId: id, requestCode: found.code ?? null, loai: "xoa", nguoi: session.name });
+        after(() => guiCacViec(ids));
+      } catch (err) {
+        console.error(`Tạo việc báo xoá đề xuất ${id} sang Kho / Thu mua lỗi:`, err);
+      }
+    }
     return NextResponse.json({ request: { ...found, deletedAt: nowIso, history } });
   } catch (error) {
     return apiErrorResponse(error);

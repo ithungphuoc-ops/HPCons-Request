@@ -35,9 +35,17 @@ const mockSubcontractors = [
   // Nhà thầu tự thêm lúc Ký kết — chỉ có mst, không có ma.
   { ma: "", mst: "0317927805", ten: "Cơ khí Minh Phúc", tenVietTat: "", diaChi: "" },
 ];
+// ★ (03/10/2026) Bản "đọc thẳng" (bỏ qua nhớ tạm) — mặc định trả y bản nhớ tạm;
+// test lưới tự lành gán thêm mã mới vào `mockContractsMoi` để giả lập Công nợ
+// vừa thêm hợp đồng mà báo thay đổi bị trượt (nhớ tạm còn bản cũ).
+const mockContractsMoi: typeof mockContracts = [];
+const docLaiHopDongCongNo = vi.fn(async () => [...mockContracts, ...mockContractsMoi]);
+const docLaiNhaThauPhuCongNo = vi.fn(async () => mockSubcontractors);
 vi.mock("@/lib/congno", () => ({
   loadContractCodeSuggestions: async () => mockContracts,
   loadSubcontractorCodeSuggestions: async () => mockSubcontractors,
+  docLaiHopDongCongNo: () => docLaiHopDongCongNo(),
+  docLaiNhaThauPhuCongNo: () => docLaiNhaThauPhuCongNo(),
 }));
 
 const {
@@ -409,5 +417,39 @@ describe("findInvalidExternalCodeFields", () => {
     });
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe("f2");
+  });
+
+  // ★ (03/10/2026, QA đợt 2) Nhớ tạm Công nợ 12 giờ — lưới tự lành.
+  it("mã khớp ngay trong nhớ tạm → KHÔNG đọc thẳng nguồn (không tốn lượt đọc)", async () => {
+    docLaiHopDongCongNo.mockClear();
+    const result = await findInvalidExternalCodeFields([contractCodeField()], { f1: "01/2026/HĐXD-HPCS" });
+    expect(result).toHaveLength(0);
+    expect(docLaiHopDongCongNo).not.toHaveBeenCalled();
+  });
+
+  it("hợp đồng vừa thêm bên Công nợ, nhớ tạm chưa có (báo bị trượt) → đọc thẳng rồi cho qua, không chặn oan", async () => {
+    docLaiHopDongCongNo.mockClear();
+    mockContractsMoi.push({ code: "03/2026/HĐXD-HPCS", project: "MOI", work: "", customerName: "", customerNameShort: "" });
+    try {
+      const result = await findInvalidExternalCodeFields([contractCodeField()], { f1: "03/2026/HĐXD-HPCS" });
+      expect(result).toHaveLength(0);
+      expect(docLaiHopDongCongNo).toHaveBeenCalledTimes(1);
+    } finally {
+      mockContractsMoi.length = 0;
+    }
+  });
+
+  it("đọc thẳng rồi vẫn không có → vẫn chặn", async () => {
+    docLaiHopDongCongNo.mockClear();
+    const result = await findInvalidExternalCodeFields([contractCodeField()], { f1: "SO-BAY-VU" });
+    expect(result).toHaveLength(1);
+    expect(docLaiHopDongCongNo).toHaveBeenCalledTimes(1);
+  });
+
+  it("giá trị sai kiểu (không phải chuỗi) → chặn luôn, không tốn lượt đọc thẳng", async () => {
+    docLaiHopDongCongNo.mockClear();
+    const result = await findInvalidExternalCodeFields([contractCodeField()], { f1: 12345 });
+    expect(result).toHaveLength(1);
+    expect(docLaiHopDongCongNo).not.toHaveBeenCalled();
   });
 });

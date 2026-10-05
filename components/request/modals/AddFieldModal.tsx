@@ -411,7 +411,7 @@ export default function AddFieldModal() {
   // đúng field vừa chọn (Sếp phản hồi 01/10/2026: bản ghi đầu danh sách tình
   // cờ trống "Tên viết tắt" khiến tưởng nhầm là lỗi) — không gọi `?sample=1`
   // nữa (chỉ trả đúng 1 bản ghi đầu, không đủ để lọc), lấy nguyên danh sách
-  // (đã cache 5 phút phía server) rồi tự tìm ở client.
+  // (đã cache phía server, xem NHO_TAM_CONG_NO_GIAY) rồi tự tìm ở client.
   const chooseLookupMatchField = async (fieldKey: string) => {
     if (!lookupSourceId || !group) return;
     const requestId = ++previewRequestRef.current;

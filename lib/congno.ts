@@ -106,18 +106,28 @@ async function loadContractCodeSuggestionsUncached(): Promise<ContractCodeSugges
 }
 
 /**
- * Cache 5 phút — dùng CHUNG cho cả route gợi ý (client gõ tìm) LẪN validate
- * chặn gửi (server, lúc gửi chính thức). Trước đó validate tự đọc thẳng
- * Firestore mỗi lần gửi đề xuất (không qua cache) — CodeRabbit PR #41 chỉ ra
- * đây là điểm tốn lượt đọc không cần thiết, trong khi route gợi ý đã cache
- * đúng dữ liệu này rồi. Chấp nhận độ trễ tối đa 5 phút giữa lúc thêm hợp đồng
- * mới ở app Công nợ và lúc gửi đề xuất thấy được mã đó — cùng đánh đổi đã
- * chấp nhận cho route gợi ý (xem design.md Decision #3).
+ * ★ (03/10/2026, đợt 2 "liên kết 4 app", L17 + L20) Thời gian nhớ tạm dữ liệu
+ * Công nợ: 12 GIỜ khi đã khai CONGNO_WEBHOOK_KEY — lúc đó máy chủ Công nợ tự báo
+ * mỗi khi thêm/sửa/xoá hợp đồng hoặc nhà thầu phụ (app/api/cong-no/co-thay-doi)
+ * và bản nhớ tạm bị xoá NGAY, 12 giờ chỉ là lưới an toàn cho ca ai đó sửa thẳng
+ * trong Firebase. CHƯA khai khoá thì Công nợ không báo được → giữ 5 phút như cũ,
+ * không để dữ liệu cũ tới 12 giờ.
+ */
+export const NHO_TAM_CONG_NO_GIAY = process.env.CONGNO_WEBHOOK_KEY ? 12 * 60 * 60 : 300;
+export const TAG_HOP_DONG_CONG_NO = "contract-code-suggestions";
+export const TAG_NHA_THAU_PHU_CONG_NO = "subcontractor-code-suggestions";
+
+/**
+ * Nhớ tạm (xem NHO_TAM_CONG_NO_GIAY) — dùng CHUNG cho cả route gợi ý (client gõ
+ * tìm) LẪN validate chặn gửi (server, lúc gửi chính thức). Trước đó validate tự
+ * đọc thẳng Firestore mỗi lần gửi đề xuất (không qua cache) — CodeRabbit PR #41
+ * chỉ ra đây là điểm tốn lượt đọc không cần thiết, trong khi route gợi ý đã
+ * cache đúng dữ liệu này rồi. Có `tags` để Công nợ báo thay đổi thì xoá ngay.
  */
 export const loadContractCodeSuggestions = unstable_cache(
   loadContractCodeSuggestionsUncached,
   ["contract-code-suggestions"],
-  { revalidate: 300 },
+  { revalidate: NHO_TAM_CONG_NO_GIAY, tags: [TAG_HOP_DONG_CONG_NO] },
 );
 
 /**
@@ -167,16 +177,55 @@ async function loadSubcontractorCodeSuggestionsUncached(): Promise<Subcontractor
     .filter((s) => s.ma || s.mst || s.ten);
 }
 
-/** Cache 5 phút — cùng lý do/thời hạn với `loadContractCodeSuggestions` (dùng
- * chung cho cả gợi ý lẫn validate, xem lib/external-code-sources.ts). Có
- * `tags` (khác `loadContractCodeSuggestions`, chưa cần) để
- * `createSubcontractorInCongNo` bên dưới làm mới NGAY sau khi ghi — không
- * đợi hết 5 phút mới chọn được nhà thầu vừa thêm. */
+/** Nhớ tạm — cùng lý do/thời hạn với `loadContractCodeSuggestions` (dùng chung
+ * cho cả gợi ý lẫn validate, xem lib/external-code-sources.ts). `tags` để
+ * `createSubcontractorInCongNo` bên dưới, và Công nợ báo thay đổi, làm mới NGAY
+ * — không đợi hết hạn nhớ tạm mới chọn được nhà thầu vừa thêm. */
 export const loadSubcontractorCodeSuggestions = unstable_cache(
   loadSubcontractorCodeSuggestionsUncached,
   ["subcontractor-code-suggestions"],
-  { revalidate: 300, tags: ["subcontractor-code-suggestions"] },
+  { revalidate: NHO_TAM_CONG_NO_GIAY, tags: [TAG_NHA_THAU_PHU_CONG_NO] },
 );
+
+/**
+ * ★ (03/10/2026, QA đợt 2) LƯỚI TỰ LÀNH cho nhớ tạm 12 giờ: báo "có thay đổi"
+ * từ Công nợ có thể trượt (mạng hỏng, đóng tab giữa chừng, sửa thẳng trong
+ * Firebase) → danh sách nhớ tạm thiếu mã vừa thêm → người gửi đề xuất bị chặn
+ * oan tới 12 giờ. Nên khi validate thấy mã KHÔNG khớp, đọc thẳng Firestore 1
+ * lần (không qua nhớ tạm) + xoá nhớ tạm cho mọi người, rồi mới kết luận.
+ * Giới hạn 1 lần đọc thẳng / 60 giây / máy chủ cho mỗi nguồn — gõ sai liên
+ * tục cũng không thành đọc toàn bộ danh sách liên tục.
+ */
+const DOC_LAI_TOI_THIEU_MS = 60_000;
+const docLaiLuc = globalThis as unknown as { __congnoDocLai?: Record<string, number> };
+
+async function docLaiNeuDuocPhep<T>(
+  khoa: string,
+  tag: string,
+  docThang: () => Promise<T>,
+  docNhoTam: () => Promise<T>,
+): Promise<T> {
+  const bang = (docLaiLuc.__congnoDocLai ??= {});
+  const bayGio = Date.now();
+  if ((bang[khoa] ?? 0) + DOC_LAI_TOI_THIEU_MS > bayGio) return docNhoTam();
+  bang[khoa] = bayGio;
+  const moi = await docThang();
+  revalidateTag(tag);
+  return moi;
+}
+
+export function docLaiHopDongCongNo(): Promise<ContractCodeSuggestion[]> {
+  return docLaiNeuDuocPhep("hop_dong", TAG_HOP_DONG_CONG_NO, loadContractCodeSuggestionsUncached, loadContractCodeSuggestions);
+}
+
+export function docLaiNhaThauPhuCongNo(): Promise<SubcontractorCodeSuggestion[]> {
+  return docLaiNeuDuocPhep(
+    "nha_thau_phu",
+    TAG_NHA_THAU_PHU_CONG_NO,
+    loadSubcontractorCodeSuggestionsUncached,
+    loadSubcontractorCodeSuggestions,
+  );
+}
 
 export interface NewSubcontractorInput {
   ten: string;
@@ -237,7 +286,7 @@ export async function createSubcontractorInCongNo(
       updatedAt: now,
     });
 
-  revalidateTag("subcontractor-code-suggestions");
+  revalidateTag(TAG_NHA_THAU_PHU_CONG_NO);
 
   return {
     id: doc.id,

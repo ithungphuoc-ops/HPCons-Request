@@ -788,7 +788,9 @@ export interface RequestInstance {
    * `lib/thumua-sync.ts`. Tách field riêng (không chỉ dựa vào `history`) để việc dò "còn ai
    * đồng bộ lỗi" không phải quét chuỗi trong mảng lịch sử.
    */
-  thuMuaSyncStatus?: "synced" | "failed";
+  /** `"dung"` (03/10/2026): hàng chờ đồng bộ đã thử hết lượt / quá 1 ngày → dừng, chờ Admin gửi lại
+   * tay (xem lib/dong-bo/hang-cho.ts). Đề xuất duyệt từ 03/10 không còn dùng `"failed"`. */
+  thuMuaSyncStatus?: "synced" | "failed" | "dung";
   /**
    * ★★★ KẾT QUẢ LẦN ĐỒNG BỘ SANG QLK CTR (app Kho công trình) GẦN NHẤT — thêm 18/09/2026.
    *
@@ -814,7 +816,7 @@ export interface RequestInstance {
    * dấu `/` vá lúc 10:12 ngày 17/09). Lần thử sau là khớp. Đây khác hẳn lỗi vĩnh viễn kiểu
    * "sai dữ liệu" — chỗ đó gửi lại y nguyên thì không bao giờ đổi được gì.
    */
-  qlkCtrSyncStatus?: "synced" | "failed" | "bo_qua";
+  qlkCtrSyncStatus?: "synced" | "failed" | "bo_qua" | "dung";
 }
 
 export type ModalWindowStatus =

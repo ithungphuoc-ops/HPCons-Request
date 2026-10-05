@@ -20,6 +20,7 @@ const {
   retryThuMuaSyncNeuLoi,
   layNguoiTheoDoiGuiSangThuMua,
   layLoaiDeNghiGuiSangThuMua,
+  xacDinhLoaiDeNghi,
 } = await import("./thumua-sync");
 
 function baseRequest(overrides: Partial<RequestInstance>): RequestInstance {
@@ -244,6 +245,29 @@ describe("layNguoiTheoDoiGuiSangThuMua", () => {
   it("cắt khoảng trắng thừa quanh id và tên", () => {
     const ra = layNguoiTheoDoiGuiSangThuMua([{ id: " u1 ", name: " Tên  ", username: " nick " }]);
     expect(ra[0]).toEqual({ id: "u1", name: "Tên", username: "nick" });
+  });
+});
+
+describe("xacDinhLoaiDeNghi — L02 luôn gửi loại đề nghị (03/10/2026)", () => {
+  const oLoai = { id: "f_lc", options: ["Đề nghị công trình", "Đề nghị phòng ban"] };
+  it("người dùng chọn rõ thì theo lựa chọn, kể cả khi có mã hợp đồng", () => {
+    expect(xacDinhLoaiDeNghi([oLoai], { f_lc: "Đề nghị phòng ban" }, "30/2025/HĐXD")).toBe("phong_ban");
+  });
+  it("không có ô / ô trống → suy theo mã hợp đồng như Thu mua vẫn làm", () => {
+    expect(xacDinhLoaiDeNghi([], {}, "30/2025/HĐXD - UNICE")).toBe("cong_trinh");
+    expect(xacDinhLoaiDeNghi([], {}, undefined)).toBe("phong_ban");
+    expect(xacDinhLoaiDeNghi([oLoai], { f_lc: "  " }, "")).toBe("phong_ban");
+  });
+  it("chọn lựa chọn lạ / mâu thuẫn → null (không đoán, để báo lỗi)", () => {
+    const oLa = { id: "f_lc", options: ["Đề nghị công trình", "Đề nghị phòng ban", "Khác"] };
+    expect(xacDinhLoaiDeNghi([oLa], { f_lc: "Khác" }, "30/2025/HĐXD")).toBeNull();
+  });
+  it("payload gửi Thu mua luôn kèm loại đề nghị", async () => {
+    const req = baseRequest({
+      fieldsSnapshot: [deptField, detailField],
+      values: { f_bp: "Phòng Kế toán", f_ct: [["Máy in", "", "cái", "1", ""]] },
+    });
+    expect((await trichXuatPayloadThuMua(req))?.loaiDeNghi).toBe("phong_ban");
   });
 });
 

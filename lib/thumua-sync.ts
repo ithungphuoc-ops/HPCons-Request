@@ -163,6 +163,40 @@ export function layLoaiDeNghiGuiSangThuMua(
 }
 
 /**
+ * ★ (03/10/2026, Sếp chốt — đợt 1 "liên kết 4 app", L02) LUÔN XÁC ĐỊNH LOẠI ĐỀ NGHỊ trước khi gửi.
+ *
+ * Trước đây để trống khi không chắc, Thu mua phải tự suy — và có lúc còn tự đọc thẳng Firestore
+ * của app này (L19, khoá chưa từng được cấp nên thực tế hỏng). Sếp chốt: App Request tự gửi loại
+ * đề nghị trong mọi gói tin để bỏ hẳn L19.
+ *
+ *   ① Người dùng chọn rõ ở ô "Lựa chọn đề nghị" → dùng đúng lựa chọn đó (`layLoaiDeNghiGuiSangThuMua`).
+ *   ② Biểu mẫu KHÔNG có ô đó, hoặc ô bỏ trống → dùng ĐÚNG phép suy Thu mua vẫn làm từ trước: có mã
+ *      hợp đồng (Tên đề xuất) là công trình, không có là phòng ban. Chỉ dời phép suy sang đây, không
+ *      đổi kết quả.
+ *   ③ Ô có giá trị nhưng MÂU THUẪN / lựa chọn lạ → trả `null`: không đoán, nơi gửi báo lỗi để người
+ *      phụ trách xử lý tay (hàng chờ dừng + báo).
+ */
+export function xacDinhLoaiDeNghi(
+  fields: readonly { id: string; options?: string[] }[],
+  values: Record<string, unknown>,
+  congTrinhChuoi: string | undefined,
+): "cong_trinh" | "phong_ban" | null {
+  const loai = layLoaiDeNghiGuiSangThuMua(fields, values);
+  if (loai) return loai;
+
+  const coOChonCoGiaTri = fields.some((f) => {
+    const ops = Array.isArray(f.options) ? f.options.map((x) => chuanNhan(String(x))) : [];
+    const laOLoai =
+      ops.some((x) => /^đề nghị\s*công trình/.test(x)) && ops.some((x) => /^đề nghị\s*phòng ban/.test(x));
+    const v = values[f.id];
+    return laOLoai && typeof v === "string" && v.trim() !== "";
+  });
+  if (coOChonCoGiaTri) return null; // ③ có chọn nhưng mâu thuẫn / lựa chọn lạ
+
+  return congTrinhChuoi?.trim() ? "cong_trinh" : "phong_ban"; // ②
+}
+
+/**
  * Lọc danh sách người theo dõi trước khi gửi sang Thu mua.
  *
  * 🔴 VÌ SAO CẦN LỌC chứ không gửi thẳng `request.followers`:
@@ -277,7 +311,8 @@ export async function trichXuatPayloadThuMua(request: RequestInstance): Promise<
 
   const taiLieuDinhKem = await layTaiLieuDinhKem(request);
   const nguoiTheoDoi = layNguoiTheoDoiGuiSangThuMua(request.followers);
-  const loaiDeNghi = layLoaiDeNghiGuiSangThuMua(request.fieldsSnapshot, request.values);
+  /* L02 (03/10/2026): luôn có loại, trừ ca mâu thuẫn (null → không kèm, hàng chờ coi là lỗi dữ liệu). */
+  const loaiDeNghi = xacDinhLoaiDeNghi(request.fieldsSnapshot, request.values, congTrinhChuoi);
 
   return {
     requestCode: request.code,
@@ -300,7 +335,8 @@ export async function trichXuatPayloadThuMua(request: RequestInstance): Promise<
 
 export type KetQuaGuiThuMua =
   | { ok: true; trangThai: string; maDeNghi?: string }
-  | { ok: false; error: string };
+  /** `httpStatus` / `loaiLoi` (03/10/2026) — để hàng chờ phân biệt lỗi tạm thời với lỗi dữ liệu. */
+  | { ok: false; error: string; httpStatus?: number; loaiLoi?: string };
 
 /** Không throw — mọi lỗi (thiếu cấu hình, mạng, HTTP lỗi) đều trả về qua `{ ok: false, error }`. */
 export async function guiSangThuMua(payload: ThuMuaPayload): Promise<KetQuaGuiThuMua> {
@@ -317,9 +353,15 @@ export async function guiSangThuMua(payload: ThuMuaPayload): Promise<KetQuaGuiTh
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(8000),
     });
-    const data = (await res.json()) as { ok?: boolean; error?: string; trangThai?: string; maDeNghi?: string };
+    const data = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      error?: string;
+      trangThai?: string;
+      maDeNghi?: string;
+      loaiLoi?: string;
+    };
     if (!res.ok || !data.ok) {
-      return { ok: false, error: data.error ?? `HTTP ${res.status}` };
+      return { ok: false, error: data.error ?? `HTTP ${res.status}`, httpStatus: res.status, loaiLoi: data.loaiLoi };
     }
     return { ok: true, trangThai: data.trangThai ?? "", maDeNghi: data.maDeNghi };
   } catch (err) {
