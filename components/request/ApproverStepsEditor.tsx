@@ -464,8 +464,12 @@ export function ConditionValueInput({
 
   if (isSingleValuedDiscrete && isMultiValueOperator) {
     if (isDepartmentSelect && loadError) {
+      const selected = decodeMultiValue(value);
       return (
         <span className="flex flex-wrap items-center gap-1.5 text-[12.5px] text-[var(--color-danger-red)]">
+          {selected.length > 0 && (
+            <span className="rounded bg-gray-100 px-1.5 py-0.5 text-gray-700">Đang chọn: {selected.join(", ")}</span>
+          )}
           Không tải được danh sách phòng ban.
           <button
             type="button"
@@ -477,9 +481,11 @@ export function ConditionValueInput({
         </span>
       );
     }
-    const options = isDepartmentSelect
-      ? (departments ?? []).map((d) => d.name)
-      : (field?.options ?? []);
+    // `null` = chưa biết danh sách thật (đang tải phòng ban) — khác `[]` (đã
+    // tải xong, danh sách rỗng thật). Phân biệt rõ 2 trường hợp này để KHÔNG
+    // lặp lại bug CodeRabbit PR #73 đã vá cho ô chọn 1 (lỗi/đang tải bị hiểu
+    // nhầm thành "dữ liệu đã mất", gắn nhãn sai cho mọi giá trị đã chọn).
+    const options = isDepartmentSelect ? (departments === null ? null : departments.map((d) => d.name)) : (field?.options ?? []);
     return (
       <MultiValueDropdown
         options={options}
@@ -558,7 +564,11 @@ function MultiValueDropdown({
   onChange,
   placeholder,
 }: {
-  options: string[];
+  /** `null` = chưa biết danh sách thật (đang tải) — KHÔNG được gắn nhãn
+   * "không còn trong danh sách" cho giá trị đã chọn trong lúc này, khác `[]`
+   * (đã tải xong, danh sách rỗng thật, lúc đó mọi giá trị đã chọn đều hợp lệ
+   * coi là "không còn"). */
+  options: string[] | null;
   value: string;
   onChange: (value: string) => void;
   placeholder: string;
@@ -571,7 +581,11 @@ function MultiValueDropdown({
     onChange(encodeMultiValue(next));
   };
 
-  const allOptions = [...options, ...selected.filter((s) => !options.includes(s))];
+  const knownOptions = options ?? [];
+  const isLoading = options === null;
+  const allOptions = isLoading
+    ? [...new Set([...knownOptions, ...selected])]
+    : [...knownOptions, ...selected.filter((s) => !knownOptions.includes(s))];
 
   return (
     <div className="relative">
@@ -595,7 +609,9 @@ function MultiValueDropdown({
               >
                 <input type="checkbox" checked={selected.includes(opt)} onChange={() => toggle(opt)} />
                 {opt}
-                {!options.includes(opt) && <span className="text-[11px] text-gray-400">(không còn trong danh sách)</span>}
+                {!isLoading && !knownOptions.includes(opt) && (
+                  <span className="text-[11px] text-gray-400">(không còn trong danh sách)</span>
+                )}
               </label>
             ))}
           </div>
