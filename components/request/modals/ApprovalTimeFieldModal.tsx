@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Plus, X } from "lucide-react";
 import Modal from "@/components/shared/Modal";
+import { FIELD_EDITOR_MODAL_WIDTH, FieldRow, FieldSection } from "@/components/request/field-editor/FieldSection";
 import {
   cancelButtonClass,
   confirmButtonClass,
@@ -129,7 +130,8 @@ export default function ApprovalTimeFieldModal({
   return (
     <Modal
       title={editing ? "Sửa trường (Mẫu form phê duyệt)" : "Thêm trường (Mẫu form phê duyệt)"}
-      width={640}
+      // Cùng mẫu chung với hộp Thêm/Sửa trường dữ liệu (Sếp duyệt 05/10/2026).
+      width={FIELD_EDITOR_MODAL_WIDTH}
       onClose={onClose}
       footer={
         <>
@@ -142,18 +144,18 @@ export default function ApprovalTimeFieldModal({
         </>
       }
     >
-      <div className="flex flex-col gap-4 p-1">
+      <div className="flex flex-col gap-3.5">
         <p className="text-[12px] text-gray-500">
           Field chỉ hiện cho ĐÚNG người duyệt lúc xử lý ĐÚNG hành động — không phải người gửi điền.
         </p>
 
-        <Row label="Tên trường" required>
-          <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} />
-          {errors.name && <p className="mt-1 text-[12px] text-[var(--color-danger-red)]">{errors.name}</p>}
-        </Row>
+        <FieldSection index={1} title="Thông tin cơ bản">
+          <FieldRow label="Tên trường" required>
+            <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} />
+            {errors.name && <p className="mt-1 text-[12px] text-[var(--color-danger-red)]">{errors.name}</p>}
+          </FieldRow>
 
-        <div className="grid grid-cols-2 gap-4">
-          <Row label="Loại dữ liệu">
+          <FieldRow label="Loại dữ liệu">
             <select className={selectClass} value={dataType} onChange={(e) => setDataType(e.target.value as FieldDataType)}>
               {APPROVAL_TIME_DATA_TYPES.map((t) => (
                 <option key={t} value={t}>
@@ -161,50 +163,53 @@ export default function ApprovalTimeFieldModal({
                 </option>
               ))}
             </select>
-          </Row>
-          <Row label="Bắt buộc trả lời?">
+          </FieldRow>
+
+          <FieldRow label="Bắt buộc trả lời?">
             <select className={selectClass} value={required ? "yes" : "no"} onChange={(e) => setRequired(e.target.value === "yes")}>
               <option value="no">Không</option>
               <option value="yes">Có</option>
             </select>
-          </Row>
-        </div>
+          </FieldRow>
+        </FieldSection>
 
         {choiceTypes.includes(dataType) && (
-          <Row label="Các phương án">
-            <div className="flex flex-col gap-2">
-              {options.map((opt, index) => (
-                <div key={index} className="flex items-center gap-2">
-                  <input
-                    className={inputClass}
-                    value={opt}
-                    onChange={(e) => setOptions((prev) => prev.map((o, i) => (i === index ? e.target.value : o)))}
-                    placeholder={`Phương án ${index + 1}`}
-                  />
-                  <button
-                    type="button"
-                    aria-label="Xóa phương án"
-                    onClick={() => setOptions((prev) => prev.filter((_, i) => i !== index))}
-                    className="text-gray-400 hover:text-[var(--color-danger-red)]"
-                  >
-                    <X size={14} />
-                  </button>
-                </div>
-              ))}
-              <button
-                type="button"
-                onClick={() => setOptions((prev) => [...prev, ""])}
-                className="flex items-center gap-1 self-start text-[12px] text-[var(--color-action-blue)]"
-              >
-                <Plus size={13} /> Thêm phương án
-              </button>
-              {errors.options && <p className="text-[12px] text-[var(--color-danger-red)]">{errors.options}</p>}
-            </div>
-          </Row>
+          <FieldSection index={2} title="Cấu hình theo loại" subtitle={DATA_TYPE_LABELS[dataType]}>
+            <FieldRow label="Các phương án">
+              <div className="flex flex-col gap-2">
+                {options.map((opt, index) => (
+                  <div key={index} className="flex items-center gap-2">
+                    <input
+                      className={inputClass}
+                      value={opt}
+                      onChange={(e) => setOptions((prev) => prev.map((o, i) => (i === index ? e.target.value : o)))}
+                      placeholder={`Phương án ${index + 1}`}
+                    />
+                    <button
+                      type="button"
+                      aria-label="Xóa phương án"
+                      onClick={() => setOptions((prev) => prev.filter((_, i) => i !== index))}
+                      className="text-gray-400 hover:text-[var(--color-danger-red)]"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setOptions((prev) => [...prev, ""])}
+                  className="flex items-center gap-1 self-start text-[12px] text-[var(--color-action-blue)]"
+                >
+                  <Plus size={13} /> Thêm phương án
+                </button>
+                {errors.options && <p className="text-[12px] text-[var(--color-danger-red)]">{errors.options}</p>}
+              </div>
+            </FieldRow>
+          </FieldSection>
         )}
 
-        <div className="grid grid-cols-2 gap-4">
-          <Row label="Liên kết đến (Khối người duyệt)">
+        <FieldSection index={choiceTypes.includes(dataType) ? 3 : 2} title="Gắn với bước duyệt">
+          <FieldRow label="Liên kết đến (Khối người duyệt)">
             <select className={selectClass} value={approverStepCode} onChange={(e) => setApproverStepCode(e.target.value)}>
               {fixedSteps.map((s, i) => (
                 <option key={s.code} value={s.code}>
@@ -214,8 +219,8 @@ export default function ApprovalTimeFieldModal({
             </select>
             <p className="mt-1 text-[12px] text-gray-400">Chỉ liệt kê bước duyệt cố định</p>
             {errors.step && <p className="mt-1 text-[12px] text-[var(--color-danger-red)]">{errors.step}</p>}
-          </Row>
-          <Row label="Thuộc phần duyệt">
+          </FieldRow>
+          <FieldRow label="Thuộc phần duyệt">
             <select
               className={selectClass}
               value={decisionAction}
@@ -227,21 +232,9 @@ export default function ApprovalTimeFieldModal({
                 </option>
               ))}
             </select>
-          </Row>
-        </div>
+          </FieldRow>
+        </FieldSection>
       </div>
     </Modal>
-  );
-}
-
-function Row({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
-  return (
-    <div>
-      <p className="mb-1 text-[14px] font-medium text-gray-700">
-        {label}
-        {required && <span className="ml-0.5 text-[var(--color-danger-red)]">*</span>}
-      </p>
-      {children}
-    </div>
   );
 }
