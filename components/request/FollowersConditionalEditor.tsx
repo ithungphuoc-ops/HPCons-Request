@@ -3,7 +3,7 @@
 import { Plus, Trash2 } from "lucide-react";
 import TagUserInput from "@/components/shared/TagUserInput";
 import { inputClass, selectClass } from "@/components/shared/form-styles";
-import { CONDITION_ELIGIBLE_TYPES } from "@/components/request/ApproverStepsEditor";
+import { CONDITION_ELIGIBLE_TYPES, ConditionValueInput } from "@/components/request/ApproverStepsEditor";
 import type { ConditionGroup, ConditionRule, ProposalField, TaggedUser } from "@/lib/types";
 
 export type FollowersConditionalItem = { condition: ConditionGroup; users: TaggedUser[] };
@@ -166,11 +166,11 @@ export default function FollowersConditionalEditor({
                     ))}
                   </select>
                   {!OPERATORS_WITHOUT_VALUE.has(rule.operator) && (
-                    <input
-                      className={inputClass}
+                    <ConditionValueInput
+                      field={selectedField}
                       value={rule.value}
                       placeholder={rule.operator === "between" ? "Từ" : "Giá trị"}
-                      onChange={(e) => updateRule(index, ruleIndex, { value: e.target.value })}
+                      onChange={(value) => updateRule(index, ruleIndex, { value })}
                     />
                   )}
                   {rule.operator === "between" && (
