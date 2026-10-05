@@ -423,23 +423,31 @@ export function ConditionValueInput({
   placeholder?: string;
 }) {
   const [departments, setDepartments] = useState<{ id: string; name: string }[] | null>(null);
+  // Tách riêng lỗi tải (mạng lỗi, API lỗi) khỏi "tải xong, không có phòng ban
+  // nào" (CodeRabbit PR #73 chỉ ra: trước đây lỗi cũng set `departments: []`
+  // giống hệt trường hợp rỗng thật — Admin không phân biệt được "thử lại đi"
+  // với "nhóm thật sự không có phòng ban", và giá trị đang chọn bị hiện NHẦM
+  // thành "không còn trong danh sách" dù chỉ là lỗi tải tạm thời).
+  const [loadError, setLoadError] = useState(false);
+  const [retryTick, setRetryTick] = useState(0);
   const isDepartmentSelect = field?.dataType === "department_select";
 
   useEffect(() => {
     if (!isDepartmentSelect) return;
     let cancelled = false;
+    setLoadError(false);
     fetch("/api/directory/departments")
       .then((res) => (res.ok ? res.json() : Promise.reject(new Error("fetch failed"))))
       .then((data: { departments?: { id: string; name: string }[] }) => {
         if (!cancelled) setDepartments(data.departments ?? []);
       })
       .catch(() => {
-        if (!cancelled) setDepartments([]);
+        if (!cancelled) setLoadError(true);
       });
     return () => {
       cancelled = true;
     };
-  }, [isDepartmentSelect]);
+  }, [isDepartmentSelect, retryTick]);
 
   if (field?.dataType === "single_choice" || field?.dataType === "multiple_choice") {
     const options = field.options ?? [];
@@ -460,6 +468,21 @@ export function ConditionValueInput({
   }
 
   if (isDepartmentSelect) {
+    if (loadError) {
+      return (
+        <span className="flex flex-wrap items-center gap-1.5 text-[12.5px] text-[var(--color-danger-red)]">
+          {value && <span className="rounded bg-gray-100 px-1.5 py-0.5 text-gray-700">Đang chọn: {value}</span>}
+          Không tải được danh sách phòng ban.
+          <button
+            type="button"
+            onClick={() => setRetryTick((n) => n + 1)}
+            className="font-medium underline hover:no-underline"
+          >
+            Thử lại
+          </button>
+        </span>
+      );
+    }
     const isLegacyValue = value !== "" && departments !== null && !departments.some((d) => d.name === value);
     return (
       <select className={selectClass} value={value} onChange={(e) => onChange(e.target.value)}>
