@@ -169,6 +169,7 @@ export default function FollowersConditionalEditor({
                   {!OPERATORS_WITHOUT_VALUE.has(rule.operator) && (
                     <ConditionValueInput
                       field={selectedField}
+                      operator={rule.operator}
                       value={rule.value}
                       placeholder={rule.operator === "between" ? "Từ" : "Giá trị"}
                       onChange={(value) => updateRule(index, ruleIndex, { value })}

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { evaluateConditionGroup, filterApplicableSteps, mergeFollowers, validateConditionGroupFieldCodes } from "./conditions";
+import { encodeMultiValue } from "@/lib/condition-multi-value";
 import type { ApproverStepDef, ConditionGroup, ProposalField, TaggedUser } from "@/lib/types";
 
 const tinhTrang: ProposalField = {
@@ -40,7 +41,16 @@ const ngayApDung: ProposalField = {
   order: 4,
 };
 
-const fields = [tinhTrang, thietBi, soTien, ngayApDung];
+const boPhan: ProposalField = {
+  id: "f5",
+  name: "Bộ phận",
+  code: "bo_phan",
+  dataType: "department_select",
+  required: false,
+  order: 5,
+};
+
+const fields = [tinhTrang, thietBi, soTien, ngayApDung, boPhan];
 
 /** Bọc 1 rule đơn thành ConditionGroup 1 phần tử — tiện viết test ngắn gọn cho case cũ. */
 function single(rule: ConditionGroup["rules"][number]): ConditionGroup {
@@ -198,6 +208,75 @@ describe("evaluateConditionGroup — not_includes / is_empty / is_not_empty", ()
     const result = evaluateConditionGroup(
       single({ fieldCode: "tinh_trang", operator: "is_not_empty", value: "" }),
       {},
+      fields,
+    );
+    expect(result).toBe(false);
+  });
+});
+
+describe("evaluateConditionGroup — includes/not_includes nhiều giá trị trên field 1-giá-trị (05/10/2026)", () => {
+  it("includes đúng khi giá trị field khớp 1 trong N giá trị đã chọn (single_choice)", () => {
+    const result = evaluateConditionGroup(
+      single({ fieldCode: "tinh_trang", operator: "includes", value: encodeMultiValue(["Khẩn cấp", "Bình thường"]) }),
+      { f1: "Bình thường" },
+      fields,
+    );
+    expect(result).toBe(true);
+  });
+
+  it("includes sai khi giá trị field không nằm trong danh sách đã chọn", () => {
+    const result = evaluateConditionGroup(
+      single({ fieldCode: "tinh_trang", operator: "includes", value: encodeMultiValue(["Khẩn cấp"]) }),
+      { f1: "Bình thường" },
+      fields,
+    );
+    expect(result).toBe(false);
+  });
+
+  it("includes sai khi field chưa có giá trị", () => {
+    const result = evaluateConditionGroup(
+      single({ fieldCode: "tinh_trang", operator: "includes", value: encodeMultiValue(["Khẩn cấp"]) }),
+      {},
+      fields,
+    );
+    expect(result).toBe(false);
+  });
+
+  it("not_includes đúng khi giá trị field không nằm trong danh sách đã chọn", () => {
+    const result = evaluateConditionGroup(
+      single({ fieldCode: "tinh_trang", operator: "not_includes", value: encodeMultiValue(["Khẩn cấp"]) }),
+      { f1: "Bình thường" },
+      fields,
+    );
+    expect(result).toBe(true);
+  });
+
+  it("includes đúng khi giá trị Bộ phận khớp 1 trong nhiều phòng ban đã chọn (department_select)", () => {
+    const result = evaluateConditionGroup(
+      single({
+        fieldCode: "bo_phan",
+        operator: "includes",
+        value: encodeMultiValue(["Thu mua cung ứng", "Kế toán", "Thi công Khối 2"]),
+      }),
+      { f5: "Kế toán" },
+      fields,
+    );
+    expect(result).toBe(true);
+  });
+
+  it("includes vẫn hoạt động đúng với dữ liệu CŨ (chuỗi thường, chưa mã hoá JSON)", () => {
+    const result = evaluateConditionGroup(
+      single({ fieldCode: "tinh_trang", operator: "includes", value: "Khẩn cấp" }),
+      { f1: "Khẩn cấp" },
+      fields,
+    );
+    expect(result).toBe(true);
+  });
+
+  it("includes KHÔNG đổi hành vi cũ của field multiple_choice khi giá trị field không phải mảng (dữ liệu lỗi)", () => {
+    const result = evaluateConditionGroup(
+      single({ fieldCode: "thiet_bi_van_phong", operator: "includes", value: "Máy in" }),
+      { f2: "Máy in" },
       fields,
     );
     expect(result).toBe(false);
