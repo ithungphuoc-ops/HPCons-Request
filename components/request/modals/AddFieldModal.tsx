@@ -762,7 +762,7 @@ export default function AddFieldModal() {
                           }
                         />
                       </div>
-                      <label className="flex shrink-0 items-center gap-1 text-[12px] text-gray-600 lg:w-[60px] lg:justify-center">
+                      <label className="flex shrink-0 items-center gap-1 text-[12px] text-gray-600 has-[:disabled]:cursor-not-allowed has-[:disabled]:text-gray-400 lg:w-[60px] lg:justify-center">
                         <input
                           type="checkbox"
                           className="h-4 w-4 disabled:opacity-60"
@@ -786,7 +786,7 @@ export default function AddFieldModal() {
                         />
                         <span className="lg:hidden">Bắt buộc</span>
                       </label>
-                      <label className="flex shrink-0 items-center gap-1 text-[12px] text-gray-600 lg:w-[44px] lg:justify-center">
+                      <label className="flex shrink-0 items-center gap-1 text-[12px] text-gray-600 has-[:disabled]:cursor-not-allowed has-[:disabled]:text-gray-400 lg:w-[44px] lg:justify-center">
                         <input
                           type="checkbox"
                           className="h-4 w-4 disabled:cursor-not-allowed disabled:opacity-35"
