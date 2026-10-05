@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Plus, Trash2, Users } from "lucide-react";
 import TagUserInput from "@/components/shared/TagUserInput";
 import { inputClass, selectClass } from "@/components/shared/form-styles";
@@ -391,6 +392,116 @@ export default function ApproverStepsEditor({
 /** UI bật/tắt + cấu hình "nhóm điều kiện" (1 hoặc nhiều rule con, kết hợp
  * AND/OR) cho 1 bước duyệt, 1 field hiển thị theo điều kiện, hoặc 1 người
  * theo dõi theo điều kiện — dùng lại nguyên component này ở cả 3 nơi. */
+/**
+ * Ô nhập GIÁ TRỊ cho 1 `ConditionRule` — Sếp chốt 05/10/2026 (góp ý qua ảnh
+ * chụp màn "Sửa trường dữ liệu"): field có sẵn danh sách lựa chọn thì PHẢI
+ * chọn từ dropdown, không được gõ tay (gõ sai chính tả là điều kiện không
+ * bao giờ khớp mà không ai biết). Dùng CHUNG cho `ConditionEditor` (ngay
+ * dưới) VÀ `FollowersConditionalEditor.tsx` — trước đây 2 nơi tự viết 1 ô
+ * `<input>` giống hệt nhau, phải nhớ sửa đồng bộ cả 2 chỗ.
+ *
+ * - `single_choice`/`multiple_choice`: dropdown đúng `field.options` đã cấu
+ *   hình — operator "includes"/"not_includes" (multiple_choice) vẫn chỉ so 1
+ *   giá trị tại 1 thời điểm (muốn "khớp 1-trong-N" thì thêm nhiều điều kiện
+ *   con, kết hợp "Hoặc" — cơ chế AND/OR đã có sẵn, không cần đổi kiểu dữ liệu
+ *   `ConditionRule.value` sang mảng).
+ * - `department_select`: dropdown phòng ban App Tổng (tự tải qua
+ *   `/api/directory/departments`) — field này lưu giá trị theo TÊN phòng ban
+ *   (giống `DepartmentSelectControl` ở submit/page.tsx), không phải id.
+ * - Kiểu khác (số/ngày dùng toán tử lớn hơn/nhỏ hơn/trong khoảng...): giữ
+ *   nguyên ô nhập tự do, không có danh sách cố định nào để chọn.
+ */
+export function ConditionValueInput({
+  field,
+  value,
+  onChange,
+  placeholder,
+}: {
+  field: ProposalField | undefined;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+}) {
+  const [departments, setDepartments] = useState<{ id: string; name: string }[] | null>(null);
+  // Tách riêng lỗi tải (mạng lỗi, API lỗi) khỏi "tải xong, không có phòng ban
+  // nào" (CodeRabbit PR #73 chỉ ra: trước đây lỗi cũng set `departments: []`
+  // giống hệt trường hợp rỗng thật — Admin không phân biệt được "thử lại đi"
+  // với "nhóm thật sự không có phòng ban", và giá trị đang chọn bị hiện NHẦM
+  // thành "không còn trong danh sách" dù chỉ là lỗi tải tạm thời).
+  const [loadError, setLoadError] = useState(false);
+  const [retryTick, setRetryTick] = useState(0);
+  const isDepartmentSelect = field?.dataType === "department_select";
+
+  useEffect(() => {
+    if (!isDepartmentSelect) return;
+    let cancelled = false;
+    setLoadError(false);
+    fetch("/api/directory/departments")
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error("fetch failed"))))
+      .then((data: { departments?: { id: string; name: string }[] }) => {
+        if (!cancelled) setDepartments(data.departments ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setLoadError(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isDepartmentSelect, retryTick]);
+
+  if (field?.dataType === "single_choice" || field?.dataType === "multiple_choice") {
+    const options = field.options ?? [];
+    // Giá trị cũ gõ tay trước đây (hoặc phương án đã bị xoá khỏi field) vẫn
+    // hiện đúng thay vì rơi về ô trống, để Admin tự thấy và chọn lại.
+    const isLegacyValue = value !== "" && !options.includes(value);
+    return (
+      <select className={selectClass} value={value} onChange={(e) => onChange(e.target.value)}>
+        <option value="">— Chọn giá trị —</option>
+        {isLegacyValue && <option value={value}>{value} (không còn trong danh sách)</option>}
+        {options.map((opt) => (
+          <option key={opt} value={opt}>
+            {opt}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
+  if (isDepartmentSelect) {
+    if (loadError) {
+      return (
+        <span className="flex flex-wrap items-center gap-1.5 text-[12.5px] text-[var(--color-danger-red)]">
+          {value && <span className="rounded bg-gray-100 px-1.5 py-0.5 text-gray-700">Đang chọn: {value}</span>}
+          Không tải được danh sách phòng ban.
+          <button
+            type="button"
+            onClick={() => setRetryTick((n) => n + 1)}
+            className="font-medium underline hover:no-underline"
+          >
+            Thử lại
+          </button>
+        </span>
+      );
+    }
+    const isLegacyValue = value !== "" && departments !== null && !departments.some((d) => d.name === value);
+    return (
+      <select className={selectClass} value={value} onChange={(e) => onChange(e.target.value)}>
+        <option value="">{departments === null ? "Đang tải phòng ban..." : "— Chọn phòng ban —"}</option>
+        {isLegacyValue && <option value={value}>{value} (không còn trong danh sách)</option>}
+        {(departments ?? []).map((d) => (
+          <option key={d.id} value={d.name}>
+            {d.name}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
+  return (
+    <input className={inputClass} value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} />
+  );
+}
+
 export function ConditionEditor({
   condition,
   fields,
@@ -501,11 +612,11 @@ export function ConditionEditor({
                   ))}
                 </select>
                 {!OPERATORS_WITHOUT_VALUE.has(rule.operator) && (
-                  <input
-                    className={inputClass}
+                  <ConditionValueInput
+                    field={selectedField}
                     value={rule.value}
                     placeholder={rule.operator === "between" ? "Từ" : "Giá trị"}
-                    onChange={(e) => updateRule(ruleIndex, { value: e.target.value })}
+                    onChange={(value) => updateRule(ruleIndex, { value })}
                   />
                 )}
                 {rule.operator === "between" && (
