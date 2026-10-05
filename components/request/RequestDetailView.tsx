@@ -641,13 +641,21 @@ export default function RequestDetailView({
    * approvers[]` — route RIÊNG, KHÁC `/decision` (luồng duyệt chính) ở trên.
    * Xem design.md của change add-adjustment-approval-conditions. */
   const decideAdjustment = async (decision: "approved" | "rejected" | "forward", target?: TaggedUser) => {
+    if (!request.pendingAdjustment) return;
     setAdjDecisionBusy(true);
     setAdjDecisionError(null);
     try {
       const res = await fetch(`/api/requests/${request.id}/adjustment/decision`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ decision, ...(target ? { target } : {}) }),
+        body: JSON.stringify({
+          decision,
+          // Máy chủ đối chiếu lại field này — tab cũ/thao tác trễ trên 1 điều
+          // chỉnh đã bị Từ chối/Duyệt xong và thay bằng cái MỚI sẽ bị từ chối
+          // thay vì âm thầm duyệt nhầm (vá theo review PR #68).
+          expectedCreatedAt: request.pendingAdjustment.createdAt,
+          ...(target ? { target } : {}),
+        }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}) as { error?: string });

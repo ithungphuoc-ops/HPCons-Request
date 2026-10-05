@@ -12,6 +12,14 @@ interface AdjustmentDecisionBody {
   /** Chỉ dùng khi decision = "forward" — người được chỉ định xử lý thay
    * ĐÚNG slot của người đang gọi (không đổi slot của người khác). */
   target?: { id?: unknown; name?: unknown };
+  /** `pendingAdjustment.createdAt` client ĐANG THẤY lúc bấm — "mã thế hệ" ổn
+   * định suốt vòng đời 1 điều chỉnh (Chuyển tiếp không đổi field này, chỉ
+   * Duyệt-đủ/Từ chối mới xoá hẳn rồi có thể tạo điều chỉnh MỚI khác
+   * `createdAt`). CodeRabbit (PR #68) chỉ ra quyền duyệt trước đó chỉ khoá
+   * theo uid+slot, không khoá theo ĐÚNG nội dung đang chờ — tab cũ/thao tác
+   * trễ có thể vô tình duyệt NHẦM 1 điều chỉnh khác đã thay thế cái lúc đầu
+   * xem. Bắt buộc gửi kèm, lệch thì từ chối thay vì âm thầm duyệt nhầm. */
+  expectedCreatedAt?: unknown;
 }
 
 /**
@@ -23,7 +31,9 @@ interface AdjustmentDecisionBody {
  *
  * Quyền: CHỈ người có mặt trong `pendingAdjustment.approvers` VÀ CHƯA duyệt
  * (`approvedAt === null`) mới thao tác được slot của CHÍNH MÌNH — không có
- * khái niệm Owner/Admin thao tác thay.
+ * khái niệm Owner/Admin thao tác thay. MỌI quyết định đều kiểm lại
+ * `expectedCreatedAt` + `deletedAt` BÊN TRONG transaction (không tin bản đọc
+ * ban đầu) — xem design.md Decision 6 (vá theo review PR #68).
  */
 export async function POST(
   request: Request,
@@ -56,8 +66,36 @@ export async function POST(
     if (decision !== "approved" && decision !== "rejected" && decision !== "forward") {
       return NextResponse.json({ error: "Quyết định không hợp lệ." }, { status: 400 });
     }
+    const expectedCreatedAt = typeof body.expectedCreatedAt === "string" ? body.expectedCreatedAt : "";
+    if (!expectedCreatedAt) {
+      return NextResponse.json({ error: "Thiếu thông tin điều chỉnh đang chờ xử lý." }, { status: 400 });
+    }
 
     const ref = adminDb.collection("requests").doc(id);
+
+    /** Đọc + kiểm lại ĐÚNG slot/nội dung TRONG transaction — dùng chung cho cả
+     * 3 nhánh, tránh 3 nơi tự viết lại cùng 4 điều kiện rồi lệch nhau. Trả
+     * `null` nếu không hợp lệ (đã kèm sẵn lý do/mã lỗi cho nơi gọi trả về). */
+    function checkPendingInTx(
+      moiNhat: RequestInstance,
+    ): { pendingNow: NonNullable<RequestInstance["pendingAdjustment"]>; idx: number } | { loi: string; ma: number } {
+      if (moiNhat.deletedAt) return { loi: "Đề xuất này đã bị xoá." as const, ma: 409 };
+      const pendingNow = moiNhat.pendingAdjustment;
+      if (!pendingNow || pendingNow.createdAt !== expectedCreatedAt) {
+        return {
+          loi: "Điều chỉnh này đã thay đổi hoặc được xử lý xong rồi — vui lòng tải lại trang." as const,
+          ma: 409,
+        };
+      }
+      const idx = pendingNow.approvers.findIndex((a) => a.uid === session.uid && a.approvedAt === null);
+      if (idx === -1) {
+        return {
+          loi: "Phần việc này đã được xử lý hoặc chuyển cho người khác rồi." as const,
+          ma: 409,
+        };
+      }
+      return { pendingNow, idx };
+    }
 
     if (decision === "forward") {
       const targetId = typeof body.target?.id === "string" ? body.target.id.trim() : "";
@@ -73,21 +111,23 @@ export async function POST(
         const snap = await tx.get(ref);
         if (!snap.exists) return { loi: "Không tìm thấy đề xuất." as const, ma: 404 };
         const moiNhat = { id: snap.id, ...snap.data() } as RequestInstance;
-        const slots = moiNhat.pendingAdjustment?.approvers ?? [];
-        const idx = slots.findIndex((a) => a.uid === session.uid && a.approvedAt === null);
-        if (idx === -1) {
+        const checked = checkPendingInTx(moiNhat);
+        if ("loi" in checked) return checked;
+        const { pendingNow, idx } = checked;
+        // Người được chuyển tiếp tới ĐÃ có mặt ở 1 slot khác (dù đã duyệt hay
+        // chưa) — từ chối thẳng thay vì tự gộp/xoá slot (CodeRabbit PR #68:
+        // gộp sai lúc slot kia ĐÃ duyệt từng làm "mất" 1 yêu cầu duyệt mà
+        // không ai hay, có thể kẹt vĩnh viễn nếu đó là slot cuối cùng).
+        if (pendingNow.approvers.some((a, i) => i !== idx && a.uid === targetId)) {
           return {
-            loi: "Phần việc này đã được xử lý hoặc chuyển cho người khác rồi." as const,
-            ma: 409,
+            loi: "Người này đã có trong danh sách người duyệt của điều chỉnh này rồi, hãy chọn người khác." as const,
+            ma: 400,
           };
         }
-        // Nếu `targetId` đã có mặt (đang chờ xử lý SLOT KHÁC) thì gộp slot này
-        // vào, tránh 1 người xuất hiện 2 slot cùng lúc trong cùng điều chỉnh.
-        const already = slots.some((a, i) => i !== idx && a.uid === targetId);
-        const newApprovers = already
-          ? slots.filter((_, i) => i !== idx)
-          : slots.map((a, i) => (i === idx ? { uid: targetId, name: targetName, approvedAt: null } : a));
-        const pendingAdjustment = { ...moiNhat.pendingAdjustment!, approvers: newApprovers };
+        const approvers = pendingNow.approvers.map((a, i) =>
+          i === idx ? { uid: targetId, name: targetName, approvedAt: null } : a,
+        );
+        const pendingAdjustment = { ...pendingNow, approvers };
         tx.update(ref, { pendingAdjustment, updatedAt: nowIso });
         return { request: { ...moiNhat, pendingAdjustment, updatedAt: nowIso } };
       });
@@ -103,13 +143,8 @@ export async function POST(
         const snap = await tx.get(ref);
         if (!snap.exists) return { loi: "Không tìm thấy đề xuất." as const, ma: 404 };
         const moiNhat = { id: snap.id, ...snap.data() } as RequestInstance;
-        const slots = moiNhat.pendingAdjustment?.approvers ?? [];
-        if (!slots.some((a) => a.uid === session.uid && a.approvedAt === null)) {
-          return {
-            loi: "Phần việc này đã được xử lý hoặc chuyển cho người khác rồi." as const,
-            ma: 409,
-          };
-        }
+        const checked = checkPendingInTx(moiNhat);
+        if ("loi" in checked) return checked;
         tx.update(ref, { pendingAdjustment: null, updatedAt: nowIso });
         return { request: { ...moiNhat, pendingAdjustment: null, updatedAt: nowIso } };
       });
@@ -127,14 +162,10 @@ export async function POST(
       const snap = await tx.get(ref);
       if (!snap.exists) return { loi: "Không tìm thấy đề xuất." as const, ma: 404 };
       const moiNhat = { id: snap.id, ...snap.data() } as RequestInstance;
-      const pendingNow = moiNhat.pendingAdjustment;
-      const idx = pendingNow?.approvers.findIndex((a) => a.uid === session.uid && a.approvedAt === null) ?? -1;
-      if (!pendingNow || idx === -1) {
-        return {
-          loi: "Phần việc này đã được xử lý hoặc chuyển cho người khác rồi." as const,
-          ma: 409,
-        };
-      }
+      const checked = checkPendingInTx(moiNhat);
+      if ("loi" in checked) return checked;
+      const { pendingNow, idx } = checked;
+
       const updatedApprovers = pendingNow.approvers.map((a, i) => (i === idx ? { ...a, approvedAt: nowIso } : a));
       const allDone = updatedApprovers.every((a) => a.approvedAt !== null);
 
