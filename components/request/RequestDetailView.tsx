@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getIsoWeekInfo } from "@/lib/iso-week";
 import { useRouter } from "next/navigation";
 import { useRequestContext } from "@/context/RequestContext";
@@ -45,6 +45,8 @@ import AdjustmentForwardModal from "@/components/request/modals/AdjustmentForwar
 import FilePreviewModal from "@/components/request/FilePreviewModal";
 import CommentSection from "@/components/request/CommentSection";
 import AvatarWithCard from "@/components/request/AvatarWithCard";
+import ApproverProgressModal from "@/components/request/ApproverProgressModal";
+import { formatCountdown, type ProgressGroupSettings } from "@/lib/approver-progress";
 import { useAvatarProfilesByUids } from "@/lib/useAvatarProfilesByUids";
 import { canApproverAct } from "@/lib/approval-logic";
 import { findLetterheadUrl } from "@/lib/letterhead";
@@ -161,16 +163,6 @@ function formatRelativeTime(iso: string): string {
   return `${days} ngày trước`;
 }
 
-function formatCountdown(deadlineAt: string, now: number): string {
-  const diff = new Date(deadlineAt).getTime() - now;
-  if (diff <= 0) return "Đã quá hạn";
-  const totalSeconds = Math.floor(diff / 1000);
-  const h = Math.floor(totalSeconds / 3600);
-  const m = Math.floor((totalSeconds % 3600) / 60);
-  const s = totalSeconds % 60;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-}
-
 export default function RequestDetailView({
   request,
   currentUid,
@@ -202,6 +194,10 @@ export default function RequestDetailView({
   const [rejectOpen, setRejectOpen] = useState(false);
   const [returnOpen, setReturnOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  const [progressOpen, setProgressOpen] = useState(false);
+  // Ổn định tham chiếu — Modal gắn lại phím Esc mỗi khi onClose đổi, mà
+  // `now` làm trang render lại mỗi giây lúc popup mở.
+  const closeProgress = useCallback(() => setProgressOpen(false), []);
   // `now` đổi mỗi giây (đếm ngược hạn) khiến component re-render liên tục —
   // memo hoá để không tính lại tuần ISO mỗi lần re-render dù submittedAt
   // không đổi.
@@ -541,10 +537,33 @@ export default function RequestDetailView({
   };
 
   useEffect(() => {
-    if (request.status !== "pending" || !request.deadlineAt) return;
+    // Popup "Tiến trình của người duyệt" mở mà đề xuất còn chờ duyệt thì cũng
+    // cần đồng hồ chạy (giờ thực tế của người đang tới lượt), kể cả khi
+    // không có hạn xử lý.
+    if (request.status !== "pending" || (!request.deadlineAt && !progressOpen)) return;
     const interval = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(interval);
-  }, [request.status, request.deadlineAt]);
+  }, [request.status, request.deadlineAt, progressOpen]);
+
+  // Cài đặt SLA của nhóm cho popup "Tiến trình của người duyệt" — lấy từ
+  // categoryGroups RequestContext đã tải sẵn (GET /api/groups trả đủ mọi
+  // nhóm), không đọc thêm. Đề xuất trực tiếp / không thấy nhóm → null (giờ
+  // đồng hồ, xem lib/approver-progress.ts).
+  const progressGroup = useMemo<ProgressGroupSettings | null>(() => {
+    if (!request.groupId) return null;
+    for (const category of categoryGroups) {
+      const g = category.groups.find((x) => x.id === request.groupId);
+      if (g) {
+        return {
+          slaByWorkCalendar: g.slaByWorkCalendar,
+          approverSlaEnabled: g.approverSlaEnabled,
+          slaHours: g.slaHours,
+          approverSteps: g.approverSteps,
+        };
+      }
+    }
+    return null;
+  }, [categoryGroups, request.groupId]);
 
   const canAct =
     currentUid !== null && canApproverAct(request.approvalFlow, request.approvers, currentUid);
@@ -1330,6 +1349,26 @@ export default function RequestDetailView({
           <h3 className="mb-3 flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide text-gray-500">
             <Users size={13} /> Người xét duyệt
           </h3>
+          {request.status !== "draft" && request.approversSnapshot.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setProgressOpen(true)}
+              className="mb-3 flex w-full items-center gap-2 rounded-[3px] bg-blue-50 px-2.5 py-2 text-left text-[13.5px] font-semibold text-[var(--color-action-blue)] hover:bg-blue-100 dark:bg-blue-500/10 dark:hover:bg-blue-500/20"
+            >
+              <History size={14} className="shrink-0" />
+              <span className="flex-1">Tiến trình của người duyệt</span>
+              <ChevronDown size={14} className="-rotate-90 shrink-0" />
+            </button>
+          )}
+          {progressOpen && (
+            <ApproverProgressModal
+              request={request}
+              group={progressGroup}
+              avatarProfiles={avatarProfiles}
+              now={now}
+              onClose={closeProgress}
+            />
+          )}
           <div className="flex flex-col gap-2">
             {request.approversSnapshot.map((approver, index) => {
               const state = request.approvers.find((a) => a.id === approver.id);

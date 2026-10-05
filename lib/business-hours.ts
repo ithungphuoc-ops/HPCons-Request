@@ -76,3 +76,26 @@ export function addBusinessHours(from: Date, hours: number): Date {
 
   return cursor;
 }
+
+/**
+ * Số giờ hành chính THỰC SỰ trôi qua giữa `from` và `to` — chiều ngược của
+ * `addBusinessHours()`, dùng CÙNG khung giờ (7:45–12:00, 13:00–17:15, nghỉ
+ * Chủ nhật) nên `businessHoursBetween(x, addBusinessHours(x, h)) === h`.
+ * Dùng cho cột "Thực tế" ở popup "Tiến trình của người duyệt" khi nhóm bật
+ * SLA theo lịch làm việc (lib/approver-progress.ts). `to <= from` → 0.
+ */
+export function businessHoursBetween(from: Date, to: Date): number {
+  if (!(to.getTime() > from.getTime())) return 0;
+  let cursor = toNextBusinessMoment(from);
+  let totalMs = 0;
+  // Mỗi vòng đi hết 1 khung giờ (sáng/chiều) — giới hạn ~10 năm khung giờ để
+  // không treo nếu dữ liệu ngày giờ lỗi.
+  for (let guard = 0; guard < 8000 && cursor.getTime() < to.getTime(); guard += 1) {
+    const m = minutesOfDay(cursor);
+    const windowEnd = atMinutesOfDay(cursor, m < MORNING_END ? MORNING_END : AFTERNOON_END);
+    const sliceEnd = windowEnd.getTime() < to.getTime() ? windowEnd : to;
+    totalMs += sliceEnd.getTime() - cursor.getTime();
+    cursor = toNextBusinessMoment(windowEnd);
+  }
+  return totalMs / (60 * 60 * 1000);
+}
