@@ -1,21 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { addBusinessHours } from "./business-hours";
+import { addBusinessHours, businessHoursBetween } from "./business-hours";
 
-/** Tìm ngày trong tuần (0=CN..6=T7) gần nhất >= from, để test không phụ
- * thuộc vào việc nhớ đúng thứ của 1 ngày cụ thể theo lịch thật. */
+/** Test viết theo GIỜ VIỆT NAM tường minh (05/10/2026) — không dùng giờ máy
+ * chạy test, để kết quả như nhau dù máy/CI ở múi UTC hay VN (đúng lỗi máy chủ
+ * Vercel chạy UTC từng làm lệch hạn SLA). */
+const VN = 7 * 60 * 60 * 1000;
+const vnDay = (d: Date) => new Date(d.getTime() + VN).getUTCDay();
+
+/** Ngày trong tuần (0=CN..6=T7, theo giờ VN) gần nhất >= from. */
 function nextWeekday(from: Date, targetDay: number): Date {
-  const d = new Date(from);
-  while (d.getDay() !== targetDay) d.setDate(d.getDate() + 1);
+  let d = new Date(from);
+  while (vnDay(d) !== targetDay) d = new Date(d.getTime() + 24 * 60 * 60 * 1000);
   return d;
 }
 
+/** Cùng ngày (giờ VN) với `date`, đặt giờ:phút theo giờ VN. */
 function at(date: Date, hours: number, minutes: number): Date {
-  const d = new Date(date);
-  d.setHours(hours, minutes, 0, 0);
-  return d;
+  const wall = new Date(date.getTime() + VN);
+  wall.setUTCHours(hours, minutes, 0, 0);
+  return new Date(wall.getTime() - VN);
 }
 
-const ANCHOR = new Date(2026, 0, 1); // mốc bất kỳ, chỉ dùng để dò ra Thứ 2/6/7 gần nhất
+const ANCHOR = new Date(Date.UTC(2026, 0, 1, 5)); // 12:00 giờ VN 01/01/2026 — mốc để dò Thứ 2/6/7
 const MONDAY = nextWeekday(ANCHOR, 1);
 const FRIDAY = nextWeekday(ANCHOR, 5);
 const SATURDAY = nextWeekday(ANCHOR, 6);
@@ -35,7 +41,7 @@ describe("addBusinessHours", () => {
   it("cộng qua ngày kế tiếp khi hết giờ hành chính trong ngày", () => {
     // 16:00 T2 + 2h: dùng hết 1h15 tới 17:15, còn 45' cộng từ 7:45 T3 -> 8:30 T3.
     const tuesday = new Date(MONDAY);
-    tuesday.setDate(tuesday.getDate() + 1);
+    tuesday.setTime(tuesday.getTime() + 1 * 24 * 60 * 60 * 1000);
     const result = addBusinessHours(at(MONDAY, 16, 0), 2);
     expect(result).toEqual(at(tuesday, 8, 30));
   });
@@ -49,7 +55,7 @@ describe("addBusinessHours", () => {
   it("bỏ qua Chủ nhật khi cộng qua cuối tuần", () => {
     // 17:00 T7 + 1h: dùng hết 15' tới 17:15, còn 45' nhảy qua CN, cộng từ 7:45 T2 kế tiếp -> 8:30.
     const mondayAfter = new Date(SATURDAY);
-    mondayAfter.setDate(mondayAfter.getDate() + 2); // T7 -> CN -> T2
+    mondayAfter.setTime(mondayAfter.getTime() + 2 * 24 * 60 * 60 * 1000); // T7 -> CN -> T2
     const result = addBusinessHours(at(SATURDAY, 17, 0), 1);
     expect(result).toEqual(at(mondayAfter, 8, 30));
   });
@@ -63,7 +69,7 @@ describe("addBusinessHours", () => {
     // Mỗi ngày làm việc có 8h30 (4h15 sáng + 4h15 chiều).
     // T2: 8h30 dùng hết -> còn 11h30. T3: 8h30 -> còn 3h. T4 sáng: 3h vừa hết trong khung 7:45-12:00 -> 10:45.
     const wednesday = new Date(MONDAY);
-    wednesday.setDate(wednesday.getDate() + 2);
+    wednesday.setTime(wednesday.getTime() + 2 * 24 * 60 * 60 * 1000);
     const result = addBusinessHours(at(MONDAY, 7, 45), 20);
     expect(result).toEqual(at(wednesday, 10, 45));
   });
@@ -71,5 +77,22 @@ describe("addBusinessHours", () => {
   it("SLA 0 giờ trả về đúng thời điểm bắt đầu (đã dịch vào giờ hành chính nếu cần)", () => {
     const result = addBusinessHours(at(MONDAY, 9, 0), 0);
     expect(result).toEqual(at(MONDAY, 9, 0));
+  });
+});
+
+describe("giờ Việt Nam cố định, không phụ thuộc múi giờ máy chạy (lỗi Vercel UTC 05/10/2026)", () => {
+  const iso = (s: string) => new Date(s).toISOString();
+  it("Thứ Hai 09:00 VN + 4h → 14:00 VN (trước đây máy chủ UTC ra 18:45)", () => {
+    expect(addBusinessHours(new Date("2026-10-05T09:00:00+07:00"), 4).toISOString()).toBe(iso("2026-10-05T14:00:00+07:00"));
+  });
+  it("Thứ Hai 09:00 VN + 8h → 08:30 VN hôm sau", () => {
+    expect(addBusinessHours(new Date("2026-10-05T09:00:00+07:00"), 8).toISOString()).toBe(iso("2026-10-06T08:30:00+07:00"));
+  });
+  it("Thứ Bảy 15:00 VN + 8h → Thứ Hai 14:30 VN, không bao giờ rơi vào Chủ nhật", () => {
+    expect(addBusinessHours(new Date("2026-10-03T15:00:00+07:00"), 8).toISOString()).toBe(iso("2026-10-05T14:30:00+07:00"));
+  });
+  it("businessHoursBetween đo ngược đúng số giờ đã cộng", () => {
+    const from = new Date("2026-10-03T15:00:00+07:00");
+    expect(businessHoursBetween(from, addBusinessHours(from, 8))).toBeCloseTo(8, 5);
   });
 });
