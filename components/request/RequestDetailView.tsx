@@ -14,6 +14,8 @@ import {
   ExternalLink,
   Eye,
   FileDown,
+  FileSpreadsheet,
+  FileText,
   Forward,
   History,
   Info,
@@ -49,13 +51,13 @@ import ApproverProgressModal from "@/components/request/ApproverProgressModal";
 import { formatCountdown, type ProgressGroupSettings } from "@/lib/approver-progress";
 import { useAvatarProfilesByUids } from "@/lib/useAvatarProfilesByUids";
 import { canApproverAct } from "@/lib/approval-logic";
-import { findLetterheadUrl } from "@/lib/letterhead";
+import { findCategoryForGroup, findLetterheadUrl, printFileBaseName, resolvePrintBrand } from "@/lib/letterhead";
+import { buildRequestFormModel } from "@/lib/request-form-export/model";
 import { useCurrentSession } from "@/lib/useCurrentSession";
 import { fieldDataTypeLabels } from "@/lib/types";
 import { DEFAULT_GROUP_PERMISSION_RULES, DEFAULT_GROUP_PRINT_OPTIONS } from "@/lib/types";
 import type {
   ApprovalTimeField,
-  FieldDataType,
   GroupPermissionRules,
   GroupPrintOptions,
   PrintTemplate,
@@ -70,11 +72,12 @@ import {
   deserializeTableRows,
   formatCellForDisplay,
   isNumericColumnType,
-  numericTypeForFieldDataType,
   resolveTableColumnSum,
   resolveTableColumnTypes,
   sumColumn,
 } from "@/lib/table-field";
+import { formatFieldValue, formatValue } from "@/lib/request-field-format";
+import { loggedSupplementRows } from "@/lib/table-supplement-log";
 import { uploadAttachments } from "@/lib/upload-client";
 import KhoiDongBo from "@/components/request/KhoiDongBo";
 import { canSupplementAfterApproval as canSupplementAfterApprovalCheck } from "@/lib/permissions";
@@ -82,7 +85,6 @@ import {
   ADJUSTMENT_HISTORY_PREFIX,
   ADJUSTMENT_MAX_LENGTH,
   ATTACHMENT_SUPPLEMENT_HISTORY_PREFIX,
-  TABLE_SUPPLEMENT_HISTORY_PREFIX,
 } from "@/lib/request-history-labels";
 import { resolveRequestTitle } from "@/lib/request-title";
 
@@ -114,38 +116,6 @@ function editLinkFor(request: RequestInstance): string {
     : `/request/direct/new?draftId=${request.id}`;
 }
 
-function formatValue(value: unknown): string {
-  if (value === undefined || value === null || value === "") return "—";
-  if (Array.isArray(value)) return value.length ? value.join(", ") : "—";
-  return String(value);
-}
-
-/**
- * Giống `formatValue` nhưng BIẾT kiểu field: field ngày/ngày giờ lưu dạng ISO
- * ("2026-09-14") — hiện nguyên si ra màn hình thì lệch hẳn với ngày tạo/cập
- * nhật ở ngay phía trên (đang dd/MM/yyyy). Sếp yêu cầu thống nhất 13/09/2026.
- *
- * Cắt chuỗi bằng regex thay vì `new Date(...)` — chuỗi "YYYY-MM-DD" trần được
- * JS hiểu là mốc UTC, đổi qua giờ địa phương ở múi giờ âm sẽ LÙI 1 ngày.
- */
-function formatFieldValue(value: unknown, dataType?: FieldDataType): string {
-  // Trường số (Số nguyên / Số thập phân / Tiền tệ): dùng CHUNG bộ định dạng
-  // với cột bảng, xem numericTypeForFieldDataType() ở lib/table-field.ts.
-  const numericType = dataType ? numericTypeForFieldDataType(dataType) : null;
-  if (numericType) {
-    if (value === undefined || value === null || value === "") return "—";
-    return formatCellForDisplay(String(value), numericType) || "—";
-  }
-  if (dataType === "date" || dataType === "datetime") {
-    if (value === undefined || value === null || value === "") return "—";
-    const matched = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/.exec(String(value).trim());
-    if (matched) {
-      const [, y, m, d, hh, mm] = matched;
-      return hh ? `${d}/${m}/${y} ${hh}:${mm}` : `${d}/${m}/${y}`;
-    }
-  }
-  return formatValue(value);
-}
 
 function isOverdue(request: RequestInstance): boolean {
   if (request.status !== "pending" || !request.deadlineAt) return false;
@@ -248,12 +218,21 @@ export default function RequestDetailView({
   };
   // Đang chờ logo thì bỏ qua lần bấm In thứ 2 — tránh bật 2 hộp thoại in.
   const printingRef = useRef(false);
+  const groupsLoadedRef = useRef(groupsLoaded);
+  groupsLoadedRef.current = groupsLoaded;
+  const [exportingForm, setExportingForm] = useState<"word" | "excel" | null>(null);
 
   // Tên file PDF mặc định khi "Lưu dưới dạng PDF" = tiêu đề trang lúc in, nên
-  // đổi tạm thành "Base Request-<mã>" rồi trả lại sau khi in (Sếp chốt
+  // đổi tạm thành "<Tên hiển thị>-<mã>" rồi trả lại sau khi in (Sếp chốt
   // 02/10/2026). Bắt sự kiện in của trình duyệt nên ăn cả nút In lẫn Ctrl+P;
-  // tab trình duyệt vẫn giữ tên cũ khi xem bình thường.
-  const printFileTitle = `Base Request-${request.code ?? request.id}`;
+  // tab trình duyệt vẫn giữ tên cũ khi xem bình thường. "Tên hiển thị" theo công
+  // ty của nhóm, Admin tự sửa ("HPCons Request"…, để trống = chỉ còn mã) — dùng
+  // chung cho tên file Word/Excel tải về (Sếp chốt 05/10/2026).
+  const printBrand = useMemo(
+    () => resolvePrintBrand(findCategoryForGroup(categoryGroups, request.groupId)),
+    [categoryGroups, request.groupId],
+  );
+  const printFileTitle = printFileBaseName(printBrand, request.code ?? request.id);
   useEffect(() => {
     let savedTitle: string | null = null;
     const restore = () => {
@@ -489,6 +468,41 @@ export default function RequestDetailView({
       window.print();
     } finally {
       printingRef.current = false;
+    }
+  };
+
+  // Tải đề xuất ra Word/Excel theo đúng bố cục bản in (Sếp chốt 05/10/2026). Dữ liệu
+  // đọc qua ref lúc tạo file — nếu phải chờ danh sách công ty (logo, tên hiển thị) tải
+  // xong thì vẫn lấy đúng giá trị MỚI NHẤT, không kẹt giá trị cũ của closure.
+  const exportInputRef = useRef<() => Parameters<typeof buildRequestFormModel>[0] & { logoUrl: string | null }>(null!);
+  exportInputRef.current = () => ({
+    request,
+    history,
+    attachments,
+    approvalTimeFields,
+    brand: printBrand,
+    logoUrl: showLetterhead ? letterheadUrl : null,
+  });
+  const exportForm = async (kind: "word" | "excel") => {
+    setMoreMenuOpen(false);
+    if (exportingForm) return;
+    setExportingForm(kind);
+    setActionError(null);
+    try {
+      const deadline = Date.now() + 5000;
+      while (!groupsLoadedRef.current && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      const { logoUrl, ...input } = exportInputRef.current();
+      const model = buildRequestFormModel(input);
+      const { loadFormLogo, downloadRequestExcel, downloadRequestWord } = await import("@/lib/request-form-export/download");
+      const logo = await loadFormLogo(logoUrl);
+      if (kind === "word") await downloadRequestWord(model, logo);
+      else await downloadRequestExcel(model, logo);
+    } catch {
+      setActionError(`Không tạo được file ${kind === "word" ? "Word" : "Excel"}, vui lòng thử lại.`);
+    } finally {
+      setExportingForm(null);
     }
   };
 
@@ -839,6 +853,28 @@ export default function RequestDetailView({
                       <Printer size={13} /> In đề xuất và thảo luận
                     </button>
                   )}
+                  {/* Cùng bố cục bản "In đề xuất" (logo, các trường, bảng, điều chỉnh sau
+                      duyệt), theo cài đặt "In đề xuất" của nhóm — Sếp chốt 05/10/2026. */}
+                  {printOptions.allowPrintProposal && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => exportForm("word")}
+                        disabled={exportingForm !== null}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-60"
+                      >
+                        <FileText size={13} /> {exportingForm === "word" ? "Đang tạo file Word..." : "Tải đề xuất ra file Word"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => exportForm("excel")}
+                        disabled={exportingForm !== null}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-60"
+                      >
+                        <FileSpreadsheet size={13} /> {exportingForm === "excel" ? "Đang tạo file Excel..." : "Tải đề xuất ra file Excel"}
+                      </button>
+                    </>
+                  )}
                   {printOptions.allowPrintToWord && printTemplates.length > 0 && (
                     <button
                       type="button"
@@ -1052,7 +1088,7 @@ export default function RequestDetailView({
                     <div key={field.id}>
                       <dt className="text-gray-400">
                         {String(index + 1).padStart(2, "0")}. {field.name}
-                        <span className="ml-2 text-[12px] text-gray-300">
+                        <span className="print-hide ml-2 text-[12px] text-gray-300">
                           {fieldDataTypeLabels[field.dataType]}
                         </span>
                       </dt>
@@ -1095,7 +1131,7 @@ export default function RequestDetailView({
                     <dt className="text-gray-400">
                       {atf?.field.name ?? "Trường đã xoá"}
                       {atf && (
-                        <span className="ml-2 text-[12px] text-gray-300">
+                        <span className="print-hide ml-2 text-[12px] text-gray-300">
                           {fieldDataTypeLabels[atf.field.dataType]}
                         </span>
                       )}
@@ -1701,36 +1737,12 @@ function TableSupplementControl({
   history: RequestHistoryEntry[];
 }) {
   const columns = field.tableColumns ?? [];
-  const emptyRow = () => columns.map(() => "");
 
   if (columns.length === 0) return null;
 
-  // Suy ra các dòng ĐÃ bổ sung sau duyệt (khoá lại, hiện phía trên ô đang
-  // gõ) + giờ của từng lần, hoàn toàn từ dữ liệu server — không lưu state
-  // cục bộ riêng nên tải lại trang vẫn đúng. Bổ sung CHỈ NỐI VÀO CUỐI (không
-  // chèn/sửa/xoá dòng cũ, xem route table-supplement), nên đếm tổng số dòng
-  // đã bổ sung qua `history` rồi cắt đúng số đó ở cuối bảng hiện tại là khớp
-  // đúng thứ tự.
-  const batchRe = /\(lần \d+\): thêm (\d+) dòng vào "(.+)"$/;
-  const batches: { count: number; at: string }[] = [];
-  for (const h of history) {
-    if (!h.action.startsWith(TABLE_SUPPLEMENT_HISTORY_PREFIX)) continue;
-    const m = h.action.match(batchRe);
-    if (!m || m[2] !== field.name) continue;
-    const count = Number(m[1]);
-    if (Number.isFinite(count) && count > 0) batches.push({ count, at: h.at });
-  }
-  const totalSupplementRows = batches.reduce((sum, b) => sum + b.count, 0);
-  const splitIndex = Math.max(0, allRows.length - totalSupplementRows);
-  const supplementTailRows = allRows.slice(splitIndex);
-  const loggedRows: { row: string[]; at: string }[] = [];
-  let cursor = 0;
-  for (const b of batches) {
-    for (let i = 0; i < b.count; i++) {
-      loggedRows.push({ row: supplementTailRows[cursor] ?? emptyRow(), at: b.at });
-      cursor++;
-    }
-  }
+  // Các dòng ĐÃ bổ sung sau duyệt + giờ từng lần, suy từ dữ liệu server — xem
+  // lib/table-supplement-log.ts (dùng chung với file Word/Excel tải về).
+  const loggedRows = loggedSupplementRows(field.name, columns.length, allRows, history);
 
   // Chưa từng bổ sung dòng nào (đề xuất mới, hoặc nhóm không dùng bảng) →
   // không vẽ gì. Trước đây luôn vẽ vì còn phải chứa ô nhập.

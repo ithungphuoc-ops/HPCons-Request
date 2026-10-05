@@ -23,6 +23,8 @@ interface RequestContextValue {
   /** Ghi ảnh logo mới của 1 công ty vào state ngay sau khi lưu thành công
    *  (GroupCategoryCard), để bản in dùng logo mới mà không phải tải lại trang. */
   setCategoryLetterhead: (categoryId: string, imagePath: string, imageName: string) => void;
+  /** Ghi "Tên hiển thị khi in / tải file" mới của 1 công ty vào state sau khi lưu. */
+  setCategoryPrintBrand: (categoryId: string, printBrandName: string) => void;
   statusFilter: StatusFilter;
   setStatusFilter: (filter: StatusFilter) => void;
   searchTerm: string;
@@ -193,6 +195,9 @@ export function RequestProvider({ children }: { children: React.ReactNode }) {
     },
     [],
   );
+  const setCategoryPrintBrand = useCallback((categoryId: string, printBrandName: string) => {
+    setCategoryGroups((prev) => prev.map((c) => (c.id === categoryId ? { ...c, printBrandName } : c)));
+  }, []);
 
   const toggleCategoryCollapsed = useCallback((categoryId: string) => {
     setCollapsedCategoryIds((prev) => {
@@ -539,6 +544,7 @@ export function RequestProvider({ children }: { children: React.ReactNode }) {
     categoryGroups,
     groupsLoaded,
     setCategoryLetterhead,
+    setCategoryPrintBrand,
     statusFilter,
     setStatusFilter,
     searchTerm,

@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { allLetterheadUrls, findLetterheadUrl, letterheadImageUrl, letterheadVersion } from "./letterhead";
+import {
+  allLetterheadUrls,
+  findCategoryForGroup,
+  findLetterheadUrl,
+  letterheadImageUrl,
+  letterheadVersion,
+  printFileBaseName,
+  resolvePrintBrand,
+} from "./letterhead";
 import type { CategoryGroup, ProposalGroup } from "./types";
 
 const group = (id: string) => ({ id }) as ProposalGroup;
@@ -75,5 +83,28 @@ describe("allLetterheadUrls", () => {
       letterheadImageUrl("catHp", "requests/u1/1727700000000-Cty HPCons.jpg"),
       letterheadImageUrl("catEqui", "requests/u1/1727700000001-Cty Equi VN.jpg"),
     ]);
+  });
+});
+
+describe("resolvePrintBrand", () => {
+  it("mặc định \"<tên công ty> Request\"; không thuộc công ty / Chưa phân loại → Base Request", () => {
+    expect(resolvePrintBrand(findCategoryForGroup(categories, "g1"))).toBe("HPCons Request");
+    expect(resolvePrintBrand(findCategoryForGroup(categories, "g3"))).toBe("EQUI Request");
+    expect(resolvePrintBrand(findCategoryForGroup(categories, "g4"))).toBe("Base Request");
+    expect(resolvePrintBrand(null)).toBe("Base Request");
+  });
+
+  it("Admin đã sửa thì dùng đúng tên đã lưu; để trống = ẩn", () => {
+    const hp = categories[0];
+    expect(resolvePrintBrand({ ...hp, printBrandName: "  HP Cons  " })).toBe("HP Cons");
+    expect(resolvePrintBrand({ ...hp, printBrandName: "" })).toBe("");
+  });
+});
+
+describe("printFileBaseName", () => {
+  it("<tên hiển thị>-<mã>, trống thì chỉ còn mã, bỏ ký tự cấm trong tên tệp", () => {
+    expect(printFileBaseName("HPCons Request", "000000189")).toBe("HPCons Request-000000189");
+    expect(printFileBaseName("", "000000189")).toBe("000000189");
+    expect(printFileBaseName('A/B:C*"D"', "1")).toBe("A B C D-1");
   });
 });

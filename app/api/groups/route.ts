@@ -49,6 +49,7 @@ export async function GET() {
         name: string;
         letterheadImagePath?: string;
         letterheadImageName?: string;
+        printBrandName?: string;
       };
       return {
         id: doc.id,
@@ -57,6 +58,7 @@ export async function GET() {
         groups: groups.filter((g) => g.category === data.name),
         letterheadImagePath: data.letterheadImagePath,
         letterheadImageName: data.letterheadImageName,
+        printBrandName: data.printBrandName,
       };
     });
 

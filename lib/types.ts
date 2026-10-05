@@ -672,6 +672,10 @@ export interface CategoryGroup {
    * app/request/groups/page.tsx — Sếp chốt 01/10/2026. */
   letterheadImagePath?: string;
   letterheadImageName?: string;
+  /** "Tên hiển thị khi in / tải file" (vd "HPCons Request") — tên tệp PDF/Word/
+   * Excel và chân trang. undefined = mặc định "<tên công ty> Request"; "" = ẩn.
+   * Xem resolvePrintBrand (lib/letterhead.ts). Sếp chốt 05/10/2026. */
+  printBrandName?: string;
 }
 
 /**
