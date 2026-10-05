@@ -591,6 +591,8 @@ function MultiValueDropdown({
     <div className="relative">
       <button
         type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
         className={`${selectClass} flex min-w-[200px] max-w-[280px] items-center justify-between gap-2 text-left`}
       >
