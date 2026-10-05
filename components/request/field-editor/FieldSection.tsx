@@ -91,7 +91,11 @@ export function AdvancedSection({
                 activeLabels.map((label) => (
                   <span
                     key={label}
-                    className="rounded-full bg-[var(--color-category-header-bg)] px-2.5 py-px text-[12px] font-semibold text-[var(--color-category-header-text)]"
+                    className={`rounded-full px-2.5 py-px text-[12px] font-semibold ${
+                      label.includes("(chưa xong")
+                        ? "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300"
+                        : "bg-[var(--color-category-header-bg)] text-[var(--color-category-header-text)]"
+                    }`}
                   >
                     {label}
                   </span>

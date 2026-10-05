@@ -541,8 +541,21 @@ export default function AddFieldModal() {
   const advancedActiveLabels = [
     computedEligibleTypes.includes(dataType) && computedBranches !== null && "Tự động ghép giá trị",
     suggestFromHistoryEligibleTypes.includes(dataType) && suggestFromHistory && "Gợi ý từ lịch sử",
-    externalCodeLookupEligibleTypes.includes(dataType) && lookupEnabled && "Ràng buộc mã tham chiếu ngoài",
-    externalCodeLookupEligibleTypes.includes(dataType) && autofillEnabled && "Tự động điền từ trường khác",
+    // Tick bật nhưng CHƯA cấu hình đủ thì lúc lưu cấu hình bị bỏ (xem fieldData ở trên) — chip
+    // ghi rõ "chưa xong" để khối đang thu gọn không làm Admin tưởng đã cấu hình xong (review PR #72).
+    externalCodeLookupEligibleTypes.includes(dataType) &&
+      lookupEnabled &&
+      (confirmedSourceId && confirmedMatchField
+        ? "Ràng buộc mã tham chiếu ngoài"
+        : "Ràng buộc mã tham chiếu ngoài (chưa xong, sẽ không lưu)"),
+    externalCodeLookupEligibleTypes.includes(dataType) &&
+      autofillEnabled &&
+      (autofillSourceFieldId &&
+      autofillPullField &&
+      autofillSourceOptions.some((f) => f.id === autofillSourceFieldId) &&
+      autofillPullFieldOptions.some((f) => f.key === autofillPullField)
+        ? "Tự động điền từ trường khác"
+        : "Tự động điền từ trường khác (chưa xong, sẽ không lưu)"),
     visibleWhen !== undefined && "Hiển thị theo điều kiện",
   ].filter((label): label is string => typeof label === "string");
 
