@@ -1,3 +1,4 @@
+import { decodeMultiValue } from "@/lib/condition-multi-value";
 import type { ApproverStepDef, ConditionGroup, ConditionRule, ProposalField, TaggedUser } from "@/lib/types";
 
 /**
@@ -42,15 +43,25 @@ function evaluateRule(rule: ConditionRule, values: Record<string, unknown>, fiel
 
   const rawValue = values[field.id];
 
-  if (rule.operator === "includes") {
-    if (!Array.isArray(rawValue)) return false;
-    return rawValue.some((v) => String(v) === rule.value);
-  }
-  if (rule.operator === "not_includes") {
-    // Không phải mảng (chưa chọn gì) — coi như "không chứa" luôn đúng, nhất
-    // quán với is_empty (chưa điền = không chứa giá trị nào).
-    if (!Array.isArray(rawValue)) return true;
-    return !rawValue.some((v) => String(v) === rule.value);
+  if (rule.operator === "includes" || rule.operator === "not_includes") {
+    // Field nhiều lựa chọn (multiple_choice): rawValue là mảng, rule.value là
+    // 1 giá trị ứng viên — giữ NGUYÊN hành vi cũ (field "chứa" giá trị đó?).
+    // Field 1-giá-trị (single_choice/department_select): rawValue là chuỗi
+    // đơn, rule.value là JSON mảng "1 trong N giá trị" Admin đã chọn (xem
+    // lib/condition-multi-value.ts) — chưa điền ("") không khớp gì cả, nhất
+    // quán với is_empty. Field khác có giá trị KHÔNG phải mảng (vd dữ liệu
+    // multiple_choice bị lỗi/chưa chọn gì) — giữ nguyên hành vi cũ: coi như
+    // không khớp, không suy diễn sang nghĩa mới.
+    let isMatch: boolean;
+    if (Array.isArray(rawValue)) {
+      isMatch = rawValue.some((v) => String(v) === rule.value);
+    } else if (field.dataType === "single_choice" || field.dataType === "department_select") {
+      const stringValue = rawValue === undefined || rawValue === null ? "" : String(rawValue);
+      isMatch = stringValue !== "" && decodeMultiValue(rule.value).includes(stringValue);
+    } else {
+      isMatch = false;
+    }
+    return rule.operator === "includes" ? isMatch : !isMatch;
   }
 
   if (rule.operator === "is_empty" || rule.operator === "is_not_empty") {

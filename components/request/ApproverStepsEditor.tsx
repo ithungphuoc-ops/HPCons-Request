@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Plus, Trash2, Users } from "lucide-react";
+import { ChevronDown, Plus, Trash2, Users } from "lucide-react";
 import TagUserInput from "@/components/shared/TagUserInput";
 import { inputClass, selectClass } from "@/components/shared/form-styles";
+import { decodeMultiValue, encodeMultiValue } from "@/lib/condition-multi-value";
 import type { ApproverStepDef, ConditionGroup, ConditionRule, ProposalField, TaggedUser } from "@/lib/types";
 
 /**
@@ -410,14 +411,24 @@ export default function ApproverStepsEditor({
  *   (giống `DepartmentSelectControl` ở submit/page.tsx), không phải id.
  * - Kiểu khác (số/ngày dùng toán tử lớn hơn/nhỏ hơn/trong khoảng...): giữ
  *   nguyên ô nhập tự do, không có danh sách cố định nào để chọn.
+ *
+ * Toán tử "includes"/"not_includes" (nhãn "chứa"/"không chứa") trên field
+ * 1-giá-trị (single_choice/department_select) đổi sang ô CHỌN NHIỀU (dropdown
+ * + checkbox) thay vì dropdown chọn 1 — cho phép 1 điều kiện con khớp "1
+ * trong N giá trị" (vd nhiều Bộ phận) cùng lúc, không cần tạo N điều kiện con
+ * nối "Hoặc" (Sếp yêu cầu 05/10/2026). Field nhiều lựa chọn (multiple_choice)
+ * dùng "includes"/"not_includes" với Ý NGHĨA KHÁC từ trước (field "chứa" 1
+ * giá trị?) — GIỮ NGUYÊN dropdown chọn 1 như cũ, không đụng tới.
  */
 export function ConditionValueInput({
   field,
+  operator,
   value,
   onChange,
   placeholder,
 }: {
   field: ProposalField | undefined;
+  operator: ConditionRule["operator"];
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
@@ -431,6 +442,8 @@ export function ConditionValueInput({
   const [loadError, setLoadError] = useState(false);
   const [retryTick, setRetryTick] = useState(0);
   const isDepartmentSelect = field?.dataType === "department_select";
+  const isMultiValueOperator = operator === "includes" || operator === "not_includes";
+  const isSingleValuedDiscrete = field?.dataType === "single_choice" || isDepartmentSelect;
 
   useEffect(() => {
     if (!isDepartmentSelect) return;
@@ -448,6 +461,34 @@ export function ConditionValueInput({
       cancelled = true;
     };
   }, [isDepartmentSelect, retryTick]);
+
+  if (isSingleValuedDiscrete && isMultiValueOperator) {
+    if (isDepartmentSelect && loadError) {
+      return (
+        <span className="flex flex-wrap items-center gap-1.5 text-[12.5px] text-[var(--color-danger-red)]">
+          Không tải được danh sách phòng ban.
+          <button
+            type="button"
+            onClick={() => setRetryTick((n) => n + 1)}
+            className="font-medium underline hover:no-underline"
+          >
+            Thử lại
+          </button>
+        </span>
+      );
+    }
+    const options = isDepartmentSelect
+      ? (departments ?? []).map((d) => d.name)
+      : (field?.options ?? []);
+    return (
+      <MultiValueDropdown
+        options={options}
+        value={value}
+        onChange={onChange}
+        placeholder={isDepartmentSelect && departments === null ? "Đang tải phòng ban..." : "— Chọn giá trị —"}
+      />
+    );
+  }
 
   if (field?.dataType === "single_choice" || field?.dataType === "multiple_choice") {
     const options = field.options ?? [];
@@ -499,6 +540,68 @@ export function ConditionValueInput({
 
   return (
     <input className={inputClass} value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} />
+  );
+}
+
+/**
+ * Ô chọn nhiều giá trị (dropdown + checkbox, kiểu chip) cho toán tử
+ * "chứa"/"không chứa" áp vào field 1-giá-trị — lưu/đọc qua
+ * `lib/condition-multi-value.ts` (JSON mảng chuỗi trong `ConditionRule.value`
+ * sẵn có, không đổi cấu trúc dữ liệu). Giá trị cũ không nằm trong `options`
+ * hiện tại (field đã xoá lựa chọn đó, hoặc phòng ban đã đổi tên) vẫn giữ
+ * nguyên trong danh sách đã chọn — Admin tự thấy và bỏ chọn nếu muốn, không
+ * bị âm thầm mất khỏi cấu hình khi lưu lại.
+ */
+function MultiValueDropdown({
+  options,
+  value,
+  onChange,
+  placeholder,
+}: {
+  options: string[];
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = decodeMultiValue(value);
+
+  const toggle = (opt: string) => {
+    const next = selected.includes(opt) ? selected.filter((s) => s !== opt) : [...selected, opt];
+    onChange(encodeMultiValue(next));
+  };
+
+  const allOptions = [...options, ...selected.filter((s) => !options.includes(s))];
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className={`${selectClass} flex min-w-[200px] max-w-[280px] items-center justify-between gap-2 text-left`}
+      >
+        <span className="truncate">{selected.length === 0 ? placeholder : selected.join(", ")}</span>
+        <ChevronDown size={13} className="shrink-0 text-gray-400" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 top-full z-20 mt-1 max-h-60 w-[260px] overflow-y-auto rounded border border-[var(--color-border)] bg-white py-1 shadow-lg">
+            {allOptions.length === 0 && <p className="px-3 py-1.5 text-[12px] text-gray-400">Chưa có lựa chọn nào.</p>}
+            {allOptions.map((opt) => (
+              <label
+                key={opt}
+                className="flex items-center gap-2 px-3 py-1.5 text-[13px] text-gray-700 hover:bg-gray-50"
+              >
+                <input type="checkbox" checked={selected.includes(opt)} onChange={() => toggle(opt)} />
+                {opt}
+                {!options.includes(opt) && <span className="text-[11px] text-gray-400">(không còn trong danh sách)</span>}
+              </label>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -614,6 +717,7 @@ export function ConditionEditor({
                 {!OPERATORS_WITHOUT_VALUE.has(rule.operator) && (
                   <ConditionValueInput
                     field={selectedField}
+                    operator={rule.operator}
                     value={rule.value}
                     placeholder={rule.operator === "between" ? "Từ" : "Giá trị"}
                     onChange={(value) => updateRule(ruleIndex, { value })}
