@@ -40,15 +40,22 @@ import {
   type TaggedUser,
 } from "@/lib/types";
 import { validateGroupName, validateSlaHours } from "@/lib/validation";
+import {
+  DECISION_NOTE_ACTION_LABELS,
+  DECISION_NOTE_ACTIONS,
+  resolveDecisionNoteRules,
+  type DecisionNoteAction,
+  type DecisionNoteRule,
+  type DecisionNoteRules,
+} from "@/lib/decision-note";
 
 const flowOptions: ApprovalFlowType[] = ["concurrent", "sequential", "single"];
 
-const decisionNoteOptions: [keyof NonNullable<ProposalGroup["requireDecisionNote"]>, string][] = [
-  ["approve", "Chấp thuận"],
-  ["reject", "Từ chối"],
-  ["forward", "Chuyển tiếp"],
-  ["approveAndForward", "Chấp thuận và chuyển tiếp"],
-];
+/** Mô tả ngắn 1 hành động trong chế độ xem: "Có ghi chú · bắt buộc". */
+function describeDecisionNoteRule(rule: DecisionNoteRule): string {
+  if (!rule.enabled) return "Không có ô ghi chú";
+  return rule.required ? "Có ghi chú · bắt buộc" : "Có ghi chú · không bắt buộc";
+}
 
 const cardClass = "rounded-[3px] border border-[var(--color-border)] bg-white p-4";
 const cardHeadClass = "mb-3 flex items-start justify-between gap-3";
@@ -475,6 +482,7 @@ function StepRow({
 /* ------------------------------ Luồng phê duyệt ---------------------------- */
 
 function ApprovalFlowCard({ group, onEdit }: { group: ProposalGroup; onEdit: () => void }) {
+  const noteRules = resolveDecisionNoteRules(group);
   return (
     <div className={cardClass}>
       <div className={cardHeadClass}>
@@ -488,6 +496,19 @@ function ApprovalFlowCard({ group, onEdit }: { group: ProposalGroup; onEdit: () 
       </div>
       <dl className="flex flex-col">
         <InfoRow label="Quy trình xử lý" value={approvalFlowLabels[group.approvalFlow]} />
+        <div className="flex flex-col gap-1 border-b border-[var(--color-border)] py-2 last:border-b-0 sm:flex-row sm:gap-4">
+          <dt className="shrink-0 text-[12.5px] text-gray-400 sm:w-[200px]">Ý kiến khi phê duyệt</dt>
+          <dd className="flex flex-col gap-0.5 text-[14px] text-gray-800">
+            {DECISION_NOTE_ACTIONS.map((action) => (
+              <span key={action}>
+                <span className="font-medium">{DECISION_NOTE_ACTION_LABELS[action]}:</span>{" "}
+                <span className={noteRules[action].enabled ? "text-gray-700" : "text-gray-400"}>
+                  {describeDecisionNoteRule(noteRules[action])}
+                </span>
+              </span>
+            ))}
+          </dd>
+        </div>
       </dl>
     </div>
   );
@@ -505,7 +526,18 @@ function EditApprovalFlowModal({
   const [approvalFlow, setApprovalFlow] = useState<ApprovalFlowType>(group.approvalFlow);
   const [approverSlaEnabled, setApproverSlaEnabled] = useState(group.approverSlaEnabled ?? false);
   const [slaByWorkCalendar, setSlaByWorkCalendar] = useState(group.slaByWorkCalendar ?? false);
-  const [requireDecisionNote, setRequireDecisionNote] = useState(group.requireDecisionNote ?? {});
+  // Bảng "Ý kiến khi phê duyệt" khởi tạo từ quy tắc HIỆU LỰC (đã tính mặc
+  // định cũ: Từ chối bắt buộc, Chấp thuận và chuyển tiếp theo Chuyển tiếp…)
+  // để ô tick hiện đúng hành vi đang chạy; lưu thì ghi đủ 4 key tường minh.
+  const [noteRules, setNoteRules] = useState<DecisionNoteRules>(() => resolveDecisionNoteRules(group));
+  const setNoteRule = (action: DecisionNoteAction, patch: Partial<DecisionNoteRule>) => {
+    setNoteRules((prev) => {
+      const next = { ...prev[action], ...patch };
+      // Bỏ "Có ghi chú" thì tự bỏ luôn "Bắt buộc" (không bắt buộc ô bị ẩn).
+      if (!next.enabled) next.required = false;
+      return { ...prev, [action]: next };
+    });
+  };
   const [notifyManager, setNotifyManager] = useState(group.notifyManager);
 
   const handleSave = () => {
@@ -513,7 +545,12 @@ function EditApprovalFlowModal({
       approvalFlow,
       approverSlaEnabled,
       slaByWorkCalendar,
-      requireDecisionNote,
+      requireDecisionNote: Object.fromEntries(
+        DECISION_NOTE_ACTIONS.map((a) => [a, noteRules[a].enabled && noteRules[a].required]),
+      ) as ProposalGroup["requireDecisionNote"],
+      decisionNoteEnabled: Object.fromEntries(
+        DECISION_NOTE_ACTIONS.map((a) => [a, noteRules[a].enabled]),
+      ) as ProposalGroup["decisionNoteEnabled"],
       notifyManager,
     });
     onClose();
@@ -579,21 +616,48 @@ function EditApprovalFlowModal({
         </Field>
 
         <Field
-          label="Bắt buộc nhập ý kiến phê duyệt"
-          description="Chặn người duyệt bỏ trống ghi chú khi thực hiện hành động tương ứng."
+          label="Ý kiến khi phê duyệt"
+          description="Cho từng hành động: có hiện ô ghi chú không, và có bắt buộc nhập không. Ý kiến tự hiện ở phần Thảo luận của đề xuất. (Trả lại luôn bắt buộc lý do.)"
         >
-          <div className="flex flex-col gap-1.5">
-            {decisionNoteOptions.map(([key, label]) => (
-              <label key={key} className="flex items-center gap-2 text-[14px] text-gray-700">
-                <input
-                  type="checkbox"
-                  checked={requireDecisionNote[key] ?? false}
-                  onChange={(e) => setRequireDecisionNote({ ...requireDecisionNote, [key]: e.target.checked })}
-                />
-                {label}
-              </label>
-            ))}
-          </div>
+          <table className="w-full border-collapse text-[14px]">
+            <thead>
+              <tr className="border-b border-[var(--color-border)] text-[12px] text-gray-400">
+                <th className="py-1.5 pr-2 text-left font-medium">Hành động</th>
+                <th className="w-[96px] px-2 py-1.5 text-center font-medium">Có ghi chú</th>
+                <th className="w-[80px] px-2 py-1.5 text-center font-medium">Bắt buộc</th>
+              </tr>
+            </thead>
+            <tbody>
+              {DECISION_NOTE_ACTIONS.map((action) => {
+                const rule = noteRules[action];
+                const label = DECISION_NOTE_ACTION_LABELS[action];
+                return (
+                  <tr key={action} className="border-b border-[var(--color-border)] last:border-b-0">
+                    <td className="py-2 pr-2 text-gray-700">{label}</td>
+                    <td className="px-2 py-2 text-center">
+                      <input
+                        type="checkbox"
+                        aria-label={`${label} — có ghi chú`}
+                        checked={rule.enabled}
+                        onChange={(e) => setNoteRule(action, { enabled: e.target.checked })}
+                      />
+                    </td>
+                    <td className="px-2 py-2 text-center">
+                      <input
+                        type="checkbox"
+                        aria-label={`${label} — bắt buộc`}
+                        checked={rule.enabled && rule.required}
+                        disabled={!rule.enabled}
+                        title={rule.enabled ? undefined : "Bật “Có ghi chú” trước"}
+                        className="disabled:cursor-not-allowed disabled:opacity-40"
+                        onChange={(e) => setNoteRule(action, { required: e.target.checked })}
+                      />
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </Field>
 
         <Field label="Báo quản lý trực tiếp">

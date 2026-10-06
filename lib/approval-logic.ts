@@ -1,4 +1,5 @@
-import type { ApprovalFlowType, ApprovalTimeField, ApproverStepDef, TaggedUser } from "./types";
+import type { ApprovalFlowType, ApprovalTimeField, ApproverStepDef, ProposalGroup, TaggedUser } from "./types";
+import { DECISION_TO_NOTE_ACTION, resolveDecisionNoteRules } from "./decision-note";
 
 export type ApproverDecision = "pending" | "approved" | "rejected";
 
@@ -170,23 +171,25 @@ export class ApprovalActionError extends Error {}
 
 /**
  * Xác định 1 hành động duyệt có đang THIẾU ghi chú bắt buộc hay không —
- * "rejected"/"returned" LUÔN bắt buộc (không phụ thuộc cấu hình nhóm, giữ
- * đúng hành vi cũ); "approved"/"forwarded" chỉ bắt buộc khi nhóm bật cờ
- * tương ứng trong `requireDecisionNote`. Trả về true = còn thiếu (chặn),
+ * "returned" (Trả lại) LUÔN bắt buộc (không thuộc cài đặt nhóm); 4 hành
+ * động còn lại theo `resolveDecisionNoteRules()` (lib/decision-note.ts):
+ * "Từ chối" mặc định bắt buộc như cũ, "Chấp thuận và chuyển tiếp" thiếu cờ
+ * riêng thì theo cờ `forward` như cũ, và ô đã tắt (`decisionNoteEnabled[x]
+ * === false`) thì không bao giờ bắt buộc. Trả về true = còn thiếu (chặn),
  * false = đủ điều kiện tiếp tục.
  */
 export function missingRequiredNote(
   decision: "approved" | "rejected" | "approve_and_forward" | "forward_then_approve" | "returned",
   note: string | undefined,
-  requireDecisionNote: { approve?: boolean; forward?: boolean } | undefined,
+  requireDecisionNote: ProposalGroup["requireDecisionNote"] | undefined,
+  decisionNoteEnabled?: ProposalGroup["decisionNoteEnabled"],
 ): boolean {
   const hasNote = Boolean(note?.trim());
-  if (decision === "rejected" || decision === "returned") return !hasNote;
-  if (decision === "approved") return Boolean(requireDecisionNote?.approve) && !hasNote;
-  if (decision === "approve_and_forward" || decision === "forward_then_approve") {
-    return Boolean(requireDecisionNote?.forward) && !hasNote;
-  }
-  return false;
+  if (decision === "returned") return !hasNote;
+  const action = DECISION_TO_NOTE_ACTION[decision];
+  if (!action) return false;
+  const rules = resolveDecisionNoteRules({ requireDecisionNote, decisionNoteEnabled });
+  return rules[action].required && !hasNote;
 }
 
 /** Kiểm tra chung cho cả 2 kiểu "chuyển tiếp" bên dưới — dùng lại 1 chỗ tránh

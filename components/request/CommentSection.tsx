@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { doc, onSnapshot } from "firebase/firestore";
 import { signInWithCustomToken } from "firebase/auth";
-import { Check, Paperclip, Pencil, Send, Trash2, X } from "lucide-react";
+import { Check, Lock, Paperclip, Pencil, Send, Trash2, X } from "lucide-react";
 import { getFirebaseAuth, getFirebaseFirestore } from "@/lib/firebase/client";
 import { useRequestContext } from "@/context/RequestContext";
 import FilePreviewModal from "@/components/request/FilePreviewModal";
@@ -15,6 +15,8 @@ import {
 import { uploadAttachments } from "@/lib/upload-client";
 import Avatar from "@/components/request/Avatar";
 import { useAvatarsByUids } from "@/lib/useAvatarsByUids";
+import type { ApproverOpinion } from "@/lib/approver-opinions";
+import { OPINION_TONE, opinionActionText } from "@/components/request/ApproverOpinionsModal";
 
 /** Hạn sửa/xóa của tác giả — PHẢI khớp `AUTHOR_EDIT_WINDOW_MS` phía server
  * (app/api/requests/[id]/comments/[commentId]/route.ts). Đây chỉ để ẩn/hiện
@@ -68,10 +70,16 @@ export default function CommentSection({
   initialComments,
   currentUid,
   isOwner,
+  opinions = [],
 }: {
   requestId: string;
   initialComments: RequestComment[];
   currentUid: string | null;
+  /** Ý kiến người duyệt trích từ lịch sử (lib/approver-opinions.ts) — hiện
+   * CHỈ ĐỌC xen theo thời gian với bình luận, không phải document bình luận
+   * thật (không sửa/xoá/trả lời được, không gửi thêm thông báo). Sếp chốt
+   * 06/10/2026. */
+  opinions?: ApproverOpinion[];
   /** `session.role === "owner"` — KHÔNG dùng "admin" gộp chung nữa (đổi
    * hướng 24/08/2026, xem design.md Decision #7). */
   isOwner: boolean;
@@ -127,6 +135,7 @@ export default function CommentSection({
   // nhóm/phòng ban (kind "group") không có ảnh, bỏ qua để đỡ tốn 1 lượt tra.
   const avatars = useAvatarsByUids([
     ...comments.map((c) => c.authorUid),
+    ...opinions.map((o) => o.approverId).filter((id): id is string => !!id),
     ...suggestions.filter((u) => u.kind !== "group").map((u) => u.id),
   ]);
 
@@ -331,6 +340,51 @@ export default function CommentSection({
   // còn `parentId` từ trước khi bỏ tính năng) vẫn hiển thị bình thường, chỉ
   // không còn được nhóm/thụt lề theo cha nữa.
   const flatComments = comments.slice().reverse();
+  // Trộn ý kiến người duyệt (chỉ đọc) vào đúng vị trí thời gian — mới nhất
+  // lên đầu như bình luận. Bình luận cùng mốc giữ nguyên thứ tự cũ.
+  type FeedItem = { kind: "comment"; at: string; comment: RequestComment } | { kind: "opinion"; at: string; opinion: ApproverOpinion };
+  const feed: FeedItem[] = [
+    ...flatComments.map((comment): FeedItem => ({ kind: "comment", at: comment.at, comment })),
+    ...opinions.map((opinion): FeedItem => ({ kind: "opinion", at: opinion.at, opinion })),
+  ];
+  const timeOf = (iso: string) => {
+    const t = new Date(iso).getTime();
+    return Number.isNaN(t) ? 0 : t;
+  };
+  feed.sort((a, b) => timeOf(b.at) - timeOf(a.at));
+
+  const renderOpinion = (o: ApproverOpinion) => {
+    const tone = OPINION_TONE[o.kind];
+    return (
+      <div key={`opinion-${o.key}`} className="flex items-start gap-2" data-testid="opinion-item">
+        <Avatar
+          url={o.approverId ? avatars[o.approverId] : null}
+          initial={o.actor.trim().charAt(0).toUpperCase() || "?"}
+          name={o.actor}
+          size={28}
+          fallbackClassName="bg-gray-400 font-semibold text-white"
+        />
+        <div className={`min-w-0 flex-1 rounded border-l-[3px] bg-gray-50 px-3 py-2 ${tone.border}`}>
+          <div className="flex items-start gap-2">
+            <p className="min-w-0 flex-1 text-[14px] text-gray-700">
+              <span className="font-medium text-gray-800">{o.actor}</span> {opinionActionText(o)} đề xuất
+            </p>
+            <span
+              className="mt-0.5 flex shrink-0 items-center gap-0.5 text-[11.5px] text-gray-400"
+              title="Ý kiến phê duyệt — chỉ đọc, không sửa/xoá được"
+            >
+              <Lock size={12} aria-label="Chỉ đọc" />
+            </span>
+          </div>
+          <p className="mt-0.5 whitespace-pre-wrap break-words text-[14px] text-gray-700">
+            <span className="text-gray-500">Ý kiến phê duyệt: </span>
+            {o.note}
+          </p>
+          <div className="mt-0.5 text-[12px] text-gray-400">{new Date(o.at).toLocaleString("vi-VN")}</div>
+        </div>
+      </div>
+    );
+  };
 
   const renderComment = (comment: RequestComment) => {
     const isAuthor = currentUid !== null && currentUid === comment.authorUid;
@@ -516,8 +570,8 @@ export default function CommentSection({
       {postError && <p className="mt-1 text-[12px] text-[var(--color-danger-red)]">{postError}</p>}
 
       <div className="mt-4 flex flex-col gap-3">
-        {flatComments.length === 0 && <p className="text-[14px] text-gray-400">Chưa có thảo luận nào.</p>}
-        {flatComments.map((comment) => renderComment(comment))}
+        {feed.length === 0 && <p className="text-[14px] text-gray-400">Chưa có thảo luận nào.</p>}
+        {feed.map((item) => (item.kind === "comment" ? renderComment(item.comment) : renderOpinion(item.opinion)))}
       </div>
 
       {previewing && (

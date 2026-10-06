@@ -11,6 +11,7 @@ import {
   sanitizeDescriptionHtml,
 } from "@/lib/server/groups";
 import { sanitizeHelpText } from "@/lib/validation";
+import { DECISION_NOTE_ACTIONS, sanitizeDecisionNoteFlags } from "@/lib/decision-note";
 import { resolveDateLeadTimeNumbers, validateDateLeadTimeNumbers } from "@/lib/date-lead-time";
 import {
   resolveTableColumnRequired,
@@ -37,6 +38,24 @@ export async function PATCH(
     delete patch.viewerCanSubmit;
     if (patch.usedForIncludeSecondary !== undefined && typeof patch.usedForIncludeSecondary !== "boolean") {
       return NextResponse.json({ error: "usedForIncludeSecondary phải là true/false." }, { status: 400 });
+    }
+    // "Ý kiến khi phê duyệt" — chỉ giữ 4 key hợp lệ, ép boolean; không tin
+    // client. Ô đã tắt thì không thể bắt buộc (resolveDecisionNoteRules cũng
+    // tự đảm bảo khi đọc, ở đây ghi gọn luôn cho dữ liệu sạch).
+    for (const key of ["requireDecisionNote", "decisionNoteEnabled"] as const) {
+      if (patch[key] === undefined) continue;
+      const clean = sanitizeDecisionNoteFlags(patch[key]);
+      if (!clean) {
+        return NextResponse.json({ error: `${key} không hợp lệ.` }, { status: 400 });
+      }
+      patch[key] = clean;
+    }
+    if (patch.requireDecisionNote && patch.decisionNoteEnabled) {
+      for (const action of DECISION_NOTE_ACTIONS) {
+        if (patch.decisionNoteEnabled[action] === false && action in patch.requireDecisionNote) {
+          patch.requireDecisionNote[action] = false;
+        }
+      }
     }
 
     const ref = adminDb.collection("groups").doc(id);

@@ -1,6 +1,7 @@
 import "server-only";
 import { adminDb } from "@/lib/firebase/admin";
 import type { GroupHistoryChange } from "@/lib/types";
+import { describeDecisionNoteFlags } from "@/lib/decision-note";
 
 export { ensureApproverStepCodes, ensureFieldCodes } from "@/lib/print-template";
 export { sanitizeDescriptionHtml } from "@/lib/validation";
@@ -32,7 +33,13 @@ const FIELD_LABELS: Record<string, string> = {
   followers: "Người theo dõi",
   fields: "Mẫu biểu (trường dữ liệu)",
   pinned: "Đánh dấu quan trọng",
+  requireDecisionNote: "Ý kiến khi phê duyệt — bắt buộc",
+  decisionNoteEnabled: "Ý kiến khi phê duyệt — có ô ghi chú",
 };
+
+/** Field dạng object cờ theo hành động — hiển thị "Chấp thuận: Có, …" thay
+ * vì "[object Object]". */
+const DECISION_NOTE_KEYS = new Set(["requireDecisionNote", "decisionNoteEnabled"]);
 
 function toDisplay(value: unknown): string {
   if (value === undefined || value === null) return "—";
@@ -51,8 +58,8 @@ export function diffGroupPatch(
     .filter(([key, value]) => JSON.stringify(before[key]) !== JSON.stringify(value))
     .map(([key, value]) => ({
       field: FIELD_LABELS[key] ?? key,
-      before: toDisplay(before[key]),
-      after: toDisplay(value),
+      before: DECISION_NOTE_KEYS.has(key) ? describeDecisionNoteFlags(before[key]) : toDisplay(before[key]),
+      after: DECISION_NOTE_KEYS.has(key) ? describeDecisionNoteFlags(value) : toDisplay(value),
     }));
 }
 

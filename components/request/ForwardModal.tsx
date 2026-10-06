@@ -7,9 +7,10 @@ import TagUserInput from "@/components/shared/TagUserInput";
 import {
   cancelButtonClass,
   confirmButtonClass,
-  textareaClass,
 } from "@/components/shared/form-styles";
 import ApprovalTimeFieldControl, { isApprovalTimeValueMissing } from "@/components/request/ApprovalTimeFieldControl";
+import DecisionNoteInput from "@/components/request/DecisionNoteInput";
+import type { DecisionNoteMode } from "@/lib/decision-note";
 import type { ApprovalTimeField, TaggedUser } from "@/lib/types";
 
 /** "approve_and_forward" = "Chấp nhận và chuyển tiếp" (đã duyệt xong, đẩy
@@ -46,11 +47,16 @@ export default function ForwardModal({
    * "forward_then_approve" đã có sẵn, chỉ thiếu cờ bật/tắt theo nhóm. Tắt cờ
    * này → chỉ còn "Chấp nhận và chuyển tiếp" trong danh sách chọn. */
   allowForwardThenApprove = true,
+  /** "Ý kiến khi phê duyệt" của nhóm theo từng kiểu chuyển tiếp
+   * ("approve_and_forward" ~ approveAndForward, "forward_then_approve" ~
+   * forward). Thiếu key = có ô, không bắt buộc (hành vi cũ). */
+  noteModeByMode,
   onClose,
   onConfirm,
 }: {
   extraFieldByMode?: Partial<Record<ForwardMode, ApprovalTimeField["field"]>>;
   allowForwardThenApprove?: boolean;
+  noteModeByMode?: Partial<Record<ForwardMode, DecisionNoteMode>>;
   onClose: () => void;
   onConfirm: (mode: ForwardMode, target: TaggedUser, note: string, approvalTimeValue?: unknown) => Promise<void>;
 }) {
@@ -63,6 +69,7 @@ export default function ForwardModal({
   const [fieldValue, setFieldValue] = useState<unknown>(undefined);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [noteInvalid, setNoteInvalid] = useState(false);
 
   // Góp ý CodeRabbit (review PR #4, 24/08/2026): nếu `allowForwardThenApprove`
   // đổi từ true → false NGAY LÚC modal đang mở (nhóm vừa bị tắt cờ), radio
@@ -78,6 +85,7 @@ export default function ForwardModal({
   }, [allowForwardThenApprove]);
 
   const extraField = extraFieldByMode?.[mode];
+  const noteMode: DecisionNoteMode = noteModeByMode?.[mode] ?? "optional";
 
   const handleConfirm = async () => {
     if (target.length === 0) {
@@ -88,10 +96,15 @@ export default function ForwardModal({
       setError(`Cần điền "${extraField.name}".`);
       return;
     }
+    if (noteMode === "required" && !note.trim()) {
+      setNoteInvalid(true);
+      setError("Nhóm này yêu cầu nhập ý kiến khi chuyển tiếp.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
-      await onConfirm(mode, target[0], note, extraField ? fieldValue : undefined);
+      await onConfirm(mode, target[0], noteMode === "hidden" ? "" : note.trim(), extraField ? fieldValue : undefined);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Có lỗi xảy ra.");
       setSubmitting(false);
@@ -142,6 +155,7 @@ export default function ForwardModal({
                   onChange={() => {
                     setMode(m);
                     setFieldValue(undefined);
+                    setNoteInvalid(false);
                   }}
                 />
                 <span className="flex-1">{MODE_LABEL[m]}</span>
@@ -163,15 +177,17 @@ export default function ForwardModal({
           />
         </div>
         {extraField && <ApprovalTimeFieldControl field={extraField} value={fieldValue} onChange={setFieldValue} />}
-        <div>
-          <label className="mb-1 block text-[14px] font-medium text-gray-700">Lý do/ghi chú</label>
-          <textarea
-            className={textareaClass}
-            rows={3}
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-          />
-        </div>
+        <DecisionNoteInput
+          mode={noteMode}
+          label="Lý do/ghi chú"
+          value={note}
+          onChange={(v) => {
+            setNote(v);
+            if (noteInvalid && v.trim()) setNoteInvalid(false);
+          }}
+          invalid={noteInvalid}
+          placeholder=""
+        />
         {error && <p className="text-[12px] text-[var(--color-danger-red)]">{error}</p>}
       </div>
     </Modal>

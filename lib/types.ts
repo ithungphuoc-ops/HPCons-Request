@@ -481,8 +481,20 @@ export interface ProposalGroup {
    * `computeDeadline()` nhận cờ này, phần cộng dồn giờ làm việc ở
    * lib/business-hours.ts. */
   slaByWorkCalendar?: boolean;
-  /** Bắt buộc người duyệt nhập ghi chú khi thực hiện hành động tương ứng. */
+  /** Bắt buộc người duyệt nhập ghi chú khi thực hiện hành động tương ứng.
+   * Đọc qua `resolveDecisionNoteRules()` (lib/decision-note.ts) — KHÔNG đọc
+   * thẳng: thiếu `reject` = bắt buộc, thiếu `approveAndForward` = theo
+   * `forward` (giữ đúng hành vi cũ của server). */
   requireDecisionNote?: {
+    approve?: boolean;
+    reject?: boolean;
+    forward?: boolean;
+    approveAndForward?: boolean;
+  };
+  /** "Ý kiến khi phê duyệt" — hành động nào CÓ ô ghi chú trong hộp xác nhận
+   * (Sếp duyệt demo 06/10/2026). Thiếu field/thiếu key = CÓ (giữ hành vi cũ);
+   * `false` = ẩn ô và không thể bắt buộc. Xem lib/decision-note.ts. */
+  decisionNoteEnabled?: {
     approve?: boolean;
     reject?: boolean;
     forward?: boolean;

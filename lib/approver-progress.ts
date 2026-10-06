@@ -95,7 +95,7 @@ function laterIso(a: string | null, b: string | null): string | null {
   return a > b ? a : b;
 }
 
-const sameName = (a: string | undefined, b: string | undefined) =>
+export const sameName = (a: string | undefined, b: string | undefined) =>
   !!a && !!b && a.trim().toLocaleLowerCase("vi") === b.trim().toLocaleLowerCase("vi");
 
 /**
