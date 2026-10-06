@@ -3,8 +3,10 @@
  * tong-quan-demo/base-request-app/dieu-chinh-tu-chon-nguoi-duyet-2026-10-06
  * (06/10/2026), thay bảng "nhánh theo phòng ban" của PR #68:
  *
- * - Hộp Điều chỉnh hiện cảnh báo vàng = "Hướng dẫn điều chỉnh sau duyệt"
- *   (1 nội dung CHUNG toàn app, Owner/Admin soạn ở "Cài đặt chung").
+ * - Hộp Điều chỉnh hiện cảnh báo vàng = "Hướng dẫn điều chỉnh sau duyệt" —
+ *   từ 06/10/2026 (Sếp chốt) MỖI NHÓM 1 nội dung riêng (`adjustmentGuide`),
+ *   soạn ngay trong tab "Điều chỉnh sau duyệt" của nhóm (bỏ trang "Cài đặt
+ *   chung"); xem `resolveAdjustmentGuide`.
  * - Người điều chỉnh BẮT BUỘC chọn ĐÚNG 2 người duyệt (khác nhau, không phải
  *   chính mình, đang hoạt động ở App Tổng) — duyệt cùng lúc, đủ cả 2 mới có
  *   hiệu lực (AND, giữ cơ chế `pendingAdjustment` sẵn có).
@@ -25,7 +27,7 @@ export const ADJUSTMENT_APPROVER_COUNT = 2;
  * con số với "Đính kèm tệp khi duyệt". */
 export const ADJUSTMENT_ATTACHMENT_MAX_FILES = 6;
 
-/** Độ dài tối đa nội dung hướng dẫn chung. */
+/** Độ dài tối đa nội dung hướng dẫn điều chỉnh của 1 nhóm. */
 export const ADJUSTMENT_GUIDE_MAX_LENGTH = 2000;
 
 /** Nội dung mặc định khi Owner/Admin chưa từng soạn (giống demo). */
@@ -34,6 +36,47 @@ export const DEFAULT_ADJUSTMENT_GUIDE = [
   "• Người khác điều chỉnh: chọn TRƯỞNG PHÒNG THU MUA + NGƯỜI DUYỆT CUỐI.",
   "• Điều chỉnh chỉ có hiệu lực khi đủ người đã chọn duyệt.",
 ].join("\n");
+
+/**
+ * Nội dung hướng dẫn hiện trong hộp Điều chỉnh của 1 đề xuất — thứ tự ưu tiên:
+ * 1. `groupGuide` là chuỗi (nhóm đã soạn riêng) → dùng đúng chuỗi đó. Chuỗi
+ *    RỖNG "" = Admin cố ý xoá trắng → KHÔNG hiện cảnh báo.
+ * 2. Nhóm chưa soạn (`undefined`) / đã bấm "Dùng nội dung mặc định" (`null`)
+ *    → nội dung mặc định: `appDefault` = hướng dẫn CHUNG cũ ở
+ *    `appSettings/adjustment.guide` nếu từng được lưu (PR #85 — giữ để không
+ *    mất nội dung Admin đã soạn), kể cả khi đó là chuỗi rỗng.
+ * 3. Không có gì → `DEFAULT_ADJUSTMENT_GUIDE` trong code.
+ */
+export function resolveAdjustmentGuide(
+  groupGuide: string | null | undefined,
+  appDefault: string | null | undefined,
+): string {
+  if (typeof groupGuide === "string") return groupGuide;
+  return resolveDefaultAdjustmentGuide(appDefault);
+}
+
+/** Nội dung "mặc định" khi nhóm chưa soạn riêng (bước 2–3 ở trên). */
+export function resolveDefaultAdjustmentGuide(appDefault: string | null | undefined): string {
+  return typeof appDefault === "string" ? appDefault : DEFAULT_ADJUSTMENT_GUIDE;
+}
+
+/**
+ * Chuẩn hoá `adjustmentGuide` client gửi lên route PATCH nhóm: `null` = dùng
+ * nội dung mặc định; chuỗi → đổi xuống dòng kiểu Windows về "\n", bỏ khoảng
+ * trắng 2 đầu, tối đa `ADJUSTMENT_GUIDE_MAX_LENGTH` ký tự (đếm SAU khi trim).
+ * Sai kiểu → lỗi tiếng Việt (route trả 400).
+ */
+export function sanitizeAdjustmentGuide(
+  value: unknown,
+): { ok: true; value: string | null } | { ok: false; error: string } {
+  if (value === null) return { ok: true, value: null };
+  if (typeof value !== "string") return { ok: false, error: "Nội dung hướng dẫn điều chỉnh không hợp lệ." };
+  const guide = value.replace(/\r\n?/g, "\n").trim();
+  if (guide.length > ADJUSTMENT_GUIDE_MAX_LENGTH) {
+    return { ok: false, error: `Hướng dẫn điều chỉnh tối đa ${ADJUSTMENT_GUIDE_MAX_LENGTH} ký tự.` };
+  }
+  return { ok: true, value: guide };
+}
 
 /* ------------------------- Ô Ghi chú / Đính kèm tệp ------------------------ */
 

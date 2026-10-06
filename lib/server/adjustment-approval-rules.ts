@@ -8,7 +8,7 @@ export { canAdjustAfterApproval } from "@/lib/adjustment-settings";
 
 export type AdjustmentGroupSettings = Pick<
   ProposalGroup,
-  "adjustmentApprovalRules" | "adjustmentFieldRules" | "notificationRules"
+  "adjustmentApprovalRules" | "adjustmentFieldRules" | "adjustmentGuide" | "notificationRules"
 >;
 
 /** Cài đặt nhóm cần cho điều chỉnh — đề xuất trực tiếp (không `groupId`) /
@@ -21,6 +21,7 @@ export async function loadAdjustmentGroupSettings(groupId: string | null): Promi
   return {
     adjustmentApprovalRules: data.adjustmentApprovalRules ?? null,
     adjustmentFieldRules: data.adjustmentFieldRules,
+    adjustmentGuide: data.adjustmentGuide,
     notificationRules: data.notificationRules,
   };
 }

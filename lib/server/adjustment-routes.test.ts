@@ -74,7 +74,7 @@ vi.mock("@/lib/server/hpcore-org", () => ({ getCachedDepartments: vi.fn(async ()
 vi.mock("@/lib/server/adjustment-reviewers", () => ({
   loadActiveUsers: async (uids: string[]) =>
     new Map(uids.filter((u) => ACTIVE[u]).map((u) => [u, { uid: u, name: ACTIVE[u] }])),
-  getAdjustmentGuide: async () => ({ guide: "HD", isDefault: true, updatedAt: null, updatedBy: null }),
+  getAdjustmentGuideForGroup: async () => "HD",
   resolveAdjustmentSuggestions: async () => [],
 }));
 const notify = vi.fn(async () => {});
