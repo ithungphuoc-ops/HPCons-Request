@@ -293,7 +293,10 @@ export default function CommentSection({
       setComments(data.comments);
       resetComposer();
     } catch (err) {
-      setPostError(err instanceof Error ? err.message : "Có lỗi xảy ra.");
+      // Nội dung vẫn giữ trong ô (resetComposer chỉ chạy khi gửi thành công) —
+      // nhắc người dùng bấm gửi lại (Sếp chốt 06/10/2026).
+      const reason = err instanceof Error ? err.message : "Có lỗi xảy ra.";
+      setPostError(`${reason} Nội dung vẫn còn trong ô, vui lòng bấm gửi lại.`);
     } finally {
       setPosting(false);
     }
