@@ -6,6 +6,7 @@ import { sanitizeDecisionNoteInput } from "@/lib/decision-note";
 import { apiErrorResponse } from "@/lib/http";
 import { notifyFollowersFullyApproved, notifyPendingApprovers, notifySubmitterResult } from "@/lib/server/notification-emails";
 import { applyDecisionToRequest, type DecisionGroupSettings, type DecisionKind } from "@/lib/server/decision-apply";
+import { bumpNotificationSignal } from "@/lib/server/notification-signal";
 import { sanitizeDecisionAttachmentsInput } from "@/lib/server/decision-attachments";
 import { verifyUploadedAttachment } from "@/lib/server/verify-upload";
 import { MAX_DIRECT_UPLOAD_FILE_SIZE } from "@/lib/constants";
@@ -217,6 +218,9 @@ export async function POST(
       return plan;
     });
     const { updated, status } = result;
+    // Mọi effect (none/forward/decision) đều ghi updatedAt trong transaction ở trên — báo chuông
+    // thông báo tự tải lại (Sếp duyệt 06/10/2026, xem lib/server/notification-signal.ts).
+    after(() => bumpNotificationSignal());
 
     if (result.effect === "forward") {
       // Email thông báo thật (Sếp chốt 24/08/2026) — người vừa được chuyển

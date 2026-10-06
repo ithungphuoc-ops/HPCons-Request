@@ -9,6 +9,7 @@ import { mergeFollowers } from "@/lib/server/conditions";
 import { resolveComputedValue } from "@/lib/server/computed-fields";
 import { canManageGroupsAtAppScope } from "@/lib/permissions";
 import { canAdjustAfterApproval, loadAdjustmentGroupSettings } from "@/lib/server/adjustment-approval-rules";
+import { bumpNotificationSignal } from "@/lib/server/notification-signal";
 import {
   buildInitialApprovers,
   canView,
@@ -351,6 +352,8 @@ export async function PATCH(
             : "Đã gửi đề xuất",
       };
       const updated = await commitEdit(id, found, expectedVersion, patch, historyEntry);
+      // Gửi chính thức (không phải lưu nháp) — báo chuông thông báo tự tải lại.
+      after(() => bumpNotificationSignal());
       return NextResponse.json({ request: updated });
     }
 
@@ -384,6 +387,7 @@ export async function PATCH(
       action: found.status === "returned" ? "Đã gửi lại đề xuất" : "Đã gửi đề xuất",
     };
     const updated = await commitEdit(id, found, expectedVersion, patch, historyEntry);
+    after(() => bumpNotificationSignal());
     return NextResponse.json({ request: updated });
   } catch (error) {
     if (error instanceof RequestTxError) {

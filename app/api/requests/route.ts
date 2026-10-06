@@ -4,7 +4,7 @@ import { canApproverAct, hasUnseenUpdate } from "@/lib/approval-logic";
 import { adminDb } from "@/lib/firebase/admin";
 import { apiErrorResponse } from "@/lib/http";
 import { canManageGroupsAtAppScope } from "@/lib/permissions";
-import { isAdjustmentReviewer, isAwaitingMyAdjustmentDecision } from "@/lib/adjustment-settings";
+import { isAdjustmentReviewer } from "@/lib/adjustment-settings";
 import { mergeFollowers } from "@/lib/server/conditions";
 import { resolveComputedValue } from "@/lib/server/computed-fields";
 import { dedupeApproversWithMeta } from "@/lib/approval-logic";
@@ -24,6 +24,7 @@ import {
   resolveInitialSlaHours,
   toProposalGroup,
 } from "@/lib/server/requests";
+import { bumpNotificationSignal } from "@/lib/server/notification-signal";
 import { requireSession } from "@/lib/session";
 import { retryQlkCtrSyncNeuLoi } from "@/lib/qlkctr-sync";
 import { retryThuMuaSyncNeuLoi } from "@/lib/thumua-sync";
@@ -83,22 +84,6 @@ export async function GET(request: Request) {
         .map((doc) => ({ id: doc.id, ...doc.data() }) as RequestInstance)
         .filter((r) => !r.deletedAt && canApproverAct(r.approvalFlow, r.approvers, session.uid))
         .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt));
-      return NextResponse.json({ requests });
-    }
-
-    if (scope === "adjustment-inbox") {
-      // "Điều chỉnh sau duyệt" đang chờ CHÍNH người này duyệt (06/10/2026) —
-      // cho chuông thông báo. Đề xuất đã duyệt nên không lọt vào "inbox".
-      // Chỉ đọc đề xuất ĐANG có điều chỉnh chờ (`!= null` loại cả doc thiếu
-      // field) — 1 điều kiện, dùng index 1 trường tự động, KHÔNG cần index
-      // composite (đừng thêm điều kiện thứ 2 vào truy vấn). Điều chỉnh xong /
-      // bị từ chối luôn ghi `pendingAdjustment: null` (route adjustment/decision),
-      // nên tự rơi khỏi kết quả. Phần còn lại lọc trong bộ nhớ.
-      const snap = await adminDb.collection("requests").where("pendingAdjustment", "!=", null).get();
-      const requests = snap.docs
-        .map((doc) => ({ id: doc.id, ...doc.data() }) as RequestInstance)
-        .filter((r) => !r.deletedAt && r.status === "approved" && isAwaitingMyAdjustmentDecision(r, session.uid))
-        .sort((a, b) => (b.pendingAdjustment?.createdAt ?? "").localeCompare(a.pendingAdjustment?.createdAt ?? ""));
       return NextResponse.json({ requests });
     }
 
@@ -488,6 +473,8 @@ export async function POST(request: Request) {
       deletedAt: null,
     };
     await requestRef.set(newRequest);
+    // Gửi chính thức (không phải nháp) mới cần báo chuông — nháp chỉ người tạo thấy.
+    if (!isDraft) after(() => bumpNotificationSignal());
 
     const created: RequestInstance = { id: requestRef.id, ...newRequest };
 

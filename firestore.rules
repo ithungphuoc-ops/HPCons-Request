@@ -23,5 +23,18 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow write: if false;
     }
+
+    // Tín hiệu "vừa có đề xuất thay đổi" cho chuông thông báo (Đợt 1,
+    // lib/firebase/request-change-signal.ts) — CHỈ 1 mốc thời gian, KHÔNG
+    // chứa dữ liệu đề xuất nào. Trước đây client nghe thẳng document
+    // `requests` có `updatedAt` mới nhất để biết "có gì đó vừa đổi" — QA
+    // 06/10/2026 chỉ ra việc đó phát tán NGUYÊN NỘI DUNG đề xuất (giá trị
+    // field, bình luận, ai đã xem) tới MỌI người đã đăng nhập, kể cả người
+    // không có quyền xem đề xuất đó. Đổi sang nghe tài liệu rỗng này để
+    // không còn rò rỉ, đồng thời nhẹ hơn nhiều lần mỗi khi có người thao tác.
+    match /system/notification-signal {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
   }
 }

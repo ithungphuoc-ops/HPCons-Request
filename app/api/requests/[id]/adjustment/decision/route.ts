@@ -8,6 +8,7 @@ import { buildAdjustmentHistoryPatch } from "@/lib/server/adjustment";
 import { loadAdjustmentGroupSettings } from "@/lib/server/adjustment-approval-rules";
 import { loadActiveUsers } from "@/lib/server/adjustment-reviewers";
 import { notifyAdjustmentApprovers } from "@/lib/server/notification-emails";
+import { bumpNotificationSignal } from "@/lib/server/notification-signal";
 import { loadRequest } from "@/lib/server/requests";
 import { requireSession, ForbiddenError } from "@/lib/session";
 import type { RequestInstance } from "@/lib/types";
@@ -165,6 +166,7 @@ export async function POST(
       });
       if ("loi" in ketQua) return NextResponse.json({ error: ketQua.loi }, { status: ketQua.ma });
       const saved = ketQua.request;
+      after(() => bumpNotificationSignal());
       after(async () => {
         const settings = await loadAdjustmentGroupSettings(saved.groupId);
         await notifyAdjustmentApprovers([targetId], saved, pending.requestedByName, settings);
@@ -186,6 +188,7 @@ export async function POST(
         return { request: { ...moiNhat, pendingAdjustment: null, updatedAt: nowIso } };
       });
       if ("loi" in ketQua) return NextResponse.json({ error: ketQua.loi }, { status: ketQua.ma });
+      after(() => bumpNotificationSignal());
       return NextResponse.json({ request: ketQua.request });
     }
 
@@ -226,6 +229,7 @@ export async function POST(
     if ("loi" in ketQua) {
       return NextResponse.json({ error: ketQua.loi }, { status: ketQua.ma });
     }
+    after(() => bumpNotificationSignal());
     if (ketQua.finalized) {
       const pendingSnapshot = ketQua.pendingSnapshot;
       const files = pendingAdjustmentFiles(pendingSnapshot);

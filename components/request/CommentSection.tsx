@@ -98,7 +98,6 @@ export default function CommentSection({
   const [composerAttachment, setComposerAttachment] = useState<File | null>(null);
   const [previewing, setPreviewing] = useState<RequestAttachment | null>(null);
   const [now, setNow] = useState(() => Date.now());
-  const bootstrapped = useRef(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -152,9 +151,11 @@ export default function CommentSection({
   // nhập Firebase Auth ẩn, rồi mở onSnapshot trên document requests/{id}.
   // Lỗi ở bất kỳ bước nào chỉ tắt real-time — bình luận qua API vẫn hoạt
   // động bình thường (không real-time), không chặn nghiệp vụ chính.
+  // Chạy lại mỗi khi `requestId` đổi (vd chuyển sang xem đề xuất khác trong
+  // danh sách mà không tải lại trang) — trước đây có ref chặn effect chạy
+  // lại, khiến listener bị treo vào requestId cũ, bình luận mới của đề xuất
+  // đang xem không tự cập nhật nữa (chỉ thấy khi tải lại trang).
   useEffect(() => {
-    if (bootstrapped.current) return;
-    bootstrapped.current = true;
     let unsubscribe: (() => void) | undefined;
     let cancelled = false;
 

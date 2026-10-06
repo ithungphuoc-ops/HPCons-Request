@@ -1,8 +1,9 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase/admin";
 import { apiErrorResponse } from "@/lib/http";
 import { expandMentionsToUids } from "@/lib/server/mentions";
+import { bumpNotificationSignal } from "@/lib/server/notification-signal";
 import { canView, loadRequest } from "@/lib/server/requests";
 import { requireSession } from "@/lib/session";
 import type { RequestAttachment, RequestComment } from "@/lib/types";
@@ -81,6 +82,7 @@ export async function POST(
     }
 
     await adminDb.collection("requests").doc(id).update(patch);
+    after(() => bumpNotificationSignal());
 
     return NextResponse.json({ comments }, { status: 201 });
   } catch (error) {
