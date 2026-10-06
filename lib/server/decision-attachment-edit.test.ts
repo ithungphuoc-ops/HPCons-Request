@@ -239,3 +239,10 @@ describe("parseDecisionAttachmentEditBody", () => {
     });
   });
 });
+
+describe("đề xuất đã xoá mềm (06/10/2026)", () => {
+  it("bị xoá xen giữa lúc đọc trước và transaction → 409, không thay/gỡ", () => {
+    const r = plan({ request: makeReq({ deletedAt: "2026-10-06T05:00:00.000Z" }) });
+    expect(r).toEqual({ ok: false, status: 409, error: "Đề xuất đã bị xoá." });
+  });
+});

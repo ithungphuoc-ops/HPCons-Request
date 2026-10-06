@@ -11,6 +11,7 @@ import {
   inputClass,
   textareaClass,
 } from "@/components/shared/form-styles";
+import { requestVersionKey } from "@/lib/request-version";
 import type { RequestInstance, TaggedUser } from "@/lib/types";
 
 export default function DirectRequestPage() {
@@ -27,6 +28,9 @@ function DirectRequestForm() {
 
   const [draftId, setDraftId] = useState<string | null>(searchParams.get("draftId"));
   const [loadedStatus, setLoadedStatus] = useState<RequestInstance["status"] | null>(null);
+  // "Phiên bản" đề xuất lúc mở form — gửi kèm PATCH, máy chủ trả 409 nếu
+  // trong lúc sửa người duyệt đã duyệt/trả lại (lib/request-version.ts).
+  const [loadedVersion, setLoadedVersion] = useState<string | undefined>(undefined);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [approvers, setApprovers] = useState<TaggedUser[]>([]);
@@ -48,6 +52,7 @@ function DirectRequestForm() {
         setApprovers(data.request.approversSnapshot);
         setFollowers(data.request.followers);
         setLoadedStatus(data.request.status);
+        setLoadedVersion(requestVersionKey(data.request));
       })
       .catch(() => setError("Không tải được bản nháp."));
   }, [draftId]);
@@ -59,6 +64,7 @@ function DirectRequestForm() {
     approvers,
     followers,
     isDraft,
+    expectedVersion: loadedVersion,
   });
 
   /**
@@ -110,7 +116,10 @@ function DirectRequestForm() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(buildBody(true)),
         });
-        if (!res.ok) throw new Error("Không thể lưu nháp.");
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}) as { error?: string });
+          throw new Error(body.error ?? "Không thể lưu nháp.");
+        }
       } else {
         const res = await fetch("/api/requests", {
           method: "POST",
