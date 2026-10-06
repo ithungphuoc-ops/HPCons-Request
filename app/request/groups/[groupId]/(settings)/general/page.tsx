@@ -48,6 +48,7 @@ import {
   type DecisionNoteRule,
   type DecisionNoteRules,
 } from "@/lib/decision-note";
+import { describeDecisionAttachmentRule, resolveDecisionAttachmentRules } from "@/lib/decision-attachment";
 
 const flowOptions: ApprovalFlowType[] = ["concurrent", "sequential", "single"];
 
@@ -483,6 +484,7 @@ function StepRow({
 
 function ApprovalFlowCard({ group, onEdit }: { group: ProposalGroup; onEdit: () => void }) {
   const noteRules = resolveDecisionNoteRules(group);
+  const attachmentRules = resolveDecisionAttachmentRules(group);
   return (
     <div className={cardClass}>
       <div className={cardHeadClass}>
@@ -507,6 +509,20 @@ function ApprovalFlowCard({ group, onEdit }: { group: ProposalGroup; onEdit: () 
                 </span>
               </span>
             ))}
+          </dd>
+        </div>
+        <div className="flex flex-col gap-1 border-b border-[var(--color-border)] py-2 last:border-b-0 sm:flex-row sm:gap-4">
+          <dt className="shrink-0 text-[12.5px] text-gray-400 sm:w-[200px]">Đính kèm tệp khi duyệt</dt>
+          <dd className="flex flex-col gap-0.5 text-[14px] text-gray-800" data-testid="attachment-rules-view">
+            {DECISION_NOTE_ACTIONS.map((action) => (
+              <span key={action}>
+                <span className="font-medium">{DECISION_NOTE_ACTION_LABELS[action]}:</span>{" "}
+                <span className={attachmentRules[action].enabled ? "text-gray-700" : "text-gray-400"}>
+                  {describeDecisionAttachmentRule(attachmentRules[action])}
+                </span>
+              </span>
+            ))}
+            <span className="text-[12.5px] text-gray-400">Trả lại: luôn có ô đính kèm · không bắt buộc</span>
           </dd>
         </div>
       </dl>
@@ -538,6 +554,17 @@ function EditApprovalFlowModal({
       return { ...prev, [action]: next };
     });
   };
+  // "Đính kèm tệp khi duyệt" — nhóm cũ (thiếu field) = không có ô.
+  const [attachmentRules, setAttachmentRules] = useState<DecisionNoteRules>(() =>
+    resolveDecisionAttachmentRules(group),
+  );
+  const setAttachmentRule = (action: DecisionNoteAction, patch: Partial<DecisionNoteRule>) => {
+    setAttachmentRules((prev) => {
+      const next = { ...prev[action], ...patch };
+      if (!next.enabled) next.required = false;
+      return { ...prev, [action]: next };
+    });
+  };
   const [notifyManager, setNotifyManager] = useState(group.notifyManager);
 
   const handleSave = () => {
@@ -551,6 +578,12 @@ function EditApprovalFlowModal({
       decisionNoteEnabled: Object.fromEntries(
         DECISION_NOTE_ACTIONS.map((a) => [a, noteRules[a].enabled]),
       ) as ProposalGroup["decisionNoteEnabled"],
+      decisionAttachmentEnabled: Object.fromEntries(
+        DECISION_NOTE_ACTIONS.map((a) => [a, attachmentRules[a].enabled]),
+      ) as ProposalGroup["decisionAttachmentEnabled"],
+      requireDecisionAttachment: Object.fromEntries(
+        DECISION_NOTE_ACTIONS.map((a) => [a, attachmentRules[a].enabled && attachmentRules[a].required]),
+      ) as ProposalGroup["requireDecisionAttachment"],
       notifyManager,
     });
     onClose();
@@ -617,47 +650,89 @@ function EditApprovalFlowModal({
 
         <Field
           label="Ý kiến khi phê duyệt"
-          description="Cho từng hành động: có hiện ô ghi chú không, và có bắt buộc nhập không. Ý kiến tự hiện ở phần Thảo luận của đề xuất. (Trả lại luôn bắt buộc lý do.)"
+          description="Cho từng hành động: có hiện ô ghi chú / ô đính kèm tệp không, và có bắt buộc không. Ý kiến và tệp tự hiện ở phần Thảo luận của đề xuất; tệp vào Tài liệu đính kèm. (Trả lại luôn bắt buộc lý do, luôn cho đính kèm tệp không bắt buộc.)"
         >
-          <table className="w-full border-collapse text-[14px]">
-            <thead>
-              <tr className="border-b border-[var(--color-border)] text-[12px] text-gray-400">
-                <th className="py-1.5 pr-2 text-left font-medium">Hành động</th>
-                <th className="w-[96px] px-2 py-1.5 text-center font-medium">Có ghi chú</th>
-                <th className="w-[80px] px-2 py-1.5 text-center font-medium">Bắt buộc</th>
-              </tr>
-            </thead>
-            <tbody>
-              {DECISION_NOTE_ACTIONS.map((action) => {
-                const rule = noteRules[action];
-                const label = DECISION_NOTE_ACTION_LABELS[action];
-                return (
-                  <tr key={action} className="border-b border-[var(--color-border)] last:border-b-0">
-                    <td className="py-2 pr-2 text-gray-700">{label}</td>
-                    <td className="px-2 py-2 text-center">
-                      <input
-                        type="checkbox"
-                        aria-label={`${label} — có ghi chú`}
-                        checked={rule.enabled}
-                        onChange={(e) => setNoteRule(action, { enabled: e.target.checked })}
-                      />
-                    </td>
-                    <td className="px-2 py-2 text-center">
-                      <input
-                        type="checkbox"
-                        aria-label={`${label} — bắt buộc`}
-                        checked={rule.enabled && rule.required}
-                        disabled={!rule.enabled}
-                        title={rule.enabled ? undefined : "Bật “Có ghi chú” trước"}
-                        className="disabled:cursor-not-allowed disabled:opacity-40"
-                        onChange={(e) => setNoteRule(action, { required: e.target.checked })}
-                      />
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-[14px]" data-testid="decision-opinion-table">
+              <thead>
+                <tr className="text-[12px] text-gray-400">
+                  <th
+                    rowSpan={2}
+                    className="border-b border-[var(--color-border)] py-1.5 pr-2 text-left align-bottom font-medium"
+                  >
+                    Hành động
+                  </th>
+                  <th colSpan={2} className="px-2 pt-1.5 text-center font-semibold text-gray-500">
+                    Ghi chú
+                  </th>
+                  <th
+                    colSpan={2}
+                    className="border-l border-[var(--color-border)] px-2 pt-1.5 text-center font-semibold text-gray-500"
+                  >
+                    Đính kèm tệp
+                  </th>
+                </tr>
+                <tr className="border-b border-[var(--color-border)] text-[12px] text-gray-400">
+                  <th className="w-[44px] px-1 py-1.5 text-center font-medium sm:w-[56px] sm:px-2">Có</th>
+                  <th className="w-[56px] px-1 py-1.5 text-center font-medium sm:w-[72px] sm:px-2">Bắt buộc</th>
+                  <th className="w-[44px] border-l border-[var(--color-border)] px-1 py-1.5 text-center font-medium sm:w-[56px] sm:px-2">
+                    Có
+                  </th>
+                  <th className="w-[56px] px-1 py-1.5 text-center font-medium sm:w-[72px] sm:px-2">Bắt buộc</th>
+                </tr>
+              </thead>
+              <tbody>
+                {DECISION_NOTE_ACTIONS.map((action) => {
+                  const rule = noteRules[action];
+                  const attRule = attachmentRules[action];
+                  const label = DECISION_NOTE_ACTION_LABELS[action];
+                  return (
+                    <tr key={action} className="border-b border-[var(--color-border)] last:border-b-0">
+                      <td className="py-2 pr-2 text-gray-700">{label}</td>
+                      <td className="px-1 py-2 text-center sm:px-2">
+                        <input
+                          type="checkbox"
+                          aria-label={`${label} — có ghi chú`}
+                          checked={rule.enabled}
+                          onChange={(e) => setNoteRule(action, { enabled: e.target.checked })}
+                        />
+                      </td>
+                      <td className="px-1 py-2 text-center sm:px-2">
+                        <input
+                          type="checkbox"
+                          aria-label={`${label} — bắt buộc`}
+                          checked={rule.enabled && rule.required}
+                          disabled={!rule.enabled}
+                          title={rule.enabled ? undefined : "Bật “Có ghi chú” trước"}
+                          className="disabled:cursor-not-allowed disabled:opacity-40"
+                          onChange={(e) => setNoteRule(action, { required: e.target.checked })}
+                        />
+                      </td>
+                      <td className="border-l border-[var(--color-border)] px-1 py-2 text-center sm:px-2">
+                        <input
+                          type="checkbox"
+                          aria-label={`${label} — có đính kèm tệp`}
+                          checked={attRule.enabled}
+                          onChange={(e) => setAttachmentRule(action, { enabled: e.target.checked })}
+                        />
+                      </td>
+                      <td className="px-1 py-2 text-center sm:px-2">
+                        <input
+                          type="checkbox"
+                          aria-label={`${label} — bắt buộc đính kèm tệp`}
+                          checked={attRule.enabled && attRule.required}
+                          disabled={!attRule.enabled}
+                          title={attRule.enabled ? undefined : "Bật “Có” đính kèm tệp trước"}
+                          className="disabled:cursor-not-allowed disabled:opacity-40"
+                          onChange={(e) => setAttachmentRule(action, { required: e.target.checked })}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </Field>
 
         <Field label="Báo quản lý trực tiếp">

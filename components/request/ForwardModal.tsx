@@ -10,8 +10,9 @@ import {
 } from "@/components/shared/form-styles";
 import ApprovalTimeFieldControl, { isApprovalTimeValueMissing } from "@/components/request/ApprovalTimeFieldControl";
 import DecisionNoteInput from "@/components/request/DecisionNoteInput";
+import DecisionAttachmentInput, { useDecisionAttachmentUploader } from "@/components/request/DecisionAttachmentInput";
 import type { DecisionNoteMode } from "@/lib/decision-note";
-import type { ApprovalTimeField, TaggedUser } from "@/lib/types";
+import type { ApprovalTimeField, RequestAttachment, TaggedUser } from "@/lib/types";
 
 /** "approve_and_forward" = "Chấp nhận và chuyển tiếp" (đã duyệt xong, đẩy
  * thêm 1 người cấp trên duyệt tiếp — người chuyển VẪN được ghi đã duyệt).
@@ -51,14 +52,23 @@ export default function ForwardModal({
    * ("approve_and_forward" ~ approveAndForward, "forward_then_approve" ~
    * forward). Thiếu key = có ô, không bắt buộc (hành vi cũ). */
   noteModeByMode,
+  /** "Đính kèm tệp khi duyệt" theo từng kiểu chuyển tiếp — thiếu key = không có ô. */
+  attachmentModeByMode,
   onClose,
   onConfirm,
 }: {
   extraFieldByMode?: Partial<Record<ForwardMode, ApprovalTimeField["field"]>>;
   allowForwardThenApprove?: boolean;
   noteModeByMode?: Partial<Record<ForwardMode, DecisionNoteMode>>;
+  attachmentModeByMode?: Partial<Record<ForwardMode, DecisionNoteMode>>;
   onClose: () => void;
-  onConfirm: (mode: ForwardMode, target: TaggedUser, note: string, approvalTimeValue?: unknown) => Promise<void>;
+  onConfirm: (
+    mode: ForwardMode,
+    target: TaggedUser,
+    note: string,
+    approvalTimeValue: unknown,
+    attachments: RequestAttachment[],
+  ) => Promise<void>;
 }) {
   const availableModes = (Object.keys(MODE_LABEL) as ForwardMode[]).filter(
     (m) => m !== "forward_then_approve" || allowForwardThenApprove,
@@ -70,6 +80,9 @@ export default function ForwardModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [noteInvalid, setNoteInvalid] = useState(false);
+  const [files, setFiles] = useState<File[]>([]);
+  const [filesInvalid, setFilesInvalid] = useState(false);
+  const uploadPicked = useDecisionAttachmentUploader();
 
   // Góp ý CodeRabbit (review PR #4, 24/08/2026): nếu `allowForwardThenApprove`
   // đổi từ true → false NGAY LÚC modal đang mở (nhóm vừa bị tắt cờ), radio
@@ -86,6 +99,7 @@ export default function ForwardModal({
 
   const extraField = extraFieldByMode?.[mode];
   const noteMode: DecisionNoteMode = noteModeByMode?.[mode] ?? "optional";
+  const attachmentMode: DecisionNoteMode = attachmentModeByMode?.[mode] ?? "hidden";
 
   const handleConfirm = async () => {
     if (target.length === 0) {
@@ -101,10 +115,23 @@ export default function ForwardModal({
       setError("Nhóm này yêu cầu nhập ý kiến khi chuyển tiếp.");
       return;
     }
+    if (attachmentMode === "required" && files.length === 0) {
+      setFilesInvalid(true);
+      setError("Nhóm này yêu cầu đính kèm tệp khi chuyển tiếp.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
-      await onConfirm(mode, target[0], noteMode === "hidden" ? "" : note.trim(), extraField ? fieldValue : undefined);
+      // Kiểu đang chọn tắt ô tệp → không gửi tệp (dù trước đó đã chọn ở kiểu khác).
+      const attachments = attachmentMode === "hidden" ? [] : await uploadPicked(files);
+      await onConfirm(
+        mode,
+        target[0],
+        noteMode === "hidden" ? "" : note.trim(),
+        extraField ? fieldValue : undefined,
+        attachments,
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Có lỗi xảy ra.");
       setSubmitting(false);
@@ -156,6 +183,7 @@ export default function ForwardModal({
                     setMode(m);
                     setFieldValue(undefined);
                     setNoteInvalid(false);
+                    setFilesInvalid(false);
                   }}
                 />
                 <span className="flex-1">{MODE_LABEL[m]}</span>
@@ -187,6 +215,16 @@ export default function ForwardModal({
           }}
           invalid={noteInvalid}
           placeholder=""
+        />
+        <DecisionAttachmentInput
+          mode={attachmentMode}
+          files={files}
+          onChange={(next) => {
+            setFiles(next);
+            if (next.length > 0) setFilesInvalid(false);
+          }}
+          invalid={filesInvalid}
+          disabled={submitting}
         />
         {error && <p className="text-[12px] text-[var(--color-danger-red)]">{error}</p>}
       </div>

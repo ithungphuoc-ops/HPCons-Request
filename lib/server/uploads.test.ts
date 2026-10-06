@@ -1,5 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { isOwnUploadPath } from "./uploads";
+import { buildUploadPath, isOwnUploadPath } from "./uploads";
+import { isFreshOwnUploadPath } from "./decision-attachments";
+
+describe("buildUploadPath — không trùng path khi ký nhiều tệp cùng lúc", () => {
+  it("2 tệp tên ngoài ASCII cùng ms → path khác nhau", () => {
+    const a = buildUploadPath("uA", "Ảnh.jpg", 1791253410818);
+    const b = buildUploadPath("uA", "Ẩnh.jpg", 1791253410818);
+    expect(a).not.toBe(b);
+    expect(a).toMatch(/^requests\/uA\/1791253410818-[a-z0-9]{8}-_nh\.jpg$/);
+  });
+
+  it("path mới vẫn qua isOwnUploadPath + kiểm tệp quyết định; path cũ (không phần ngẫu nhiên) vẫn hợp lệ", () => {
+    const now = Date.now();
+    const p = buildUploadPath("uA", "Biên bản.pdf", now - 1000);
+    expect(isOwnUploadPath(p, "uA")).toBe(true);
+    expect(isFreshOwnUploadPath(p, "uA", now)).toBe(true);
+    expect(isFreshOwnUploadPath(`requests/uA/${now - 1000}-Bi_n_b_n.pdf`, "uA", now)).toBe(true);
+  });
+});
 
 describe("isOwnUploadPath — chặn path 'vay mượn' khi thêm tài liệu đính kèm", () => {
   it("path đúng do chính người gọi tải lên (đúng namespace requests/{uid}/...) → hợp lệ", () => {

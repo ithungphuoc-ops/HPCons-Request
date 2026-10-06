@@ -9,13 +9,25 @@ import {
   isApprovalTimeValueMissing,
   missingRequiredNote,
 } from "@/lib/approval-logic";
+import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase/admin";
 import { sanitizeDecisionNoteInput } from "@/lib/decision-note";
 import { apiErrorResponse } from "@/lib/http";
 import { notifyFollowersFullyApproved, notifyPendingApprovers, notifySubmitterResult } from "@/lib/server/notification-emails";
 import { recomputeDeadlineForNextStep } from "@/lib/server/requests";
+import { sanitizeDecisionAttachmentsInput } from "@/lib/server/decision-attachments";
+import { verifyUploadedAttachment } from "@/lib/server/verify-upload";
+import { MAX_DIRECT_UPLOAD_FILE_SIZE } from "@/lib/constants";
 import { requireSession } from "@/lib/session";
-import type { ApprovalTimeField, GroupNotificationRules, ProposalGroup, RequestInstance, TaggedUser } from "@/lib/types";
+import type {
+  ApprovalTimeField,
+  GroupNotificationRules,
+  ProposalGroup,
+  RequestAttachment,
+  RequestHistoryEntry,
+  RequestInstance,
+  TaggedUser,
+} from "@/lib/types";
 import { guiCacViec, taoViecDongBo } from "@/lib/dong-bo/hang-cho";
 
 // Gửi sang Kho / Thu mua chạy trong after() của chính lần gọi này — cho đủ thời gian (gói miễn phí
@@ -33,6 +45,10 @@ interface DecisionBody {
    * trị 2 field này từ client (xem đoạn validate approvalTimeField bên dưới). */
   approvalTimeFieldId?: string;
   approvalTimeValue?: unknown;
+  /** "Đính kèm tệp khi duyệt" — tệp đã tải THẲNG lên R2 (link ký sẵn, qua
+   * lib/upload-client.ts) TRƯỚC khi gọi route này, giống luồng "Điều chỉnh
+   * sau duyệt". Server kiểm lại path + đo kích thước thật. */
+  attachments?: unknown;
 }
 
 const ACTION_LABEL: Record<DecisionBody["decision"], string> = {
@@ -67,6 +83,8 @@ export async function POST(
       body.decision === "approve_and_forward" || body.decision === "forward_then_approve";
     let requireDecisionNote: ProposalGroup["requireDecisionNote"];
     let decisionNoteEnabled: ProposalGroup["decisionNoteEnabled"];
+    let decisionAttachmentEnabled: ProposalGroup["decisionAttachmentEnabled"];
+    let requireDecisionAttachment: ProposalGroup["requireDecisionAttachment"];
     let approvalTimeFields: ApprovalTimeField[] = [];
     // 3 field dùng để TÍNH LẠI deadlineAt khi chuyển sang bước duyệt tiếp
     // theo — xem recomputeDeadlineForNextStep() (lib/server/requests.ts).
@@ -89,6 +107,8 @@ export async function POST(
       const groupData = groupSnap.data() as Partial<ProposalGroup> | undefined;
       requireDecisionNote = groupData?.requireDecisionNote;
       decisionNoteEnabled = groupData?.decisionNoteEnabled;
+      decisionAttachmentEnabled = groupData?.decisionAttachmentEnabled;
+      requireDecisionAttachment = groupData?.requireDecisionAttachment;
       approvalTimeFields = groupData?.approvalTimeFields ?? [];
       approverSlaEnabled = groupData?.approverSlaEnabled;
       slaByWorkCalendar = groupData?.slaByWorkCalendar;
@@ -112,6 +132,20 @@ export async function POST(
           : `Nhóm này yêu cầu nhập ý kiến khi ${body.decision === "approved" ? "chấp thuận" : "chuyển tiếp"}.`;
       return NextResponse.json({ error: message }, { status: 400 });
     }
+    // "Đính kèm tệp khi duyệt" — kiểm dạng/path/số tệp/bắt buộc (hàm thuần),
+    // ô đã tắt → bỏ tệp. "Trả lại" luôn có ô, không bắt buộc.
+    const attachmentInput = sanitizeDecisionAttachmentsInput({
+      decision: body.decision,
+      raw: body.attachments,
+      group: { decisionAttachmentEnabled, requireDecisionAttachment },
+      uid: session.uid,
+      existingPaths: (current.attachments ?? []).map((a) => a.path),
+      nowMs: Date.now(),
+    });
+    if (!attachmentInput.ok) {
+      return NextResponse.json({ error: attachmentInput.error }, { status: 400 });
+    }
+
     // Chặn server-side, không chỉ ẩn UI — nhóm tắt cờ này (Sếp chốt
     // 24/08/2026, xem ForwardModal.tsx) không cho "Chuyển tiếp và Duyệt"
     // (người nhận xử lý trước rồi mới quay lại người chuyển).
@@ -158,6 +192,37 @@ export async function POST(
       ? { ...(current.approvalTimeValues ?? {}), [matchedApprovalTimeField.id]: body.approvalTimeValue }
       : current.approvalTimeValues;
 
+    // Đo kích thước THẬT trên R2 (không tin số client gửi) — cùng hàm với
+    // route attachments/adjustment. Làm TRƯỚC khi ghi quyết định: tệp lỗi →
+    // 400, quyết định chưa được ghi.
+    const decisionAttachments: RequestAttachment[] = [];
+    for (const att of attachmentInput.attachments) {
+      const verified = await verifyUploadedAttachment(att, session.uid, MAX_DIRECT_UPLOAD_FILE_SIZE);
+      if (!verified.ok) {
+        return NextResponse.json({ error: verified.error }, { status: 400 });
+      }
+      decisionAttachments.push({
+        name: att.name,
+        path: att.path,
+        size: verified.size,
+        source: "decision",
+        addedBy: session.name,
+        addedAt: nowIso,
+      });
+    }
+    // Ghi CÙNG lần cập nhật với quyết định: dòng lịch sử nhận tên tệp, mảng
+    // `attachments` nối thêm bằng arrayUnion (nguyên tử, không đè tệp người
+    // khác vừa thêm song song).
+    const attachmentNamesPart: Pick<RequestHistoryEntry, "attachmentNames"> = decisionAttachments.length
+      ? { attachmentNames: decisionAttachments.map((a) => a.name) }
+      : {};
+    const attachmentsWrite = decisionAttachments.length
+      ? { attachments: FieldValue.arrayUnion(...decisionAttachments) }
+      : {};
+    const attachmentsAfter = decisionAttachments.length
+      ? { attachments: [...(current.attachments ?? []), ...decisionAttachments] }
+      : {};
+
     if (body.decision === "returned") {
       if (!canApproverAct(current.approvalFlow, current.approvers, session.uid)) {
         return NextResponse.json(
@@ -170,10 +235,10 @@ export async function POST(
       const approvers = current.approvers.map((a) => ({ ...a, decision: "pending" as const }));
       const history = [
         ...current.history,
-        { at: nowIso, actor: session.name, action: ACTION_LABEL.returned, note: body.note },
+        { at: nowIso, actor: session.name, action: ACTION_LABEL.returned, note: body.note, ...attachmentNamesPart },
       ];
       const viewedAt = { ...current.viewedAt, [session.uid]: nowIso };
-      await ref.update({ approvers, status: "returned", history, updatedAt: nowIso, viewedAt });
+      await ref.update({ approvers, status: "returned", history, updatedAt: nowIso, viewedAt, ...attachmentsWrite });
       const updated: RequestInstance = {
         ...current,
         approvers,
@@ -181,6 +246,7 @@ export async function POST(
         history,
         updatedAt: nowIso,
         viewedAt,
+        ...attachmentsAfter,
       };
       return NextResponse.json({ request: updated });
     }
@@ -224,6 +290,7 @@ export async function POST(
           action: ACTION_LABEL[body.decision],
           target: body.target.name,
           note: body.note,
+          ...attachmentNamesPart,
         },
       ];
       const viewedAt = { ...current.viewedAt, [session.uid]: nowIso };
@@ -247,8 +314,8 @@ export async function POST(
         viewedAt,
       };
       if (deadlineAt !== undefined) patch.deadlineAt = deadlineAt;
-      await ref.update(patch);
-      const updated: RequestInstance = { ...current, ...patch };
+      await ref.update({ ...patch, ...attachmentsWrite });
+      const updated: RequestInstance = { ...current, ...patch, ...attachmentsAfter };
 
       // Email thông báo thật (Sếp chốt 24/08/2026) — người vừa được chuyển
       // tới (hoặc người kế tiếp theo thứ tự) đang chờ xử lý.
@@ -284,7 +351,7 @@ export async function POST(
     const status = getRequestStatus(current.approvalFlow, approvers);
     const history = [
       ...current.history,
-      { at: nowIso, actor: session.name, action: ACTION_LABEL[body.decision], note: body.note },
+      { at: nowIso, actor: session.name, action: ACTION_LABEL[body.decision], note: body.note, ...attachmentNamesPart },
     ];
 
     const viewedAt = { ...current.viewedAt, [session.uid]: nowIso };
@@ -307,9 +374,9 @@ export async function POST(
       viewedAt,
     };
     if (deadlineAt !== undefined) decisionPatch.deadlineAt = deadlineAt;
-    await ref.update(decisionPatch);
+    await ref.update({ ...decisionPatch, ...attachmentsWrite });
 
-    const updated: RequestInstance = { ...current, ...decisionPatch };
+    const updated: RequestInstance = { ...current, ...decisionPatch, ...attachmentsAfter };
 
     // Email thông báo thật (Sếp chốt 24/08/2026): còn "pending" → báo người
     // kế tiếp đang tới lượt; đã xong (approved/rejected) → báo người tạo

@@ -5,8 +5,9 @@ import Modal from "@/components/shared/Modal";
 import { cancelButtonClass, confirmButtonClass } from "@/components/shared/form-styles";
 import ApprovalTimeFieldControl, { isApprovalTimeValueMissing } from "@/components/request/ApprovalTimeFieldControl";
 import DecisionNoteInput from "@/components/request/DecisionNoteInput";
+import DecisionAttachmentInput, { useDecisionAttachmentUploader } from "@/components/request/DecisionAttachmentInput";
 import type { DecisionNoteMode } from "@/lib/decision-note";
-import type { ApprovalTimeField } from "@/lib/types";
+import type { ApprovalTimeField, RequestAttachment } from "@/lib/types";
 
 /**
  * Hộp xác nhận "Chấp thuận". Mở khi có ÍT NHẤT 1 trong 2: ô "Ý kiến phê
@@ -17,19 +18,29 @@ import type { ApprovalTimeField } from "@/lib/types";
 export default function ApproveConfirmModal({
   field,
   noteMode,
+  attachmentMode = "hidden",
   onClose,
   onConfirm,
 }: {
   field?: ApprovalTimeField["field"];
   noteMode: DecisionNoteMode;
+  /** "Đính kèm tệp khi duyệt" của nhóm cho Chấp thuận (mặc định không có ô). */
+  attachmentMode?: DecisionNoteMode;
   onClose: () => void;
-  onConfirm: (note: string | undefined, approvalTimeValue: unknown) => Promise<void>;
+  onConfirm: (
+    note: string | undefined,
+    approvalTimeValue: unknown,
+    attachments: RequestAttachment[],
+  ) => Promise<void>;
 }) {
   const [value, setValue] = useState<unknown>(undefined);
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [noteInvalid, setNoteInvalid] = useState(false);
+  const [files, setFiles] = useState<File[]>([]);
+  const [filesInvalid, setFilesInvalid] = useState(false);
+  const uploadPicked = useDecisionAttachmentUploader();
 
   const handleConfirm = async () => {
     if (field && isApprovalTimeValueMissing(field, value)) {
@@ -41,10 +52,21 @@ export default function ApproveConfirmModal({
       setError("Nhóm này yêu cầu nhập ý kiến khi chấp thuận.");
       return;
     }
+    if (attachmentMode === "required" && files.length === 0) {
+      setFilesInvalid(true);
+      setError("Nhóm này yêu cầu đính kèm tệp khi chấp thuận.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
-      await onConfirm(noteMode === "hidden" ? undefined : note.trim() || undefined, field ? value : undefined);
+      // Tệp lên R2 TRƯỚC, rồi mới gửi quyết định (như luồng Điều chỉnh sau duyệt).
+      const attachments = attachmentMode === "hidden" ? [] : await uploadPicked(files);
+      await onConfirm(
+        noteMode === "hidden" ? undefined : note.trim() || undefined,
+        field ? value : undefined,
+        attachments,
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Có lỗi xảy ra.");
       setSubmitting(false);
@@ -79,6 +101,16 @@ export default function ApproveConfirmModal({
           }}
           invalid={noteInvalid}
           autoFocus={!field}
+        />
+        <DecisionAttachmentInput
+          mode={attachmentMode}
+          files={files}
+          onChange={(next) => {
+            setFiles(next);
+            if (next.length > 0) setFilesInvalid(false);
+          }}
+          invalid={filesInvalid}
+          disabled={submitting}
         />
         {error && <p className="text-[12px] text-[var(--color-danger-red)]">{error}</p>}
       </div>

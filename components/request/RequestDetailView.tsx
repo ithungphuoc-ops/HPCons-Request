@@ -51,6 +51,11 @@ import ApproverProgressModal from "@/components/request/ApproverProgressModal";
 import ApproverOpinionsModal from "@/components/request/ApproverOpinionsModal";
 import { countOpinionsByApprover, extractApproverOpinions } from "@/lib/approver-opinions";
 import { decisionNoteMode, resolveDecisionNoteRules, type DecisionNoteMode } from "@/lib/decision-note";
+import {
+  decisionAttachmentMode,
+  isDecisionAttachment,
+  resolveDecisionAttachmentRules,
+} from "@/lib/decision-attachment";
 import { formatCountdown, type ProgressGroupSettings } from "@/lib/approver-progress";
 import { useAvatarProfilesByUids } from "@/lib/useAvatarProfilesByUids";
 import { canApproverAct } from "@/lib/approval-logic";
@@ -600,6 +605,15 @@ export default function RequestDetailView({
     approve_and_forward: decisionNoteMode(noteRules.approveAndForward),
     forward_then_approve: decisionNoteMode(noteRules.forward),
   };
+  // "Đính kèm tệp khi duyệt" — nhóm cũ/đề xuất trực tiếp: không có ô (server
+  // kiểm lại theo nhóm thật). "Trả lại" luôn có ô, không bắt buộc.
+  const attachmentRules = useMemo(() => resolveDecisionAttachmentRules(currentGroup), [currentGroup]);
+  const approveAttachmentMode = decisionAttachmentMode(attachmentRules.approve);
+  const rejectAttachmentMode = decisionAttachmentMode(attachmentRules.reject);
+  const forwardAttachmentModes: Partial<Record<ForwardMode, DecisionNoteMode>> = {
+    approve_and_forward: decisionAttachmentMode(attachmentRules.approveAndForward),
+    forward_then_approve: decisionAttachmentMode(attachmentRules.forward),
+  };
 
   // Ý kiến người duyệt — trích từ lịch sử (lib/approver-opinions.ts), chỉ đọc.
   const opinions = useMemo(
@@ -608,8 +622,9 @@ export default function RequestDetailView({
         history,
         approversSnapshot: request.approversSnapshot,
         approvers: request.approvers,
+        attachments,
       }),
-    [history, request.approversSnapshot, request.approvers],
+    [history, request.approversSnapshot, request.approvers, attachments],
   );
   const opinionCounts = useMemo(() => countOpinionsByApprover(opinions), [opinions]);
 
@@ -654,6 +669,7 @@ export default function RequestDetailView({
     note?: string,
     approvalTimeValue?: unknown,
     approvalTimeFieldId?: string,
+    decisionAttachments?: RequestAttachment[],
   ) => {
     setActingOn(true);
     setActionError(null);
@@ -666,6 +682,7 @@ export default function RequestDetailView({
           note,
           approvalTimeFieldId,
           approvalTimeValue,
+          ...(decisionAttachments?.length ? { attachments: decisionAttachments } : {}),
         }),
       });
       if (!res.ok) {
@@ -684,7 +701,13 @@ export default function RequestDetailView({
     }
   };
 
-  const forward = async (mode: ForwardMode, target: TaggedUser, note: string, approvalTimeValue?: unknown) => {
+  const forward = async (
+    mode: ForwardMode,
+    target: TaggedUser,
+    note: string,
+    approvalTimeValue: unknown,
+    decisionAttachments: RequestAttachment[],
+  ) => {
     const matchedRecord = forwardRecordByMode[mode];
     const res = await fetch(`/api/requests/${request.id}/decision`, {
       method: "POST",
@@ -695,6 +718,7 @@ export default function RequestDetailView({
         note: note.trim() || undefined,
         approvalTimeValue: matchedRecord ? approvalTimeValue : undefined,
         approvalTimeFieldId: matchedRecord?.id,
+        ...(decisionAttachments.length ? { attachments: decisionAttachments } : {}),
       }),
     });
     if (!res.ok) {
@@ -1005,7 +1029,7 @@ export default function RequestDetailView({
             <button
               type="button"
               onClick={() =>
-                approveField || approveNoteMode !== "hidden"
+                approveField || approveNoteMode !== "hidden" || approveAttachmentMode !== "hidden"
                   ? setApproveConfirmOpen(true)
                   : decide("approved").catch(() => {})
               }
@@ -1380,7 +1404,8 @@ export default function RequestDetailView({
                         <span className="truncate">{att.name}</span>
                         <span className="shrink-0 text-gray-400">({(att.size / 1024 / 1024).toFixed(1)}MB)</span>
                       </button>
-                      {supplementEntry && (
+                      <DecisionAttachmentMeta att={att} />
+                      {supplementEntry && !isDecisionAttachment(att) && (
                         <p className="ml-[19px] text-[10.5px] font-medium text-amber-600">
                           🕘 Đính sau duyệt · lần {i - firstPostApprovalIndex + 1} ·{" "}
                           {new Date(supplementEntry.at).toLocaleString("vi-VN")}
@@ -1391,6 +1416,42 @@ export default function RequestDetailView({
                 })}
               </ul>
             )}
+            {previewingAttachment && (
+              <FilePreviewModal
+                requestId={request.id}
+                attachment={previewingAttachment}
+                onClose={() => setPreviewingAttachment(null)}
+              />
+            )}
+          </div>
+        )}
+
+        {/* "Đính kèm tệp khi duyệt" (06/10/2026): tệp người duyệt gửi kèm lúc
+            đề xuất còn chờ duyệt / bị từ chối / trả lại — trước đây mục "Tài
+            liệu đính kèm" chỉ nằm trong khối "Điều chỉnh đề nghị sau duyệt"
+            (chỉ hiện khi ĐÃ DUYỆT), nên thêm khối CHỈ ĐỌC này cho các trạng
+            thái khác, chỉ khi có tệp. */}
+        {request.status !== "approved" && request.status !== "draft" && attachments.length > 0 && (
+          <div className="mt-4 rounded-[3px] border border-[var(--color-border)] bg-white p-4" data-testid="request-attachments-card">
+            <h2 className="mb-2 flex items-center gap-1.5 text-[14px] font-semibold uppercase tracking-wide text-gray-500">
+              <Paperclip size={14} /> Tài liệu đính kèm
+            </h2>
+            <ul className="flex flex-col gap-1">
+              {attachments.map((att) => (
+                <li key={att.path}>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewingAttachment(att)}
+                    className="flex w-full items-center gap-1.5 text-left text-[14px] text-[var(--color-action-blue)] hover:underline"
+                  >
+                    <Paperclip size={13} className="shrink-0" />
+                    <span className="truncate">{att.name}</span>
+                    <span className="shrink-0 text-gray-400">({(att.size / 1024 / 1024).toFixed(1)}MB)</span>
+                  </button>
+                  <DecisionAttachmentMeta att={att} />
+                </li>
+              ))}
+            </ul>
             {previewingAttachment && (
               <FilePreviewModal
                 requestId={request.id}
@@ -1666,6 +1727,12 @@ export default function RequestDetailView({
                   {entry.note && (
                     <p className="mt-0.5 italic text-gray-400">&quot;{entry.note}&quot;</p>
                   )}
+                  {entry.attachmentNames && entry.attachmentNames.length > 0 && (
+                    <p className="mt-0.5 flex items-start gap-1 text-gray-500">
+                      <Paperclip size={11} className="mt-0.5 shrink-0" />
+                      <span className="break-words">{entry.attachmentNames.join(", ")}</span>
+                    </p>
+                  )}
                   <p className="mt-0.5 text-[12px] text-gray-400">
                     {new Date(entry.at).toLocaleString("vi-VN")}
                   </p>
@@ -1680,6 +1747,7 @@ export default function RequestDetailView({
           extraFieldByMode={forwardFieldsByMode}
           allowForwardThenApprove={permissionRules.approversCanDelegateApproval}
           noteModeByMode={forwardNoteModes}
+          attachmentModeByMode={forwardAttachmentModes}
           onClose={() => setForwardOpen(false)}
           onConfirm={forward}
         />
@@ -1690,9 +1758,10 @@ export default function RequestDetailView({
           confirmLabel="Từ chối"
           extraField={rejectField}
           noteMode={rejectNoteMode}
+          attachmentMode={rejectAttachmentMode}
           onClose={() => setRejectOpen(false)}
-          onConfirm={(note, approvalTimeValue) =>
-            decide("rejected", note || undefined, approvalTimeValue, rejectFieldRecord?.id)
+          onConfirm={(note, approvalTimeValue, files) =>
+            decide("rejected", note || undefined, approvalTimeValue, rejectFieldRecord?.id, files)
           }
         />
       )}
@@ -1700,17 +1769,19 @@ export default function RequestDetailView({
         <ReasonModal
           title="Trả lại đề xuất"
           confirmLabel="Trả lại"
+          attachmentMode="optional"
           onClose={() => setReturnOpen(false)}
-          onConfirm={(note) => decide("returned", note)}
+          onConfirm={(note, _value, files) => decide("returned", note, undefined, undefined, files)}
         />
       )}
       {approveConfirmOpen && (
         <ApproveConfirmModal
           field={approveField}
           noteMode={approveNoteMode}
+          attachmentMode={approveAttachmentMode}
           onClose={() => setApproveConfirmOpen(false)}
-          onConfirm={(note, approvalTimeValue) =>
-            decide("approved", note, approveField ? approvalTimeValue : undefined, approveFieldRecord?.id)
+          onConfirm={(note, approvalTimeValue, files) =>
+            decide("approved", note, approveField ? approvalTimeValue : undefined, approveFieldRecord?.id, files)
           }
         />
       )}
@@ -1866,6 +1937,19 @@ function TableSupplementControl({
         </table>
       </div>
     </div>
+  );
+}
+
+/** Dòng "📎 Đính kèm khi duyệt · người · ngày" dưới tệp do người duyệt gửi
+ * kèm quyết định (`source: "decision"`). Tệp khác → không hiện gì. */
+function DecisionAttachmentMeta({ att }: { att: RequestAttachment }) {
+  if (!isDecisionAttachment(att)) return null;
+  return (
+    <p className="ml-[19px] text-[11.5px] font-medium text-[var(--color-confirm-green)]" data-testid="decision-attachment-meta">
+      📎 Đính kèm khi duyệt
+      {att.addedBy ? ` · ${att.addedBy}` : ""}
+      {att.addedAt ? ` · ${new Date(att.addedAt).toLocaleDateString("vi-VN")}` : ""}
+    </p>
   );
 }
 

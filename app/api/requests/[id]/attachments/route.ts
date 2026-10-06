@@ -1,4 +1,5 @@
 import { after, NextResponse } from "next/server";
+import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase/admin";
 import { guiCacViec, taoViecDongBo } from "@/lib/dong-bo/hang-cho";
 import { createSignedReadUrl } from "@/lib/r2";
@@ -122,14 +123,21 @@ export async function POST(
     if (!verified.ok) {
       return NextResponse.json({ error: verified.error }, { status: 400 });
     }
-    attachment.size = verified.size;
+    // Chỉ giữ 3 trường chuẩn — không lưu trường lạ client tự thêm (vd giả
+    // `source: "decision"` để mạo nhãn "Đính kèm khi duyệt").
+    const cleanAttachment: RequestAttachment = { name: attachment.name, path: attachment.path, size: verified.size };
 
-    const attachments = [...(found.attachments ?? []), attachment];
+    // Danh sách trả về cho client (bản đọc lúc đầu + tệp mới). Ghi xuống
+    // Firestore thì NỐI bằng arrayUnion, không ghi đè cả mảng — tránh xoá mất
+    // tệp vừa thêm từ quyết định duyệt chạy song song (review PR #80).
+    const attachments = [...(found.attachments ?? []), cleanAttachment];
 
     // Chỉ ghi nhật ký "sau duyệt" khi đúng là đang bổ sung sau duyệt — đính
     // file lúc còn draft/pending/returned là hành vi cũ, không cần đếm "lần
     // mấy" (không thuộc phạm vi "Bổ sung sau duyệt").
-    const patch: { attachments: RequestAttachment[]; history?: RequestHistoryEntry[] } = { attachments };
+    const patch: { attachments: FieldValue; history?: RequestHistoryEntry[] } = {
+      attachments: FieldValue.arrayUnion(cleanAttachment),
+    };
     if (found.status === "approved") {
       const priorCount = found.history.filter((h) =>
         h.action.startsWith(ATTACHMENT_SUPPLEMENT_HISTORY_PREFIX),
