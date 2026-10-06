@@ -3,16 +3,13 @@ import { putObject } from "@/lib/r2";
 import { apiErrorResponse } from "@/lib/http";
 import { MAX_UPLOAD_FILE_SIZE, MAX_UPLOAD_FILE_SIZE_LABEL } from "@/lib/constants";
 import { requireSession } from "@/lib/session";
+import { buildUploadPath } from "@/lib/server/uploads";
 import type { RequestAttachment } from "@/lib/types";
 
 export const runtime = "nodejs";
 
 const MAX_FILES = 6;
 const MAX_FILE_SIZE = MAX_UPLOAD_FILE_SIZE;
-
-function sanitizeFileName(name: string): string {
-  return name.replace(/[^a-zA-Z0-9._-]/g, "_");
-}
 
 export async function POST(request: Request) {
   try {
@@ -40,7 +37,8 @@ export async function POST(request: Request) {
 
     const uploaded: RequestAttachment[] = [];
     for (const file of files) {
-      const path = `requests/${session.uid}/${Date.now()}-${sanitizeFileName(file.name)}`;
+      // Dùng chung buildUploadPath (có phần ngẫu nhiên chống trùng path).
+      const path = buildUploadPath(session.uid, file.name);
       const buffer = Buffer.from(await file.arrayBuffer());
       await putObject(path, buffer, file.type || "application/octet-stream");
       uploaded.push({ name: file.name, path, size: file.size });

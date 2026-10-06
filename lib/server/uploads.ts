@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+
 /**
  * Chặn 1 lỗ hổng bảo mật CodeRabbit phát hiện lúc review PR (23/08/2026):
  * `POST /api/requests/[id]/attachments` trước đây lưu thẳng
@@ -24,7 +26,14 @@ export function isOwnUploadPath(path: string, uid: string): boolean {
  * `isOwnUploadPath()` ở trên luôn đúng với mọi tệp, không lệ thuộc route nào
  * sinh ra nó.
  */
-export function buildUploadPath(uid: string, fileName: string): string {
+export function buildUploadPath(uid: string, fileName: string, nowMs: number = Date.now()): string {
   const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
-  return `requests/${uid}/${Date.now()}-${safeName}`;
+  // Phần ngẫu nhiên [a-z0-9] ngay sau mốc ms (06/10/2026, review PR #80): 2
+  // tệp cùng 1 lần ký, cùng ms, tên ngoài ASCII đều thành "_" (vd "Ảnh.jpg" và
+  // "Ẩnh.jpg" → "_nh.jpg") từng ra TRÙNG path → tệp sau ghi đè tệp trước trên
+  // R2. Dạng mới `{ms}-{8 ký tự}-{tên}` vẫn khớp mọi chỗ đang kiểm path (tiền
+  // tố `requests/{uid}/`, regex `^\d+-[A-Za-z0-9._-]+$`); path cũ không có
+  // phần này vẫn hợp lệ y nguyên.
+  const unique = randomBytes(6).toString("hex").slice(0, 8);
+  return `requests/${uid}/${nowMs}-${unique}-${safeName}`;
 }
