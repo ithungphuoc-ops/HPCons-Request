@@ -1,3 +1,4 @@
+import { isAwaitingMyAdjustmentDecision } from "./adjustment-settings";
 import { canApproverAct } from "./approval-logic";
 import type { RequestInstance } from "./types";
 
@@ -85,7 +86,8 @@ export function matchesRequestView(
     case "all":
       return true;
     case "turn":
-      return isRequestMyTurn(request, uid);
+      // Gồm cả "Điều chỉnh sau duyệt" đang chờ chính mình duyệt (06/10/2026).
+      return isRequestMyTurn(request, uid) || isAwaitingMyAdjustmentDecision(request, uid);
     case "overdue":
       return isRequestOverdue(request, now);
     case "bookmarked":

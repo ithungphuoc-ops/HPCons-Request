@@ -4,6 +4,7 @@ import { canApproverAct, hasUnseenUpdate } from "@/lib/approval-logic";
 import { adminDb } from "@/lib/firebase/admin";
 import { apiErrorResponse } from "@/lib/http";
 import { canManageGroupsAtAppScope } from "@/lib/permissions";
+import { isAdjustmentReviewer } from "@/lib/adjustment-settings";
 import { mergeFollowers } from "@/lib/server/conditions";
 import { resolveComputedValue } from "@/lib/server/computed-fields";
 import { dedupeApproversWithMeta } from "@/lib/approval-logic";
@@ -185,8 +186,11 @@ export async function GET(request: Request) {
       const all = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }) as RequestInstance);
 
       const isMine = (r: RequestInstance) => r.submittedBy.uid === session.uid;
+      // Gồm cả đề xuất mình được giao duyệt "Điều chỉnh sau duyệt" (đang
+      // hoặc đã từng — 06/10/2026), để người duyệt điều chỉnh tìm lại được.
       const isSentToMe = (r: RequestInstance) =>
-        r.status !== "draft" && r.approversSnapshot.some((a) => a.id === session.uid);
+        r.status !== "draft" &&
+        (r.approversSnapshot.some((a) => a.id === session.uid) || isAdjustmentReviewer(r, session.uid));
       const isFollowing = (r: RequestInstance) =>
         r.status !== "draft" && r.followers.some((f) => f.id === session.uid);
 

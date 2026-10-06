@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebase/admin";
 import { apiErrorResponse } from "@/lib/http";
 import { canManageGroupsAtAppScope } from "@/lib/permissions";
+import { isAdjustmentReviewer } from "@/lib/adjustment-settings";
 import { requireSession } from "@/lib/session";
 import type { RequestInstance } from "@/lib/types";
 
@@ -31,7 +32,8 @@ export async function GET(request: Request) {
         (r) =>
           r.submittedBy.uid === session.uid ||
           r.approversSnapshot.some((a) => a.id === session.uid) ||
-          r.followers.some((f) => f.id === session.uid),
+          r.followers.some((f) => f.id === session.uid) ||
+          isAdjustmentReviewer(r, session.uid),
       );
     }
 

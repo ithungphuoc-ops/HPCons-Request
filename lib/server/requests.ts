@@ -28,6 +28,7 @@ import {
   type ExternalCodeRecord,
 } from "@/lib/external-code-sources";
 import { canManageGroupsAtAppScope, type Role } from "@/lib/permissions";
+import { isAdjustmentReviewer, pendingAdjustmentFiles } from "@/lib/adjustment-settings";
 import {
   deserializeTableRows,
   isNumericColumnType,
@@ -79,6 +80,11 @@ export function collectAttachmentPaths(
     if (att?.removedAt && !opts.includeRemoved) continue;
     if (att?.path) paths.add(att.path);
   }
+  // Tệp của điều chỉnh ĐANG CHỜ duyệt — chưa vào `attachments` (chỉ vào khi
+  // đủ người duyệt) nhưng người duyệt cần mở ra xem trước khi quyết định.
+  for (const att of pendingAdjustmentFiles(found.pendingAdjustment)) {
+    if (att?.path) paths.add(att.path);
+  }
   return paths;
 }
 
@@ -94,7 +100,11 @@ export function canView(req: RequestInstance, uid: string, role: Role): boolean 
   if (req.status === "draft") return isOwner;
   const isApprover = req.approversSnapshot.some((a) => a.id === uid);
   const isFollower = req.followers.some((f) => f.id === uid);
-  return isOwner || isApprover || isFollower || canManageGroupsAtAppScope(role);
+  // Người duyệt "Điều chỉnh sau duyệt" (06/10/2026): đang được giao (kể cả
+  // được chuyển tiếp tới) hoặc từng được giao — xem isAdjustmentReviewer().
+  return (
+    isOwner || isApprover || isFollower || isAdjustmentReviewer(req, uid) || canManageGroupsAtAppScope(role)
+  );
 }
 
 /**

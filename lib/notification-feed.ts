@@ -1,4 +1,5 @@
 import { canApproverAct } from "@/lib/approval-logic";
+import { isAwaitingMyAdjustmentDecision } from "@/lib/adjustment-settings";
 import {
   ADJUSTMENT_HISTORY_PREFIX,
   ATTACHMENT_SUPPLEMENT_HISTORY_PREFIX,
@@ -222,8 +223,11 @@ export function buildNotificationFeed(requests: RequestInstance[], ctx: Notifica
       );
     }
     // 2. Điều chỉnh sau duyệt đang chờ người xem duyệt.
+    // Mô hình PR #85: 2 người do người điều chỉnh chọn (hoặc người được chuyển
+    // tiếp tới thay đúng phần đó), mỗi người 1 `approvedAt` — dùng chung hàm
+    // với danh sách "Đến lượt duyệt" để 2 nơi không hiểu lệch nhau.
     const pa = r.pendingAdjustment;
-    if (pa && pa.approvers.some((a) => a.uid === uid && !a.approvedAt)) {
+    if (pa && isAwaitingMyAdjustmentDecision(r, uid)) {
       add(
         "adjust-pending",
         { kind: "adjustment_pending", text: `${pa.requestedByName} đề nghị điều chỉnh sau duyệt${quoted(pa.noiDung)}, chờ bạn duyệt`, at: pa.createdAt },

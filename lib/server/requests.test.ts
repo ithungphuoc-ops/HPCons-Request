@@ -468,3 +468,69 @@ describe("collectAttachmentPaths — tệp đã gỡ/đã thay (Sửa tệp đí
     expect(collectAttachmentPaths(req, { includeRemoved: true }).has("requests/u2/2-b.pdf")).toBe(true);
   });
 });
+
+describe("canView — người duyệt Điều chỉnh sau duyệt (06/10/2026)", () => {
+  const base = {
+    id: "r1",
+    status: "approved",
+    submittedBy: { uid: "owner", name: "Chủ" },
+    approversSnapshot: [{ id: "a1", name: "A1", username: "a1", avatarInitial: "A" }],
+    followers: [],
+    values: {},
+    attachments: [],
+  } as unknown as import("@/lib/types").RequestInstance;
+
+  it("người KHÔNG liên quan → không xem được", async () => {
+    const { canView } = await import("./requests");
+    expect(canView(base, "x", "employee")).toBe(false);
+  });
+
+  it("đang nằm trong pendingAdjustment.approvers (kể cả được chuyển tiếp tới, kể cả pending kiểu cũ) → xem được", async () => {
+    const { canView } = await import("./requests");
+    const req = {
+      ...base,
+      pendingAdjustment: {
+        noiDung: "x",
+        attachment: null,
+        requestedByUid: "owner",
+        requestedByName: "Chủ",
+        createdAt: "t",
+        approvers: [{ uid: "rv1", name: "RV1", approvedAt: null }],
+      },
+    };
+    expect(canView(req, "rv1", "employee")).toBe(true);
+    expect(canView(req, "rv2", "employee")).toBe(false);
+  });
+
+  it("từng được giao (adjustmentReviewerUids) → vẫn xem được sau khi điều chỉnh xong", async () => {
+    const { canView } = await import("./requests");
+    const req = { ...base, pendingAdjustment: null, adjustmentReviewerUids: ["rv1"] };
+    expect(canView(req, "rv1", "employee")).toBe(true);
+  });
+
+  it("tải tệp của điều chỉnh ĐANG CHỜ được (collectAttachmentPaths gồm cả dạng cũ 1 tệp và dạng mới nhiều tệp)", async () => {
+    const { collectAttachmentPaths } = await import("./requests");
+    const legacy = {
+      ...base,
+      pendingAdjustment: {
+        noiDung: "", attachment: { name: "a.pdf", path: "requests/owner/1-a.pdf", size: 1 },
+        requestedByUid: "owner", requestedByName: "Chủ", createdAt: "t", approvers: [],
+      },
+    };
+    expect(collectAttachmentPaths(legacy).has("requests/owner/1-a.pdf")).toBe(true);
+    const multi = {
+      ...base,
+      pendingAdjustment: {
+        noiDung: "", attachment: null,
+        attachments: [
+          { name: "b.pdf", path: "requests/owner/2-b.pdf", size: 1 },
+          { name: "c.pdf", path: "requests/owner/3-c.pdf", size: 1 },
+        ],
+        requestedByUid: "owner", requestedByName: "Chủ", createdAt: "t", approvers: [],
+      },
+    };
+    const paths = collectAttachmentPaths(multi);
+    expect(paths.has("requests/owner/2-b.pdf")).toBe(true);
+    expect(paths.has("requests/owner/3-c.pdf")).toBe(true);
+  });
+});

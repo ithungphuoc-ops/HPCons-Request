@@ -12,6 +12,7 @@ import {
 } from "@/lib/server/groups";
 import { sanitizeHelpText } from "@/lib/validation";
 import { DECISION_NOTE_ACTIONS, sanitizeDecisionNoteFlags } from "@/lib/decision-note";
+import { sanitizeAdjustmentFieldRules } from "@/lib/adjustment-settings";
 import { resolveDateLeadTimeNumbers, validateDateLeadTimeNumbers } from "@/lib/date-lead-time";
 import {
   resolveTableColumnRequired,
@@ -68,6 +69,25 @@ export async function PATCH(
         if (patch.decisionAttachmentEnabled[action] !== true && action in patch.requireDecisionAttachment) {
           patch.requireDecisionAttachment[action] = false;
         }
+      }
+    }
+
+    // "Điều chỉnh sau duyệt" — ô Ghi chú / Đính kèm (06/10/2026): ép đúng 4
+    // cờ boolean, không cho tắt cả 2 ô, ô tắt thì không bắt buộc.
+    if (patch.adjustmentFieldRules !== undefined) {
+      const clean = sanitizeAdjustmentFieldRules(patch.adjustmentFieldRules);
+      if (!clean) {
+        return NextResponse.json({ error: "adjustmentFieldRules không hợp lệ." }, { status: 400 });
+      }
+      patch.adjustmentFieldRules = clean;
+    }
+    // "Cho phép người theo dõi cũng bấm Điều chỉnh" — `allowFollowers` phải là
+    // boolean. Các key cũ (branches/catchAllApprovers, PR #68) client gửi lại
+    // nguyên như đọc được → giữ nguyên, không xoá dữ liệu cũ.
+    if (patch.adjustmentApprovalRules != null) {
+      const rules = patch.adjustmentApprovalRules as unknown;
+      if (typeof rules !== "object" || Array.isArray(rules) || typeof (rules as { allowFollowers?: unknown }).allowFollowers !== "boolean") {
+        return NextResponse.json({ error: "adjustmentApprovalRules không hợp lệ." }, { status: 400 });
       }
     }
 

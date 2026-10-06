@@ -1,20 +1,26 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useParams } from "next/navigation";
-import { Plus, X } from "lucide-react";
+import { useState } from "react";
 import RequireAdminRole from "@/components/request/RequireAdminRole";
 import { useRequestContext } from "@/context/RequestContext";
-import { selectClass } from "@/components/shared/form-styles";
-import type { AdjustmentApprovalBranch, AdjustmentApprovalRules, AdjustmentApproverRef } from "@/lib/types";
+import {
+  ADJUSTMENT_APPROVER_COUNT,
+  resolveAdjustmentFieldRules,
+  type AdjustmentFieldRules,
+} from "@/lib/adjustment-settings";
+import type { AdjustmentApprovalRules, ProposalGroup } from "@/lib/types";
 
-interface DepartmentLite {
-  id: string;
-  name: string;
-}
-
-const EMPTY_RULES: AdjustmentApprovalRules = { allowFollowers: true, branches: [], catchAllApprovers: [] };
-
+/**
+ * Tab "Điều chỉnh sau duyệt" của nhóm — từ 06/10/2026 (Sếp duyệt demo
+ * dieu-chinh-tu-chon-nguoi-duyet) BỎ bảng "nhánh theo phòng ban → người duyệt"
+ * (PR #68): người điều chỉnh tự chọn đúng 2 người duyệt, theo "Hướng dẫn điều
+ * chỉnh sau duyệt" chung toàn app (Cài đặt chung). Ở đây chỉ còn:
+ * - "Cho phép người theo dõi cũng bấm Điều chỉnh" (giữ theo nhóm như cũ).
+ * - Ô Ghi chú / Đính kèm tệp: Có / Bắt buộc (cùng kiểu "Ý kiến khi phê duyệt").
+ * Dữ liệu nhánh cũ KHÔNG bị xoá (lưu lại nguyên khi bật/tắt ô người theo dõi).
+ */
 export default function GroupAdjustmentApprovalPage() {
   return (
     <RequireAdminRole>
@@ -27,279 +33,133 @@ function GroupAdjustmentApprovalPageInner() {
   const params = useParams<{ groupId: string }>();
   const { getGroupById, updateGroup } = useRequestContext();
   const group = getGroupById(params.groupId);
-  const [departments, setDepartments] = useState<DepartmentLite[] | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/directory/departments")
-      .then((res) => (res.ok ? res.json() : Promise.reject(new Error("fetch failed"))))
-      .then((data: { departments?: DepartmentLite[] }) => {
-        if (!cancelled) setDepartments(data.departments ?? []);
-      })
-      .catch(() => {
-        if (!cancelled) setDepartments([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const [hint, setHint] = useState<string | null>(null);
 
   if (!group) return null;
 
-  const enabled = group.adjustmentApprovalRules != null;
-  const rules = group.adjustmentApprovalRules ?? EMPTY_RULES;
+  const rules = group.adjustmentApprovalRules ?? null;
+  const allowFollowers = rules?.allowFollowers === true;
+  const legacyBranchCount = (rules?.branches?.length ?? 0) + ((rules?.catchAllApprovers?.length ?? 0) > 0 ? 1 : 0);
+  const fieldRules = resolveAdjustmentFieldRules(group);
 
-  const save = (next: AdjustmentApprovalRules | null) => {
+  const setAllowFollowers = (checked: boolean) => {
+    if (!rules && !checked) return;
+    // Giữ nguyên mọi key cũ (branches/catchAllApprovers) — chỉ đổi allowFollowers.
+    const next: AdjustmentApprovalRules = { ...(rules ?? {}), allowFollowers: checked };
     updateGroup(group.id, { adjustmentApprovalRules: next });
   };
+
+  const setFieldRule = (which: keyof AdjustmentFieldRules, patch: Partial<{ enabled: boolean; required: boolean }>) => {
+    const next: AdjustmentFieldRules = {
+      note: { ...fieldRules.note },
+      attachment: { ...fieldRules.attachment },
+    };
+    next[which] = { ...next[which], ...patch };
+    if (!next[which].enabled) next[which].required = false;
+    if (!next.note.enabled && !next.attachment.enabled) {
+      setHint("Phải giữ ít nhất 1 trong 2 ô (Ghi chú hoặc Đính kèm tệp) — điều chỉnh không được rỗng.");
+      return;
+    }
+    setHint(null);
+    const value: NonNullable<ProposalGroup["adjustmentFieldRules"]> = {
+      noteEnabled: next.note.enabled,
+      noteRequired: next.note.required,
+      attachmentEnabled: next.attachment.enabled,
+      attachmentRequired: next.attachment.required,
+    };
+    updateGroup(group.id, { adjustmentFieldRules: value });
+  };
+
+  const rows: { key: keyof AdjustmentFieldRules; label: string }[] = [
+    { key: "note", label: "Ghi chú" },
+    { key: "attachment", label: "Đính kèm tệp" },
+  ];
 
   return (
     <div className="max-w-[760px]">
       <h2 className="mb-1 text-[15px] font-semibold text-gray-800">Điều chỉnh sau duyệt</h2>
-      <p className="mb-4 text-[12px] text-gray-500">
-        Mặc định chỉ người gửi đề xuất mới sửa được số lượng/quy cách sau khi đã duyệt, và lưu thẳng ngay. Bật mục
-        này để mở thêm quyền cho người theo dõi theo phòng ban, kèm 1 hoặc nhiều người phải duyệt trước khi có hiệu
-        lực.
+      <p className="mb-4 text-[12.5px] text-gray-500">
+        Mọi điều chỉnh đề nghị đã duyệt đều phải được duyệt lại: người điều chỉnh tự chọn đúng {ADJUSTMENT_APPROVER_COUNT}{" "}
+        người duyệt (gợi ý nhanh: Người duyệt cuối, Trưởng phòng Thu mua) — đủ cả {ADJUSTMENT_APPROVER_COUNT} người duyệt
+        thì điều chỉnh mới có hiệu lực. Nội dung hướng dẫn chọn người là cài đặt chung toàn app, sửa ở{" "}
+        <Link href="/request/settings/general" className="font-medium text-[var(--color-action-blue)] hover:underline">
+          Cài đặt chung
+        </Link>
+        .
       </p>
 
-      <label className="mb-4 flex items-center gap-2 rounded-[3px] border border-[var(--color-border)] bg-white p-3">
+      <label className="mb-4 flex items-start gap-2 rounded-[3px] border border-[var(--color-border)] bg-white p-3">
         <input
           type="checkbox"
-          className="h-4 w-4"
-          checked={enabled}
-          onChange={(e) => save(e.target.checked ? EMPTY_RULES : null)}
+          className="mt-0.5 h-4 w-4 shrink-0"
+          checked={allowFollowers}
+          onChange={(e) => setAllowFollowers(e.target.checked)}
+          data-testid="adjustment-allow-followers"
         />
-        <span className="text-[14px] font-medium text-gray-700">Bật thiết lập riêng cho nhóm này</span>
+        <span>
+          <span className="block text-[14px] font-medium text-gray-700">
+            Cho phép người theo dõi (không phải người gửi) cũng bấm &quot;Điều chỉnh&quot;
+          </span>
+          <span className="block text-[12px] text-gray-400">
+            Tắt thì chỉ người gửi đề xuất mới bấm được.
+          </span>
+        </span>
       </label>
 
-      {!enabled ? (
-        <p className="rounded bg-gray-50 px-3 py-2 text-[13px] text-gray-500">
-          Đang TẮT — chỉ người gửi đề xuất sửa được, lưu thẳng ngay, không ai cần duyệt (hành vi mặc định).
+      <div className="rounded-[3px] border border-[var(--color-border)] bg-white p-3">
+        <p className="mb-1 text-[14px] font-medium text-gray-700">Nội dung điều chỉnh</p>
+        <p className="mb-2 text-[12px] text-gray-400">
+          Có hiện ô ghi chú / ô đính kèm tệp (tối đa 6 tệp) trong hộp Điều chỉnh không, và có bắt buộc không. Luôn
+          phải có ít nhất ghi chú hoặc 1 tệp mới gửi được.
         </p>
-      ) : (
-        <>
-          <label className="mb-4 flex items-start gap-2 rounded-[3px] border border-[var(--color-border)] bg-white p-3">
-            <input
-              type="checkbox"
-              className="mt-0.5 h-4 w-4 shrink-0"
-              checked={rules.allowFollowers}
-              onChange={(e) => save({ ...rules, allowFollowers: e.target.checked })}
-            />
-            <span>
-              <span className="block text-[14px] font-medium text-gray-700">
-                Cho phép người theo dõi (không phải người gửi) cũng bấm &quot;Điều chỉnh&quot;
-              </span>
-              <span className="block text-[12px] text-gray-400">
-                Tắt thì chỉ người gửi đề xuất mới bấm được — bảng nhánh bên dưới chỉ áp dụng cho người gửi.
-              </span>
-            </span>
-          </label>
-
-          <div className="mb-3 flex flex-col gap-3">
-            {rules.branches.map((branch, i) => (
-              <BranchCard
-                key={branch.id}
-                branch={branch}
-                departments={departments}
-                onChange={(next) => {
-                  const branches = rules.branches.map((b, idx) => (idx === i ? next : b));
-                  save({ ...rules, branches });
-                }}
-                onRemove={() => save({ ...rules, branches: rules.branches.filter((_, idx) => idx !== i) })}
-              />
-            ))}
-          </div>
-
-          <button
-            type="button"
-            onClick={() =>
-              save({
-                ...rules,
-                branches: [...rules.branches, { id: crypto.randomUUID(), departments: [], requiredApprovers: [] }],
-              })
-            }
-            className="mb-4 flex items-center gap-1.5 rounded border border-dashed border-gray-300 px-3 py-2 text-[13px] font-medium text-gray-500 hover:border-[var(--color-action-blue)] hover:text-[var(--color-action-blue)]"
-          >
-            <Plus size={14} /> Thêm nhánh
-          </button>
-
-          <div className="rounded-[3px] border border-dashed border-amber-300 bg-amber-50 p-3">
-            <p className="mb-2 text-[12.5px] font-semibold uppercase tracking-wide text-amber-700">
-              Nhánh mặc định — người theo dõi không khớp nhánh nào ở trên
-            </p>
-            <p className="mb-2 text-[12px] text-amber-700">
-              Người gửi đề xuất không khớp nhánh nào ở trên LUÔN lưu thẳng ngay, không đọc mục này. Để trống bên dưới
-              = người theo dõi không khớp nhánh nào thì không được bấm &quot;Điều chỉnh&quot;.
-            </p>
-            <ApproverChips
-              value={rules.catchAllApprovers}
-              departments={departments}
-              onChange={(next) => save({ ...rules, catchAllApprovers: next })}
-            />
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-function BranchCard({
-  branch,
-  departments,
-  onChange,
-  onRemove,
-}: {
-  branch: AdjustmentApprovalBranch;
-  departments: DepartmentLite[] | null;
-  onChange: (next: AdjustmentApprovalBranch) => void;
-  onRemove: () => void;
-}) {
-  return (
-    <div className="rounded-[3px] border border-[var(--color-border)] bg-white p-3">
-      <div className="mb-2 flex items-center justify-between">
-        <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Nhánh</span>
-        <button type="button" onClick={onRemove} aria-label="Xoá nhánh" className="text-gray-300 hover:text-[var(--color-danger-red)]">
-          <X size={15} />
-        </button>
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-[14px]" data-testid="adjustment-field-rules-table">
+            <thead>
+              <tr className="border-b border-[var(--color-border)] text-[12px] text-gray-400">
+                <th className="py-1.5 pr-2 text-left font-medium">Ô</th>
+                <th className="w-[56px] px-2 py-1.5 text-center font-medium">Có</th>
+                <th className="w-[72px] px-2 py-1.5 text-center font-medium">Bắt buộc</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(({ key, label }) => {
+                const rule = fieldRules[key];
+                return (
+                  <tr key={key} className="border-b border-[var(--color-border)] last:border-b-0">
+                    <td className="py-2 pr-2 text-gray-700">{label}</td>
+                    <td className="px-2 py-2 text-center">
+                      <input
+                        type="checkbox"
+                        aria-label={`${label} — có`}
+                        checked={rule.enabled}
+                        onChange={(e) => setFieldRule(key, { enabled: e.target.checked })}
+                      />
+                    </td>
+                    <td className="px-2 py-2 text-center">
+                      <input
+                        type="checkbox"
+                        aria-label={`${label} — bắt buộc`}
+                        checked={rule.enabled && rule.required}
+                        disabled={!rule.enabled}
+                        title={rule.enabled ? undefined : "Bật “Có” trước"}
+                        className="disabled:cursor-not-allowed disabled:opacity-40"
+                        onChange={(e) => setFieldRule(key, { required: e.target.checked })}
+                      />
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {hint && <p className="mt-2 text-[12px] text-[var(--color-danger-red)]">{hint}</p>}
       </div>
 
-      <p className="mb-1 text-[12px] font-medium text-gray-600">Nếu người điều chỉnh thuộc phòng ban</p>
-      <DepartmentChips
-        value={branch.departments}
-        departments={departments}
-        onChange={(next) => onChange({ ...branch, departments: next })}
-      />
-
-      <p className="mb-1 mt-3 text-[12px] font-medium text-gray-600">Thì cần những ai duyệt</p>
-      <ApproverChips
-        value={branch.requiredApprovers}
-        departments={departments}
-        onChange={(next) => onChange({ ...branch, requiredApprovers: next })}
-      />
-      {branch.requiredApprovers.length === 0 && (
-        <p className="mt-1 text-[11.5px] italic text-gray-400">Để trống = không cần ai duyệt, lưu thẳng ngay.</p>
-      )}
-      {branch.requiredApprovers.length > 1 && (
-        <p className="mt-1 text-[11.5px] italic text-gray-400">Tất cả phải duyệt (AND).</p>
-      )}
-    </div>
-  );
-}
-
-function DepartmentChips({
-  value,
-  departments,
-  onChange,
-}: {
-  value: { id: string; name: string }[];
-  departments: DepartmentLite[] | null;
-  onChange: (next: { id: string; name: string }[]) => void;
-}) {
-  const options = (departments ?? []).filter((d) => !value.some((v) => v.id === d.id));
-  return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      {value.map((d) => (
-        <span
-          key={d.id}
-          className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-[12.5px] font-medium text-[var(--color-action-blue)]"
-        >
-          {d.name}
-          <button
-            type="button"
-            onClick={() => onChange(value.filter((v) => v.id !== d.id))}
-            aria-label={`Bỏ phòng ban ${d.name}`}
-            className="text-[var(--color-action-blue)]/60 hover:text-[var(--color-danger-red)]"
-          >
-            <X size={11} />
-          </button>
-        </span>
-      ))}
-      {options.length > 0 && (
-        <select
-          className={`${selectClass} !h-7 !w-auto !py-0 text-[12.5px]`}
-          value=""
-          onChange={(e) => {
-            const dept = options.find((d) => d.id === e.target.value);
-            if (dept) onChange([...value, { id: dept.id, name: dept.name }]);
-          }}
-        >
-          <option value="">+ phòng ban</option>
-          {options.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name}
-            </option>
-          ))}
-        </select>
-      )}
-    </div>
-  );
-}
-
-function approverRefKey(ref: AdjustmentApproverRef): string {
-  return ref.kind === "chi_huy_truong" ? "chi_huy_truong" : `department_leader:${ref.departmentId}`;
-}
-
-function approverRefLabel(ref: AdjustmentApproverRef): string {
-  return ref.kind === "chi_huy_truong" ? "Chỉ huy trưởng" : `Trưởng phòng ${ref.departmentName}`;
-}
-
-function ApproverChips({
-  value,
-  departments,
-  onChange,
-}: {
-  value: AdjustmentApproverRef[];
-  departments: DepartmentLite[] | null;
-  onChange: (next: AdjustmentApproverRef[]) => void;
-}) {
-  const usedKeys = new Set(value.map(approverRefKey));
-  const options: { key: string; ref: AdjustmentApproverRef; label: string }[] = [
-    {
-      key: "chi_huy_truong",
-      ref: { kind: "chi_huy_truong" as const },
-      label: "Chỉ huy trưởng (người duyệt bước 1 của đề xuất)",
-    },
-    ...(departments ?? []).map((d) => ({
-      key: `department_leader:${d.id}`,
-      ref: { kind: "department_leader" as const, departmentId: d.id, departmentName: d.name },
-      label: `Trưởng phòng ${d.name}`,
-    })),
-  ].filter((o) => !usedKeys.has(o.key));
-
-  return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      {value.map((ref) => (
-        <span
-          key={approverRefKey(ref)}
-          className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[12.5px] font-medium text-emerald-700"
-        >
-          {approverRefLabel(ref)}
-          <button
-            type="button"
-            onClick={() => onChange(value.filter((v) => approverRefKey(v) !== approverRefKey(ref)))}
-            aria-label={`Bỏ ${approverRefLabel(ref)}`}
-            className="text-emerald-700/60 hover:text-[var(--color-danger-red)]"
-          >
-            <X size={11} />
-          </button>
-        </span>
-      ))}
-      {options.length > 0 && (
-        <select
-          className={`${selectClass} !h-7 !w-auto !py-0 text-[12.5px]`}
-          value=""
-          onChange={(e) => {
-            const picked = options.find((o) => o.key === e.target.value);
-            if (picked) onChange([...value, picked.ref]);
-          }}
-        >
-          <option value="">+ người duyệt</option>
-          {options.map((o) => (
-            <option key={o.key} value={o.key}>
-              {o.label}
-            </option>
-          ))}
-        </select>
+      {legacyBranchCount > 0 && (
+        <p className="mt-4 rounded bg-gray-50 px-3 py-2 text-[12px] text-gray-500">
+          Nhóm này còn cấu hình &quot;nhánh theo phòng ban&quot; cũ ({legacyBranchCount} mục) — KHÔNG còn áp dụng từ
+          06/10/2026 (người điều chỉnh tự chọn người duyệt). Dữ liệu cũ vẫn được giữ, không bị xoá.
+        </p>
       )}
     </div>
   );

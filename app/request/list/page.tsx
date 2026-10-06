@@ -9,6 +9,7 @@ import RequestDetailView from "@/components/request/RequestDetailView";
 import Avatar from "@/components/request/Avatar";
 import ApproverCluster from "@/components/request/ApproverCluster";
 import { useRequestContext } from "@/context/RequestContext";
+import { canAdjustAfterApproval } from "@/lib/adjustment-settings";
 import { primaryButtonClass } from "@/components/shared/form-styles";
 import HighlightMatch from "@/components/shared/HighlightMatch";
 import { resolveRequestTitle } from "@/lib/request-title";
@@ -638,7 +639,24 @@ function RequestListPageInner() {
           >
             <X size={14} /> Đóng
           </button>
-          <RequestDetailView request={selectedRequest} currentUid={currentUid} onActed={load} />
+          <RequestDetailView
+            request={selectedRequest}
+            currentUid={currentUid}
+            // Tính ngay từ cài đặt nhóm đã tải sẵn trong RequestContext (không
+            // gọi thêm API) — người theo dõi ở nhóm cho phép cũng thấy nút
+            // Điều chỉnh. Máy chủ vẫn kiểm lại khi mở hộp/gửi.
+            viewerAdjustmentAccess={
+              currentUid &&
+              canAdjustAfterApproval(
+                selectedRequest,
+                currentUid,
+                selectedRequest.groupId ? getGroupById(selectedRequest.groupId)?.adjustmentApprovalRules : null,
+              )
+                ? "gated"
+                : "none"
+            }
+            onActed={load}
+          />
         </div>
       )}
     </div>

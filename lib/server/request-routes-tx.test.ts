@@ -107,8 +107,8 @@ vi.mock("@/lib/server/requests", () => ({
 }));
 vi.mock("@/lib/server/hpcore-org", () => ({ isUserInGroupScope: vi.fn(), OUT_OF_SCOPE_MESSAGE: "" }));
 vi.mock("@/lib/server/adjustment-approval-rules", () => ({
-  loadAdjustmentApprovalRules: vi.fn(),
-  resolveAdjustmentPlanForActor: vi.fn(),
+  canAdjustAfterApproval: vi.fn(),
+  loadAdjustmentGroupSettings: vi.fn(),
 }));
 vi.mock("@/lib/dong-bo/hang-cho", () => ({
   guiCacViec: vi.fn(),

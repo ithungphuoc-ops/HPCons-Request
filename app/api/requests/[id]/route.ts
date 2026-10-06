@@ -8,7 +8,7 @@ import { dedupeApproversWithMeta } from "@/lib/approval-logic";
 import { mergeFollowers } from "@/lib/server/conditions";
 import { resolveComputedValue } from "@/lib/server/computed-fields";
 import { canManageGroupsAtAppScope } from "@/lib/permissions";
-import { loadAdjustmentApprovalRules, resolveAdjustmentPlanForActor } from "@/lib/server/adjustment-approval-rules";
+import { canAdjustAfterApproval, loadAdjustmentGroupSettings } from "@/lib/server/adjustment-approval-rules";
 import { bumpNotificationSignal } from "@/lib/server/notification-signal";
 import {
   buildInitialApprovers,
@@ -62,18 +62,21 @@ export async function GET(
     /* ★ 03/10/2026 — hàng chờ đồng bộ: có người mở đề xuất thì máy chủ tranh thủ gửi các việc đã tới
        hạn (của MỌI đề xuất, tối đa 1 lần/phút). Xem lib/dong-bo/hang-cho.ts. */
     after(() => quetViecToiHan());
-    // Chỉ tính (đọc Firestore nhóm + phòng ban App Tổng, có cache 60s) khi
-    // THẬT SỰ cần — đề xuất đã duyệt và người xem là submitter/follower của
-    // chính nó. Field phái sinh theo người xem, KHÔNG lưu Firestore — xem
-    // design.md của change add-adjustment-approval-conditions.
-    let viewerAdjustmentAccess: "direct" | "gated" | "none" = "none";
+    // Người xem có được bấm "Điều chỉnh" không — chỉ đọc nhóm khi THẬT SỰ cần
+    // (đề xuất đã duyệt, người xem là người gửi/người theo dõi). Field phái
+    // sinh theo người xem, KHÔNG lưu Firestore. Từ 06/10/2026 mọi điều chỉnh
+    // đều "gated" (chờ 2 người duyệt do người điều chỉnh chọn).
+    let viewerAdjustmentAccess: "gated" | "none" = "none";
     if (found.status === "approved") {
-      const isSubmitterOrFollower =
-        found.submittedBy.uid === session.uid || found.followers.some((f) => f.id === session.uid);
-      if (isSubmitterOrFollower) {
-        const rules = await loadAdjustmentApprovalRules(found.groupId);
-        const plan = await resolveAdjustmentPlanForActor(found, session.uid, rules);
-        viewerAdjustmentAccess = plan.kind;
+      const isSubmitter = found.submittedBy.uid === session.uid;
+      const isFollower = found.followers.some((f) => f.id === session.uid);
+      if (isSubmitter) {
+        viewerAdjustmentAccess = canAdjustAfterApproval(found, session.uid, null) ? "gated" : "none";
+      } else if (isFollower) {
+        const settings = await loadAdjustmentGroupSettings(found.groupId);
+        viewerAdjustmentAccess = canAdjustAfterApproval(found, session.uid, settings.adjustmentApprovalRules)
+          ? "gated"
+          : "none";
       }
     }
     return NextResponse.json({ request: found, viewerAdjustmentAccess });
