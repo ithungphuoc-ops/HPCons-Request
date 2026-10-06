@@ -296,10 +296,19 @@ export function buildRequestFormModel(input: RequestFormInput): RequestFormModel
     // Nhãn "Đính sau duyệt · lần N" cho K tệp CUỐI — cùng luật với trang chi tiết.
     const supplementEntries = history.filter((h) => h.action.startsWith(ATTACHMENT_SUPPLEMENT_HISTORY_PREFIX));
     const firstPostApproval = attachments.length - supplementEntries.length;
-    const attachmentList = attachments.map((att, i) => {
-      const entry = i >= firstPostApproval ? supplementEntries[i - firstPostApproval] : null;
-      return { name: att.name, meta: entry ? `Đính sau duyệt · lần ${i - firstPostApproval + 1} · ${vnDateTime(entry.at)}` : undefined };
-    });
+    // Vị trí tính trên mảng ĐẦY ĐỦ, rồi mới bỏ tệp đã gỡ/đã thay (giữ dấu vết
+    // trong dữ liệu, không in ra — "Sửa tệp đính kèm khi duyệt", 06/10/2026).
+    const attachmentList = attachments
+      .map((att, i) => {
+        const entry = i >= firstPostApproval ? supplementEntries[i - firstPostApproval] : null;
+        return {
+          removed: !!att.removedAt,
+          name: att.name,
+          meta: entry ? `Đính sau duyệt · lần ${i - firstPostApproval + 1} · ${vnDateTime(entry.at)}` : undefined,
+        };
+      })
+      .filter((a) => !a.removed)
+      .map(({ name, meta }) => ({ name, meta }));
 
     adjustment = { description: ADJUSTMENT_DESCRIPTION, supplementTables, pending, entries, attachments: attachmentList };
   }

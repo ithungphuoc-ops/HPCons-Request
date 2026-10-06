@@ -60,7 +60,13 @@ export async function loadRequest(id: string): Promise<RequestInstance | null> {
  * của đề xuất này — chặn đoán/truy cập path tuỳ ý dù đã qua canView. Dùng
  * chung cho app/api/requests/[id]/attachments (tải về) và
  * .../attachments/content (đọc nội dung cho trình xem Excel/Word). */
-export function collectAttachmentPaths(found: RequestInstance): Set<string> {
+export function collectAttachmentPaths(
+  found: RequestInstance,
+  /** Tệp ĐÃ GỠ/ĐÃ THAY ("Sửa tệp đính kèm khi duyệt", 06/10/2026) ẩn khỏi
+   * danh sách tải: mặc định KHÔNG tính; chỉ Owner/Admin (nơi gọi truyền true)
+   * còn tải được để đối chiếu dấu vết. */
+  opts: { includeRemoved?: boolean } = {},
+): Set<string> {
   const paths = new Set<string>();
   for (const value of Object.values(found.values)) {
     if (!Array.isArray(value)) continue;
@@ -70,6 +76,7 @@ export function collectAttachmentPaths(found: RequestInstance): Set<string> {
     }
   }
   for (const att of found.attachments ?? []) {
+    if (att?.removedAt && !opts.includeRemoved) continue;
     if (att?.path) paths.add(att.path);
   }
   return paths;

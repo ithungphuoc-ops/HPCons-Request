@@ -754,6 +754,18 @@ export interface RequestAttachment {
   addedBy?: string;
   /** Thời điểm đính kèm (ISO) — trùng `at` của dòng lịch sử quyết định. */
   addedAt?: string;
+  /** uid người đính kèm (tệp quyết định ghi từ 06/10/2026 trở đi; tệp cũ hơn
+   * suy từ path `requests/{uid}/…` — xem lib/decision-attachment-edit.ts). */
+  addedByUid?: string;
+  /** "Sửa tệp đính kèm khi duyệt" (Sếp duyệt demo 06/10/2026): tệp KHÔNG bị
+   * xoá khỏi mảng mà đánh dấu đã gỡ/đã thay — ẩn khỏi danh sách tải/hiển thị
+   * chính, vẫn giữ để đối chiếu. */
+  removedAt?: string;
+  removedBy?: { uid: string; name: string };
+  /** Tệp này đã được THAY bằng tệp có path này (đi kèm `removedAt`). */
+  replacedByPath?: string;
+  /** Tệp này là tệp THAY THẾ cho tệp có path này (chuỗi thay thế đọc ngược). */
+  replacesPath?: string;
 }
 
 export interface RequestComment {

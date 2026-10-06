@@ -104,6 +104,16 @@ describe("buildRequestFormModel", () => {
     expect(buildRequestFormModel(baseInput({ status: "pending" })).adjustment).toBeNull();
   });
 
+  it("tệp đính kèm khi duyệt đã gỡ/đã thay không in ra, nhãn đính sau duyệt vẫn đúng vị trí", () => {
+    const removed = { name: "SAI.xlsx", path: "requests/u2/1-sai.xlsx", size: 1, source: "decision" as const, removedAt: "2026-10-01T00:00:00.000Z" };
+    const m = buildRequestFormModel({
+      ...baseInput(),
+      attachments: [removed, { name: "BO SUNG LAN 1.xlsx", path: "requests/u1/1-a.xlsx", size: 1000 }],
+      history: [...adjustmentHistory, { at: "2026-10-02T00:00:00.000Z", actor: "A", action: "Đính kèm tài liệu sau duyệt (lần 1): BO SUNG LAN 1.xlsx" }],
+    });
+    expect(m.adjustment?.attachments).toEqual([{ name: "BO SUNG LAN 1.xlsx", meta: expect.stringMatching(/^Đính sau duyệt · lần 1/) }]);
+  });
+
   it("thông tin đề xuất: thời gian còn lại chỉ đếm khi đang chờ duyệt", () => {
     const approved = buildRequestFormModel(baseInput());
     expect(approved.info.map((i) => i.label)).toEqual(["Người tạo", "Nhóm đề xuất", "Thời gian tạo", "Cập nhật gần nhất", "Thời hạn của đề xuất", "Thời gian còn lại"]);

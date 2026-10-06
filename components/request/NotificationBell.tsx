@@ -17,6 +17,7 @@ import {
 import type { NotificationSettings, RequestInstance } from "@/lib/types";
 import {
   ATTACHMENT_SUPPLEMENT_HISTORY_PREFIX,
+  DECISION_ATTACHMENT_EDIT_ACTIONS,
   TABLE_SUPPLEMENT_HISTORY_PREFIX,
 } from "@/lib/request-history-labels";
 
@@ -54,7 +55,9 @@ function buildNotifications(
 
   if (enabled("approver_pending")) {
     for (const r of inbox) {
-      const lastEntry = r.history[r.history.length - 1];
+      // Bỏ qua dòng "Đã thay/gỡ tệp đính kèm" (06/10/2026) — không phải quyết
+      // định, không được che mất dòng chuyển tiếp ngay trước nó.
+      const lastEntry = [...r.history].reverse().find((h) => !DECISION_ATTACHMENT_EDIT_ACTIONS.includes(h.action));
       const forwardedToMe =
         lastEntry?.action === "Đã chấp thuận và chuyển tiếp" ||
         lastEntry?.action === "Đã chuyển tiếp cho duyệt trước";

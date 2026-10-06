@@ -207,6 +207,7 @@ export async function POST(
         size: verified.size,
         source: "decision",
         addedBy: session.name,
+        addedByUid: session.uid,
         addedAt: nowIso,
       });
     }
