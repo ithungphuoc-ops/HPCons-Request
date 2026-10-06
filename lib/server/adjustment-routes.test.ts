@@ -89,8 +89,12 @@ vi.mock("next/server", async (importOriginal) => {
   return { ...real, after: (fn: () => unknown) => void fn() };
 });
 
+const bump = vi.fn(async () => {});
+vi.mock("@/lib/server/notification-signal", () => ({ bumpNotificationSignal: bump }));
+
 const { POST: postAdjustment } = await import("@/app/api/requests/[id]/adjustment/route");
 const { POST: postDecision } = await import("@/app/api/requests/[id]/adjustment/decision/route");
+const { POST: postCancel } = await import("@/app/api/requests/[id]/adjustment/cancel/route");
 
 const params = { params: Promise.resolve({ id: "r1" }) };
 const call = (h: typeof postAdjustment, body: unknown) =>
@@ -120,7 +124,9 @@ beforeEach(() => {
   store.writes = 0;
   session.uid = "owner";
   session.name = "Chủ đề xuất";
+  session.role = "employee";
   notify.mockClear();
+  bump.mockClear();
   taoViec.mockClear();
 });
 
@@ -298,5 +304,88 @@ describe("POST adjustment/decision — đủ 2 người mới có hiệu lực",
     expect(last.note).toBe("cũ");
     expect(last.attachmentName).toBe("cu.pdf");
     expect((store.doc.attachments as { path: string }[]).map((a) => a.path)).toEqual(["requests/owner/9-cu.pdf"]);
+  });
+});
+
+describe("POST adjustment/cancel — huỷ điều chỉnh đang chờ", () => {
+  it("người gửi điều chỉnh huỷ được: pending null + 1 dòng history (lý do + tóm tắt), không gộp tệp, không báo Kho, bump chuông, không email", async () => {
+    const files = [{ name: "a.pdf", path: "requests/owner/1-a.pdf", size: 5 }];
+    store.doc = approved({ pendingAdjustment: pending({ attachments: files }) });
+    const res = await call(postCancel, { expectedCreatedAt: "c1", reason: "người duyệt nghỉ phép" });
+    expect(res.status).toBe(200);
+    expect(store.doc.pendingAdjustment).toBeNull();
+    const history = store.doc.history as { action: string; actor: string; note?: string }[];
+    expect(history).toHaveLength(2);
+    const last = history.at(-1)!;
+    expect(last.action).toBe("Đã huỷ điều chỉnh chờ duyệt");
+    expect(last.actor).toBe("Chủ đề xuất");
+    expect(last.note).toContain("Lý do: người duyệt nghỉ phép");
+    expect(last.note).toContain("đổi");
+    expect(last.note).toContain("a.pdf");
+    expect(store.doc.attachments).toEqual([]);
+    expect(taoViec).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
+    expect(bump).toHaveBeenCalled();
+  });
+
+  it("không có lý do vẫn huỷ được (note chỉ có tóm tắt)", async () => {
+    store.doc = approved({ pendingAdjustment: pending() });
+    expect((await call(postCancel, { expectedCreatedAt: "c1" })).status).toBe(200);
+    const last = (store.doc.history as { note?: string }[]).at(-1)!;
+    expect(last.note).not.toContain("Lý do");
+  });
+
+  it.each(["owner", "admin"])("vai trò %s (không phải người gửi) huỷ được", async (role) => {
+    store.doc = approved({ pendingAdjustment: pending() });
+    session.uid = "quan-tri";
+    session.role = role;
+    expect((await call(postCancel, { expectedCreatedAt: "c1" })).status).toBe(200);
+    expect(store.doc.pendingAdjustment).toBeNull();
+  });
+
+  it.each([
+    ["người duyệt điều chỉnh (không phải admin)", "rv1", "manager"],
+    ["người khác", "nguoi-la", "employee"],
+    ["người theo dõi", "fol", "employee"],
+  ])("%s → 403, không ghi", async (_label, uid, role) => {
+    store.doc = approved({ pendingAdjustment: pending() });
+    session.uid = uid;
+    session.role = role;
+    expect((await call(postCancel, { expectedCreatedAt: "c1" })).status).toBe(403);
+    expect(store.writes).toBe(0);
+    expect(store.doc.pendingAdjustment).not.toBeNull();
+  });
+
+  it("điều chỉnh đã đổi (createdAt khác) → 409, không ghi", async () => {
+    store.doc = approved({ pendingAdjustment: pending({ createdAt: "c2" }) });
+    expect((await call(postCancel, { expectedCreatedAt: "c1" })).status).toBe(409);
+    expect(store.writes).toBe(0);
+  });
+
+  it("không còn điều chỉnh chờ → 409", async () => {
+    store.doc = approved();
+    expect((await call(postCancel, { expectedCreatedAt: "c1" })).status).toBe(409);
+  });
+
+  it("đề xuất đã xoá → 409", async () => {
+    store.doc = approved({ pendingAdjustment: pending(), deletedAt: "2026-10-06T00:00:00.000Z" });
+    expect((await call(postCancel, { expectedCreatedAt: "c1" })).status).toBe(409);
+    expect(store.writes).toBe(0);
+  });
+
+  it("thiếu expectedCreatedAt → 400; lý do quá dài → 400", async () => {
+    store.doc = approved({ pendingAdjustment: pending() });
+    expect((await call(postCancel, {})).status).toBe(400);
+    expect((await call(postCancel, { expectedCreatedAt: "c1", reason: "x".repeat(501) })).status).toBe(400);
+    expect(store.writes).toBe(0);
+  });
+
+  it("sau khi huỷ, người gửi gửi được điều chỉnh mới", async () => {
+    store.doc = approved({ pendingAdjustment: pending() });
+    expect((await call(postCancel, { expectedCreatedAt: "c1" })).status).toBe(200);
+    const res = await call(postAdjustment, { noiDung: "điều chỉnh mới", approverIds: ["rv1", "rv3"] });
+    expect(res.status).toBe(200);
+    const pa = store.doc.pendingAdjustment as NonNullable<RequestInstance["pendingAdjustment"]>;
+    expect(pa.noiDung).toBe("điều chỉnh mới");
   });
 });

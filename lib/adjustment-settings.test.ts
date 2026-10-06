@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildAdjustmentCancelNote,
+  canCancelPendingAdjustment,
   checkAdjustmentContent,
   findLastApprover,
   findPurchasingDepartment,
@@ -175,5 +177,27 @@ describe("pendingAdjustment — tương thích dữ liệu cũ", () => {
     expect(isAdjustmentReviewer({ pendingAdjustment: pa({}) }, "a")).toBe(true);
     expect(isAdjustmentReviewer({ pendingAdjustment: null, adjustmentReviewerUids: ["z"] }, "z")).toBe(true);
     expect(isAdjustmentReviewer({ pendingAdjustment: null }, "a")).toBe(false);
+  });
+});
+
+describe("canCancelPendingAdjustment / buildAdjustmentCancelNote", () => {
+  const p = { requestedByUid: "u1" };
+  it("người gửi điều chỉnh hoặc admin mới được huỷ", () => {
+    expect(canCancelPendingAdjustment(p, "u1", false)).toBe(true);
+    expect(canCancelPendingAdjustment(p, "x", true)).toBe(true);
+    expect(canCancelPendingAdjustment(p, "x", false)).toBe(false);
+    expect(canCancelPendingAdjustment(p, null, true)).toBe(false);
+    expect(canCancelPendingAdjustment(null, "u1", true)).toBe(false);
+  });
+  it("note gồm lý do (nếu có), nội dung, tên tệp", () => {
+    const pending = {
+      noiDung: "",
+      attachment: { name: "cu.pdf", path: "p", size: 1 },
+      requestedByName: "An",
+    };
+    expect(buildAdjustmentCancelNote(pending, "")).toBe(
+      "Điều chỉnh bị huỷ (do An đề nghị): (chỉ đính tệp) · Tệp kèm (không lưu vào đề xuất): cu.pdf",
+    );
+    expect(buildAdjustmentCancelNote(pending, "nghỉ")).toMatch(/^Lý do: nghỉ · /);
   });
 });

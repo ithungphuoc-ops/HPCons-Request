@@ -44,6 +44,7 @@ import ReasonModal from "@/components/request/ReasonModal";
 import ApproveConfirmModal from "@/components/request/ApproveConfirmModal";
 import AddFollowerModal from "@/components/request/modals/AddFollowerModal";
 import AdjustmentForwardModal from "@/components/request/modals/AdjustmentForwardModal";
+import AdjustmentCancelModal from "@/components/request/modals/AdjustmentCancelModal";
 import FilePreviewModal from "@/components/request/FilePreviewModal";
 import CommentSection from "@/components/request/CommentSection";
 import AvatarWithCard from "@/components/request/AvatarWithCard";
@@ -56,7 +57,7 @@ import {
 } from "@/components/request/DecisionAttachmentEditMenu";
 import { activeAttachments } from "@/lib/decision-attachment-edit";
 import AdjustmentControl from "@/components/request/AdjustmentControl";
-import { pendingAdjustmentFiles } from "@/lib/adjustment-settings";
+import { canCancelPendingAdjustment, pendingAdjustmentFiles } from "@/lib/adjustment-settings";
 import { countOpinionsByApprover, extractApproverOpinions } from "@/lib/approver-opinions";
 import { decisionNoteMode, resolveDecisionNoteRules, type DecisionNoteMode } from "@/lib/decision-note";
 import {
@@ -177,6 +178,7 @@ export default function RequestDetailView({
   const [adjForwardTarget, setAdjForwardTarget] = useState<string | null>(null);
   const [adjDecisionBusy, setAdjDecisionBusy] = useState(false);
   const [adjDecisionError, setAdjDecisionError] = useState<string | null>(null);
+  const [adjCancelOpen, setAdjCancelOpen] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [returnOpen, setReturnOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
@@ -802,6 +804,24 @@ export default function RequestDetailView({
     }
   };
 
+  /** "Huỷ điều chỉnh" đang chờ (06/10/2026) — người gửi điều chỉnh hoặc
+   * Owner/Admin; máy chủ kiểm lại quyền + `expectedCreatedAt`. Lỗi ném ra để
+   * hộp xác nhận hiện tại chỗ. */
+  const cancelAdjustment = async (reason: string) => {
+    if (!request.pendingAdjustment) return;
+    const res = await fetch(`/api/requests/${request.id}/adjustment/cancel`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ expectedCreatedAt: request.pendingAdjustment.createdAt, reason }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}) as { error?: string });
+      throw new Error(body.error ?? "Không huỷ được điều chỉnh.");
+    }
+    setAdjCancelOpen(false);
+    onActed();
+  };
+
   return (
     // Xếp DỌC mặc định, chỉ nằm cạnh nhau từ khổ xl (1280px — breakpoint máy
     // tính để bàn theo HPCons Design System V1.1).
@@ -1364,6 +1384,19 @@ export default function RequestDetailView({
                 {adjDecisionError && (
                   <p className="mt-2 text-[12px] text-[var(--color-danger-red)]">{adjDecisionError}</p>
                 )}
+                {canCancelPendingAdjustment(request.pendingAdjustment, currentUid, isAdmin) && (
+                  <div className="print-hide mt-2.5 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setAdjCancelOpen(true)}
+                      disabled={adjDecisionBusy}
+                      data-testid="adjustment-cancel-open"
+                      className="w-full rounded border border-[var(--color-danger-red)] bg-white px-3 py-1.5 text-[13px] font-medium text-[var(--color-danger-red)] hover:bg-red-50 disabled:opacity-60 sm:w-auto"
+                    >
+                      Huỷ điều chỉnh
+                    </button>
+                  </div>
+                )}
               </div>
             ) : (
               resolvedAdjustmentAccess !== "none" && (
@@ -1375,6 +1408,9 @@ export default function RequestDetailView({
                   onDone={onActed}
                 />
               )
+            )}
+            {adjCancelOpen && request.pendingAdjustment && (
+              <AdjustmentCancelModal onClose={() => setAdjCancelOpen(false)} onConfirm={cancelAdjustment} />
             )}
             {adjForwardTarget && request.pendingAdjustment && (
               <AdjustmentForwardModal

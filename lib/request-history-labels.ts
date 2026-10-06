@@ -38,3 +38,10 @@ export const DECISION_ATTACHMENT_EDIT_ACTIONS: readonly string[] = [
   DECISION_ATTACHMENT_REPLACED_ACTION,
   DECISION_ATTACHMENT_REMOVED_ACTION,
 ];
+
+/**
+ * Dòng lịch sử khi người gửi điều chỉnh (hoặc Owner/Admin) HUỶ 1 điều chỉnh
+ * đang chờ duyệt (06/10/2026). KHÔNG bắt đầu bằng `ADJUSTMENT_HISTORY_PREFIX`
+ * nên không bị đếm vào "lần N" điều chỉnh. Đừng đổi tuỳ tiện.
+ */
+export const ADJUSTMENT_CANCELLED_ACTION = "Đã huỷ điều chỉnh chờ duyệt";
