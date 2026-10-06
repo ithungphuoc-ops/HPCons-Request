@@ -6,7 +6,9 @@ import type { EmailNotifyCategory, GroupNotificationRules, RequestInstance, Tagg
 
 /** Chỉ cần đúng field `notificationRules` — nhận cả `ProposalGroup` đầy đủ
  * lẫn 1 object rút gọn (vd đọc trực tiếp từ Firestore doc trong route quyết
- * định, không cần dựng nguyên `ProposalGroup`). */
+ * định, không cần dựng nguyên `ProposalGroup`). `null`/`undefined` = đề xuất
+ * TRỰC TIẾP (không thuộc nhóm nào) — phân biệt với "nhóm thật nhưng chưa cấu
+ * hình notificationRules" (vẫn là 1 object, chỉ field con undefined). */
 type GroupNotificationSource = { notificationRules?: GroupNotificationRules } | null | undefined;
 
 /**
@@ -27,7 +29,13 @@ type GroupNotificationSource = { notificationRules?: GroupNotificationRules } | 
  * ngoài, không ảnh hưởng response chính của route gọi hàm này.
  */
 function emailNotifyEnabled(group: GroupNotificationSource): boolean {
-  return group?.notificationRules?.emailNotify === true;
+  // Đề xuất TRỰC TIẾP (không nhóm) không có công tắc nào để cấu hình riêng —
+  // Sếp chốt 06/10/2026: mặc định BẬT, khác hẳn "nhóm thật nhưng chưa bật
+  // emailNotify" (vẫn TẮT như trước, giữ đúng hành vi nhóm cũ không tự nhiên
+  // bắt đầu gửi mail). 2 trường hợp phân biệt được vì `group` chỉ là `null`
+  // khi route gọi hàm KHÔNG có groupId nào cả (xem từng nơi gọi).
+  if (group == null) return true;
+  return group.notificationRules?.emailNotify === true;
 }
 
 function currentlyActionableUids(request: RequestInstance): string[] {
@@ -176,4 +184,57 @@ export async function notifyAdjustmentApprovers(
   await Promise.all(
     uids.map((uid) => sendToUid(uid, subject, html, { groupId: request.groupId, category: "approver_pending" })),
   );
+}
+
+/** Gọi khi quyết định "Trả lại" (effect "none" của applyDecisionToRequest) —
+ * trước đây luồng này KHÔNG gửi email nào cả (chỉ có chuông trong app). Báo
+ * người tạo đề xuất kèm lý do trả lại — Đợt 3 Email, Sếp chốt 06/10/2026.
+ * Dùng chung category "own_decided" với kết quả duyệt/từ chối (cùng ý nghĩa
+ * "kết quả cho người tạo", người dùng chỉ cần 1 công tắc bật/tắt cho cả 3). */
+export async function notifySubmitterReturned(
+  request: RequestInstance,
+  group: GroupNotificationSource,
+  reason: string | undefined,
+) {
+  if (!emailNotifyEnabled(group)) return;
+
+  const subject = `[App Đề xuất] "${request.groupNameSnapshot}" đã bị trả lại`;
+  const html = buildRequestEmailHtml({
+    greeting: "Xin chào,",
+    body: `Đề xuất ${escapedRequestLabel(request)} bạn đã gửi đã <b>bị trả lại</b>${
+      reason ? ` với lý do: ${escapeHtml(reason)}` : ""
+    }.`,
+    requestId: request.id,
+    ctaLabel: "Xem đề xuất",
+  });
+  await sendToUid(request.submittedBy.uid, subject, html, { groupId: request.groupId, category: "own_decided" });
+}
+
+/** Gọi khi "Điều chỉnh sau duyệt" đã có kết quả cuối (đủ người duyệt → áp
+ * dụng thật vào history, HOẶC 1 người từ chối → huỷ hẳn) — báo người đã đề
+ * nghị điều chỉnh đó (`pendingAdjustment.requestedByUid`, cần truyền vào
+ * TRƯỚC khi field này bị xoá khỏi đề xuất). Trước đây luồng này KHÔNG gửi
+ * email nào cả (chỉ có `notifyAdjustmentApprovers` ở trên báo NGƯỜI DUYỆT lúc
+ * đang chờ — hàm này báo NGƯỜI ĐỀ NGHỊ lúc đã xong). Đợt 3 Email, Sếp chốt
+ * 06/10/2026. */
+export async function notifyAdjustmentRequesterResult(
+  request: RequestInstance,
+  group: GroupNotificationSource,
+  outcome: "approved" | "rejected",
+  requesterUid: string,
+) {
+  if (!emailNotifyEnabled(group)) return;
+
+  const subject = `[App Đề xuất] Điều chỉnh sau duyệt của "${request.groupNameSnapshot}" đã ${
+    outcome === "approved" ? "được chấp thuận" : "bị từ chối"
+  }`;
+  const html = buildRequestEmailHtml({
+    greeting: "Xin chào,",
+    body: `Điều chỉnh sau duyệt bạn đã đề nghị cho đề xuất ${escapedRequestLabel(request)} ${
+      outcome === "approved" ? "đã được <b>chấp thuận</b> và áp dụng" : "đã <b>bị từ chối</b>"
+    }.`,
+    requestId: request.id,
+    ctaLabel: "Xem đề xuất",
+  });
+  await sendToUid(requesterUid, subject, html, { groupId: request.groupId, category: "own_decided" });
 }

@@ -10,6 +10,7 @@ import { resolveComputedValue } from "@/lib/server/computed-fields";
 import { canManageGroupsAtAppScope } from "@/lib/permissions";
 import { canAdjustAfterApproval, loadAdjustmentGroupSettings } from "@/lib/server/adjustment-approval-rules";
 import { bumpNotificationSignal } from "@/lib/server/notification-signal";
+import { notifyFollowersSubmitted, notifyPendingApprovers } from "@/lib/server/notification-emails";
 import {
   buildInitialApprovers,
   canView,
@@ -354,6 +355,21 @@ export async function PATCH(
       const updated = await commitEdit(id, found, expectedVersion, patch, historyEntry);
       // Gửi chính thức (không phải lưu nháp) — báo chuông thông báo tự tải lại.
       after(() => bumpNotificationSignal());
+      // Email thông báo thật (Đợt 3, Sếp chốt 06/10/2026) — trước đây luồng
+      // GỬI TỪ NHÁP / GỬI LẠI (sau sửa hoặc sau khi bị trả lại) không gửi
+      // email nào cả, chỉ có luồng tạo mới (app/api/requests/route.ts) gửi.
+      // Người theo dõi chỉ báo đúng 1 LẦN GỬI ĐẦU TIÊN thật sự (từ nháp) —
+      // gửi lại sau khi sửa/bị trả lại không phải tin mới với họ, tránh
+      // thành "nhiều cái không thiết thực" (đúng điều Sếp từng phàn nàn).
+      after(async () => {
+        try {
+          const tasks = [notifyPendingApprovers(updated, group)];
+          if (found.status === "draft") tasks.push(notifyFollowersSubmitted(updated.followers, updated, group));
+          await Promise.all(tasks);
+        } catch (mailError) {
+          console.error("Gửi email thông báo lúc gửi đề xuất (từ nháp/gửi lại) thất bại (không ảnh hưởng thao tác chính):", mailError);
+        }
+      });
       return NextResponse.json({ request: updated });
     }
 
@@ -388,6 +404,19 @@ export async function PATCH(
     };
     const updated = await commitEdit(id, found, expectedVersion, patch, historyEntry);
     after(() => bumpNotificationSignal());
+    // Email thông báo thật (Đợt 3, Sếp chốt 06/10/2026) — đề xuất trực tiếp
+    // không có nhóm nên `group` truyền `null` (mặc định BẬT, xem
+    // lib/server/notification-emails.ts). Cùng lý do chỉ báo người theo dõi
+    // đúng lần gửi đầu như nhánh có nhóm ở trên.
+    after(async () => {
+      try {
+        const tasks = [notifyPendingApprovers(updated, null)];
+        if (found.status === "draft") tasks.push(notifyFollowersSubmitted(updated.followers, updated, null));
+        await Promise.all(tasks);
+      } catch (mailError) {
+        console.error("Gửi email thông báo lúc gửi đề xuất trực tiếp (từ nháp/gửi lại) thất bại (không ảnh hưởng thao tác chính):", mailError);
+      }
+    });
     return NextResponse.json({ request: updated });
   } catch (error) {
     if (error instanceof RequestTxError) {

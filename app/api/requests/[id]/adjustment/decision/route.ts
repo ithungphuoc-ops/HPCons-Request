@@ -7,11 +7,15 @@ import { pendingAdjustmentFiles } from "@/lib/adjustment-settings";
 import { buildAdjustmentHistoryPatch } from "@/lib/server/adjustment";
 import { loadAdjustmentGroupSettings } from "@/lib/server/adjustment-approval-rules";
 import { loadActiveUsers } from "@/lib/server/adjustment-reviewers";
-import { notifyAdjustmentApprovers } from "@/lib/server/notification-emails";
+import { notifyAdjustmentApprovers, notifyAdjustmentRequesterResult } from "@/lib/server/notification-emails";
 import { bumpNotificationSignal } from "@/lib/server/notification-signal";
 import { loadRequest } from "@/lib/server/requests";
 import { requireSession, ForbiddenError } from "@/lib/session";
 import type { RequestInstance } from "@/lib/types";
+
+// Gửi email thông báo (Đợt 3, Sếp chốt 06/10/2026) chạy trong after() — cho
+// đủ thời gian cả khi Gmail chậm/phải thử lại (xem lib/server/mailer.ts).
+export const maxDuration = 60;
 
 interface AdjustmentDecisionBody {
   decision?: unknown;
@@ -185,10 +189,24 @@ export async function POST(
         const checked = checkPendingInTx(moiNhat);
         if ("loi" in checked) return checked;
         tx.update(ref, { pendingAdjustment: null, updatedAt: nowIso });
-        return { request: { ...moiNhat, pendingAdjustment: null, updatedAt: nowIso } };
+        return {
+          request: { ...moiNhat, pendingAdjustment: null, updatedAt: nowIso },
+          pendingSnapshot: checked.pendingNow,
+        };
       });
       if ("loi" in ketQua) return NextResponse.json({ error: ketQua.loi }, { status: ketQua.ma });
       after(() => bumpNotificationSignal());
+      // Email thông báo thật (Đợt 3, Sếp chốt 06/10/2026) — báo người đã đề
+      // nghị điều chỉnh này biết bị từ chối. Lấy `requestedByUid` từ snapshot
+      // ĐỌC TRƯỚC khi transaction xoá `pendingAdjustment`.
+      after(async () => {
+        try {
+          const settings = await loadAdjustmentGroupSettings(ketQua.request.groupId);
+          await notifyAdjustmentRequesterResult(ketQua.request, settings, "rejected", ketQua.pendingSnapshot.requestedByUid);
+        } catch (mailError) {
+          console.error("Gửi email thông báo từ chối điều chỉnh sau duyệt thất bại (không ảnh hưởng thao tác chính):", mailError);
+        }
+      });
       return NextResponse.json({ request: ketQua.request });
     }
 
@@ -233,6 +251,16 @@ export async function POST(
     if (ketQua.finalized) {
       const pendingSnapshot = ketQua.pendingSnapshot;
       const files = pendingAdjustmentFiles(pendingSnapshot);
+      // Email thông báo thật (Đợt 3, Sếp chốt 06/10/2026) — báo người đã đề
+      // nghị điều chỉnh này biết đã được chấp thuận và áp dụng xong.
+      after(async () => {
+        try {
+          const settings = await loadAdjustmentGroupSettings(ketQua.request.groupId);
+          await notifyAdjustmentRequesterResult(ketQua.request, settings, "approved", pendingSnapshot.requestedByUid);
+        } catch (mailError) {
+          console.error("Gửi email thông báo duyệt xong điều chỉnh sau duyệt thất bại (không ảnh hưởng thao tác chính):", mailError);
+        }
+      });
       try {
         const ids = await taoViecDongBo({
           requestId: id,

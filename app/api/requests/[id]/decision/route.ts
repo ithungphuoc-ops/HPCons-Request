@@ -4,7 +4,12 @@ import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase/admin";
 import { sanitizeDecisionNoteInput } from "@/lib/decision-note";
 import { apiErrorResponse } from "@/lib/http";
-import { notifyFollowersFullyApproved, notifyPendingApprovers, notifySubmitterResult } from "@/lib/server/notification-emails";
+import {
+  notifyFollowersFullyApproved,
+  notifyPendingApprovers,
+  notifySubmitterResult,
+  notifySubmitterReturned,
+} from "@/lib/server/notification-emails";
 import { applyDecisionToRequest, type DecisionGroupSettings, type DecisionKind } from "@/lib/server/decision-apply";
 import { bumpNotificationSignal } from "@/lib/server/notification-signal";
 import { sanitizeDecisionAttachmentsInput } from "@/lib/server/decision-attachments";
@@ -222,15 +227,34 @@ export async function POST(
     // thông báo tự tải lại (Sếp duyệt 06/10/2026, xem lib/server/notification-signal.ts).
     after(() => bumpNotificationSignal());
 
+    // Đề xuất TRỰC TIẾP (không groupId) không đọc `notificationRules` ở trên
+    // (`notificationRules` giữ nguyên `undefined`) — truyền thẳng `null` để
+    // emailNotifyEnabled() nhận đúng tín hiệu "đề xuất trực tiếp, mặc định
+    // BẬT" thay vì tín hiệu "nhóm thật nhưng chưa cấu hình, mặc định TẮT"
+    // (2 tín hiệu này khác nhau — xem GroupNotificationSource, Đợt 3 Email,
+    // Sếp chốt 06/10/2026).
+    const notifyGroup = pre.groupId ? { notificationRules } : null;
+
     if (result.effect === "forward") {
       // Email thông báo thật (Sếp chốt 24/08/2026) — người vừa được chuyển
       // tới (hoặc người kế tiếp theo thứ tự) đang chờ xử lý. Dùng after() —
       // lý do xem comment ở app/api/requests/route.ts (21/09/2026).
       after(async () => {
         try {
-          await notifyPendingApprovers(updated, { notificationRules });
+          await notifyPendingApprovers(updated, notifyGroup);
         } catch (mailError) {
           console.error("Gửi email thông báo lúc chuyển tiếp thất bại (không ảnh hưởng thao tác chính):", mailError);
+        }
+      });
+    } else if (result.effect === "none") {
+      // "Trả lại" (Đợt 3 Email, Sếp chốt 06/10/2026) — trước đây luồng này
+      // không gửi email nào cả, chỉ có chuông trong app. Báo người tạo kèm
+      // lý do trả lại.
+      after(async () => {
+        try {
+          await notifySubmitterReturned(updated, notifyGroup, note);
+        } catch (mailError) {
+          console.error("Gửi email thông báo lúc trả lại đề xuất thất bại (không ảnh hưởng thao tác chính):", mailError);
         }
       });
     } else if (result.effect === "decision") {
@@ -240,10 +264,10 @@ export async function POST(
       after(async () => {
         try {
           if (status === "pending") {
-            await notifyPendingApprovers(updated, { notificationRules });
+            await notifyPendingApprovers(updated, notifyGroup);
           } else {
-            await notifySubmitterResult(updated, { notificationRules });
-            if (status === "approved") await notifyFollowersFullyApproved(updated, { notificationRules });
+            await notifySubmitterResult(updated, notifyGroup);
+            if (status === "approved") await notifyFollowersFullyApproved(updated, notifyGroup);
           }
         } catch (mailError) {
           console.error("Gửi email thông báo sau quyết định thất bại (không ảnh hưởng thao tác chính):", mailError);

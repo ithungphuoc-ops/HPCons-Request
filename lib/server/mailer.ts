@@ -81,26 +81,45 @@ export function isMailerConfigured(): boolean {
   return getTransporter() !== null;
 }
 
+const SEND_MAIL_ATTEMPTS = 3;
+
 /**
  * Gửi 1 email — bắn rồi quên, KHÔNG BAO GIỜ throw ra ngoài (lỗi gửi email
  * không được phép làm hỏng luồng duyệt/gửi đề xuất chính). Trả `true` nếu
- * gửi thành công, `false` nếu bỏ qua (thiếu cấu hình) hoặc lỗi.
+ * gửi thành công, `false` nếu bỏ qua (thiếu cấu hình) hoặc lỗi sau khi đã
+ * thử hết số lần.
+ *
+ * Thử lại tối đa 3 lần (chờ 1s rồi 2s giữa các lần) ngay tại chỗ khi gửi lỗi
+ * — Đợt 3 Email, Sếp chốt 06/10/2026: quy mô app hiện tại chưa cần hàng đợi/
+ * cron riêng (xem `getTransporter()` phía trên), chỉ cần đỡ được các lỗi
+ * thoáng qua (mạng chập chờn, Gmail từ chối kết nối tức thời…) mà không cần
+ * thêm hạ tầng. Đã chạy trong `after()` ở nơi gọi nên không chặn response
+ * chính; `connectionTimeout`/`socketTimeout` ở `getTransporter()` đảm bảo mỗi
+ * lần thử không "treo" quá ~10s, tổng tối đa ~33s cho 3 lần — trong hạn
+ * `maxDuration = 60` của mọi route có gửi email.
  */
 export async function sendMail(params: { to: string; subject: string; html: string }): Promise<boolean> {
   const transporter = getTransporter();
   if (!transporter) return false;
-  try {
-    await transporter.sendMail({
-      from: `"HP Cons — App Đề xuất" <${process.env.GMAIL_USER}>`,
-      to: params.to,
-      subject: params.subject,
-      html: params.html,
-    });
-    return true;
-  } catch (error) {
-    console.error("Gửi email thông báo thất bại (không ảnh hưởng thao tác chính):", error);
-    return false;
+  for (let attempt = 1; attempt <= SEND_MAIL_ATTEMPTS; attempt++) {
+    try {
+      await transporter.sendMail({
+        from: `"HP Cons — App Đề xuất" <${process.env.GMAIL_USER}>`,
+        to: params.to,
+        subject: params.subject,
+        html: params.html,
+      });
+      return true;
+    } catch (error) {
+      if (attempt === SEND_MAIL_ATTEMPTS) {
+        console.error(`Gửi email thông báo thất bại sau ${SEND_MAIL_ATTEMPTS} lần thử (không ảnh hưởng thao tác chính):`, error);
+        return false;
+      }
+      console.warn(`[mailer] Gửi email lỗi, thử lại lần ${attempt + 1}/${SEND_MAIL_ATTEMPTS}:`, error);
+      await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
+    }
   }
+  return false;
 }
 
 /** Tra email thật của 1 uid từ users/{uid} của app tổng (hpcore) — cùng

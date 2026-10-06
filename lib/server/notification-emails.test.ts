@@ -19,6 +19,8 @@ const {
   notifySubmitterResult,
   notifyFollowersSubmitted,
   notifyFollowersFullyApproved,
+  notifySubmitterReturned,
+  notifyAdjustmentRequesterResult,
 } = await import("./notification-emails");
 
 import type { RequestInstance, TaggedUser } from "@/lib/types";
@@ -132,5 +134,79 @@ describe("notifyFollowersSubmitted / notifyFollowersFullyApproved", () => {
       notificationRules: { sequentialTurnBasedNotify: true, perStepBlockNotify: true, emailNotify: true },
     });
     expect(sendMailMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("group = null (đề xuất trực tiếp) mặc định BẬT — khác 'nhóm thật chưa cấu hình' (Sếp chốt 06/10/2026)", () => {
+  it("group = null → vẫn gửi dù không có notificationRules nào để đọc", async () => {
+    sendMailMock.mockClear();
+    await notifySubmitterResult(baseRequest({ status: "approved", groupId: null }), null);
+    expect(sendMailMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("group = { notificationRules: undefined } (nhóm thật nhưng chưa cấu hình) → vẫn TẮT như trước", async () => {
+    sendMailMock.mockClear();
+    await notifySubmitterResult(baseRequest({ status: "approved" }), { notificationRules: undefined });
+    expect(sendMailMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("notifySubmitterReturned — Đợt 3 Email, báo người tạo khi bị trả lại", () => {
+  it("emailNotify tắt → không gửi", async () => {
+    sendMailMock.mockClear();
+    await notifySubmitterReturned(baseRequest({ status: "returned" }), { notificationRules: undefined }, "thiếu chứng từ");
+    expect(sendMailMock).not.toHaveBeenCalled();
+  });
+
+  it("emailNotify bật → báo đúng người tạo đề xuất", async () => {
+    sendMailMock.mockClear();
+    resolveUserEmailMock.mockClear();
+    await notifySubmitterReturned(
+      baseRequest({ status: "returned" }),
+      { notificationRules: { sequentialTurnBasedNotify: true, perStepBlockNotify: true, emailNotify: true } },
+      "thiếu chứng từ",
+    );
+    expect(resolveUserEmailMock).toHaveBeenCalledWith("submitter", { groupId: "g1", category: "own_decided" });
+    expect(sendMailMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("đề xuất trực tiếp (group = null) → mặc định BẬT, kể cả không có lý do", async () => {
+    sendMailMock.mockClear();
+    await notifySubmitterReturned(baseRequest({ status: "returned", groupId: null }), null, undefined);
+    expect(sendMailMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("notifyAdjustmentRequesterResult — Đợt 3 Email, báo người đã đề nghị điều chỉnh", () => {
+  it("emailNotify tắt → không gửi", async () => {
+    sendMailMock.mockClear();
+    await notifyAdjustmentRequesterResult(baseRequest(), { notificationRules: undefined }, "approved", "nguoiDeNghi");
+    expect(sendMailMock).not.toHaveBeenCalled();
+  });
+
+  it("approved → báo đúng người đã đề nghị điều chỉnh (không phải người tạo đề xuất gốc)", async () => {
+    sendMailMock.mockClear();
+    resolveUserEmailMock.mockClear();
+    await notifyAdjustmentRequesterResult(
+      baseRequest(),
+      { notificationRules: { sequentialTurnBasedNotify: true, perStepBlockNotify: true, emailNotify: true } },
+      "approved",
+      "nguoiDeNghi",
+    );
+    expect(resolveUserEmailMock).toHaveBeenCalledWith("nguoiDeNghi", { groupId: "g1", category: "own_decided" });
+    expect(sendMailMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejected → vẫn báo đúng người, chỉ khác nội dung/tiêu đề", async () => {
+    sendMailMock.mockClear();
+    resolveUserEmailMock.mockClear();
+    await notifyAdjustmentRequesterResult(
+      baseRequest(),
+      { notificationRules: { sequentialTurnBasedNotify: true, perStepBlockNotify: true, emailNotify: true } },
+      "rejected",
+      "nguoiDeNghi",
+    );
+    expect(resolveUserEmailMock).toHaveBeenCalledWith("nguoiDeNghi", { groupId: "g1", category: "own_decided" });
+    expect(sendMailMock).toHaveBeenCalledTimes(1);
   });
 });

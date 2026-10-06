@@ -115,3 +115,77 @@ describe("nói rõ lý do khi BỎ QUA gửi email", () => {
     warn.mockRestore();
   });
 });
+
+describe("sendMail() thử lại khi gửi lỗi — Đợt 3 Email, Sếp chốt 06/10/2026", () => {
+  // Cùng lý do "PHẢI nạp lại module" ở nhóm test trên: `cachedTransporter`
+  // sống suốt vòng đời module, và transporter giả (`nodemailer.createTransport`)
+  // cần cấu hình RIÊNG cho từng ca (ca này thành công lần 1, ca kia lỗi cả 3…).
+  async function napLaiVoiTransporterGia(sendMailImpl: (...args: unknown[]) => Promise<unknown>) {
+    process.env.GMAIL_USER = "app@hpcons.com.vn";
+    process.env.GMAIL_APP_PASSWORD = "x";
+    vi.resetModules();
+    const nodemailer = (await import("nodemailer")).default;
+    const sendMailMock = vi.fn(sendMailImpl);
+    (nodemailer.createTransport as ReturnType<typeof vi.fn>).mockReturnValue({ sendMail: sendMailMock });
+    const m = await import("./mailer");
+    return { m, sendMailMock };
+  }
+
+  afterEach(() => {
+    delete process.env.GMAIL_USER;
+    delete process.env.GMAIL_APP_PASSWORD;
+  });
+
+  it("thành công ngay lần đầu — không thử lại, không log lỗi", async () => {
+    const { m, sendMailMock } = await napLaiVoiTransporterGia(async () => undefined);
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const ok = await m.sendMail({ to: "a@b.com", subject: "x", html: "y" });
+
+    expect(ok).toBe(true);
+    expect(sendMailMock).toHaveBeenCalledTimes(1);
+    expect(error).not.toHaveBeenCalled();
+    error.mockRestore();
+  });
+
+  it(
+    "lỗi 2 lần đầu, thành công lần 3 — trả true, đã thử đúng 3 lần",
+    async () => {
+      let call = 0;
+      const { m, sendMailMock } = await napLaiVoiTransporterGia(async () => {
+        call += 1;
+        if (call < 3) throw new Error("timeout tạm thời");
+        return undefined;
+      });
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+      const ok = await m.sendMail({ to: "a@b.com", subject: "x", html: "y" });
+
+      expect(ok).toBe(true);
+      expect(sendMailMock).toHaveBeenCalledTimes(3);
+      warn.mockRestore();
+    },
+    10_000,
+  );
+
+  it(
+    "lỗi cả 3 lần — trả false, log lỗi ĐÚNG 1 lần kèm số lần đã thử",
+    async () => {
+      const { m, sendMailMock } = await napLaiVoiTransporterGia(async () => {
+        throw new Error("Gmail từ chối kết nối");
+      });
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+      const ok = await m.sendMail({ to: "a@b.com", subject: "x", html: "y" });
+
+      expect(ok).toBe(false);
+      expect(sendMailMock).toHaveBeenCalledTimes(3);
+      expect(error).toHaveBeenCalledTimes(1);
+      expect(String(error.mock.calls[0][0])).toContain("3 lần");
+      error.mockRestore();
+      warn.mockRestore();
+    },
+    10_000,
+  );
+});
