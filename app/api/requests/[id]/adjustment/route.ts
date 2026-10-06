@@ -4,6 +4,7 @@ import { apiErrorResponse } from "@/lib/http";
 import { guiCacViec, taoViecDongBo } from "@/lib/dong-bo/hang-cho";
 import { loadAdjustmentApprovalRules, resolveAdjustmentPlanForActor } from "@/lib/server/adjustment-approval-rules";
 import { ghiDieuChinhVaoLichSu } from "@/lib/server/adjustment";
+import { bumpNotificationSignal } from "@/lib/server/notification-signal";
 import { loadRequest } from "@/lib/server/requests";
 import { requireSession, ForbiddenError } from "@/lib/session";
 import { ADJUSTMENT_MAX_LENGTH } from "@/lib/request-history-labels";
@@ -147,6 +148,7 @@ export async function POST(
       if ("loi" in ketQua) {
         return NextResponse.json({ error: ketQua.loi }, { status: ketQua.ma });
       }
+      after(() => bumpNotificationSignal());
       return NextResponse.json({ request: ketQua.request });
     }
 
@@ -173,6 +175,7 @@ export async function POST(
     } catch (err) {
       console.error(`Tạo việc báo điều chỉnh đề xuất ${id} sang Kho / Thu mua lỗi:`, err);
     }
+    after(() => bumpNotificationSignal());
     return NextResponse.json({ request: ketQua.request });
   } catch (error) {
     return apiErrorResponse(error);

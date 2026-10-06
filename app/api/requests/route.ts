@@ -23,6 +23,7 @@ import {
   resolveInitialSlaHours,
   toProposalGroup,
 } from "@/lib/server/requests";
+import { bumpNotificationSignal } from "@/lib/server/notification-signal";
 import { requireSession } from "@/lib/session";
 import { retryQlkCtrSyncNeuLoi } from "@/lib/qlkctr-sync";
 import { retryThuMuaSyncNeuLoi } from "@/lib/thumua-sync";
@@ -468,6 +469,8 @@ export async function POST(request: Request) {
       deletedAt: null,
     };
     await requestRef.set(newRequest);
+    // Gửi chính thức (không phải nháp) mới cần báo chuông — nháp chỉ người tạo thấy.
+    if (!isDraft) after(() => bumpNotificationSignal());
 
     const created: RequestInstance = { id: requestRef.id, ...newRequest };
 

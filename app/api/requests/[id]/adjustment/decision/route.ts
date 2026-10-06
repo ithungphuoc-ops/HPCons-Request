@@ -3,6 +3,7 @@ import { adminDb } from "@/lib/firebase/admin";
 import { apiErrorResponse } from "@/lib/http";
 import { guiCacViec, taoViecDongBo } from "@/lib/dong-bo/hang-cho";
 import { buildAdjustmentHistoryPatch } from "@/lib/server/adjustment";
+import { bumpNotificationSignal } from "@/lib/server/notification-signal";
 import { loadRequest } from "@/lib/server/requests";
 import { requireSession, ForbiddenError } from "@/lib/session";
 import type { RequestInstance } from "@/lib/types";
@@ -135,6 +136,7 @@ export async function POST(
         return { request: { ...moiNhat, pendingAdjustment, updatedAt: nowIso } };
       });
       if ("loi" in ketQua) return NextResponse.json({ error: ketQua.loi }, { status: ketQua.ma });
+      after(() => bumpNotificationSignal());
       return NextResponse.json({ request: ketQua.request });
     }
 
@@ -152,6 +154,7 @@ export async function POST(
         return { request: { ...moiNhat, pendingAdjustment: null, updatedAt: nowIso } };
       });
       if ("loi" in ketQua) return NextResponse.json({ error: ketQua.loi }, { status: ketQua.ma });
+      after(() => bumpNotificationSignal());
       return NextResponse.json({ request: ketQua.request });
     }
 
@@ -190,6 +193,7 @@ export async function POST(
     if ("loi" in ketQua) {
       return NextResponse.json({ error: ketQua.loi }, { status: ketQua.ma });
     }
+    after(() => bumpNotificationSignal());
     if (ketQua.finalized) {
       const pendingSnapshot = ketQua.pendingSnapshot;
       try {

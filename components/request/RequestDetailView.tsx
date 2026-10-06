@@ -66,6 +66,7 @@ import { formatCountdown, type ProgressGroupSettings } from "@/lib/approver-prog
 import { useAvatarProfilesByUids } from "@/lib/useAvatarProfilesByUids";
 import { canApproverAct } from "@/lib/approval-logic";
 import { findCategoryForGroup, findLetterheadUrl, printFileBaseName, resolvePrintBrand } from "@/lib/letterhead";
+import { REQUEST_VIEWED_EVENT } from "@/lib/notification-feed";
 import { buildRequestFormModel } from "@/lib/request-form-export/model";
 import { useCurrentSession } from "@/lib/useCurrentSession";
 import { fieldDataTypeLabels } from "@/lib/types";
@@ -305,8 +306,11 @@ export default function RequestDetailView({
   // "mới" hay không cho 3 loại vốn không có khái niệm đã đọc (được nhắc tên/
   // đang theo dõi/đã xử lý xong phần mình) — xem design.md của change
   // fix-notification-bell-stale-gaps. Bắn rồi quên, không cần chờ/hiện lỗi.
+  // Ghi xong báo chuông tải lại (dòng của đề xuất này thành đã đọc) — 06/10/2026.
   useEffect(() => {
-    fetch(`/api/requests/${request.id}/view`, { method: "POST" }).catch(() => {});
+    fetch(`/api/requests/${request.id}/view`, { method: "POST" })
+      .then(() => window.dispatchEvent(new Event(REQUEST_VIEWED_EVENT)))
+      .catch(() => {});
   }, [request.id]);
 
   const isOwnRequest = currentUid !== null && currentUid === request.submittedBy.uid;
