@@ -18,6 +18,7 @@
  * theo tên, chỉ không gắn được biểu tượng cạnh tên.
  */
 import { HISTORY_ACTION, sameName } from "./approver-progress";
+import { resolveReplacementChain, type AttachmentChange } from "./decision-attachment-edit";
 import type { RequestAttachment, RequestInstance } from "./types";
 
 export type ApproverOpinionKind = "approved" | "rejected" | "approveAndForward" | "forward" | "returned";
@@ -33,8 +34,15 @@ export interface ApproverOpinion {
   target?: string;
   /** Tệp người duyệt đính kèm cùng quyết định ("Đính kèm tệp khi duyệt",
    * 06/10/2026). Tệp không tìm thấy trong `attachments` (vd đã bị gỡ) vẫn
-   * liệt kê theo tên với `path` rỗng — UI không cho mở. */
+   * liệt kê theo tên với `path` rỗng — UI không cho mở.
+   * Tệp đã THAY → ở đây là tệp thay thế hiện hành; tệp đã GỠ → không có ở
+   * đây (nằm trong `formerAttachments`). */
   attachments: RequestAttachment[];
+  /** Tệp cũ đã gỡ/đã bị thay ("Sửa tệp đính kèm khi duyệt", 06/10/2026) —
+   * UI hiện gạch ngang thu gọn, không cho mở. */
+  formerAttachments: RequestAttachment[];
+  /** Các lần thay/gỡ tệp của ý kiến này, cũ → mới. */
+  attachmentChanges: AttachmentChange[];
   /** Vị trí trong `approversSnapshot` — null nếu không ghép được tên. */
   approverIndex: number | null;
   approverId: string | null;
@@ -76,19 +84,30 @@ export function extractApproverOpinions(
     // Ý kiến có thể chỉ có tệp, không ghi chú — vẫn là 1 ý kiến.
     if (!kind || (!note && names.length === 0)) return;
 
-    // Ghép tên tệp với tệp thật: ưu tiên tệp `source: "decision"` cùng mốc
-    // `addedAt` = `at` của dòng lịch sử; không có thì tệp quyết định cùng tên.
-    const files: RequestAttachment[] = names.map((name) => {
+    // Ghép tên tệp với tệp GỐC thật: ưu tiên tệp `source: "decision"` cùng
+    // mốc `addedAt` = `at` của dòng lịch sử; không có thì tệp quyết định cùng
+    // tên. Tệp THAY THẾ (`replacesPath`) không bao giờ là gốc — nó được nối
+    // vào qua chuỗi thay thế của tệp gốc bên dưới (dòng lịch sử quyết định
+    // giữ nguyên tên tệp gốc, không bị sửa).
+    const files: RequestAttachment[] = [];
+    const formerAttachments: RequestAttachment[] = [];
+    const attachmentChanges: AttachmentChange[] = [];
+    for (const name of names) {
+      const isRoot = (a: RequestAttachment) => !used.has(a) && a.source === "decision" && !a.replacesPath;
       const pick =
-        allAttachments.find(
-          (a) => !used.has(a) && a.source === "decision" && a.addedAt === entry.at && a.name === name,
-        ) ?? allAttachments.find((a) => !used.has(a) && a.source === "decision" && a.name === name);
-      if (pick) {
-        used.add(pick);
-        return pick;
+        allAttachments.find((a) => isRoot(a) && a.addedAt === entry.at && a.name === name) ??
+        allAttachments.find((a) => isRoot(a) && a.name === name);
+      if (!pick) {
+        files.push({ name, path: "", size: 0 });
+        continue;
       }
-      return { name, path: "", size: 0 };
-    });
+      used.add(pick);
+      const chain = resolveReplacementChain(pick, allAttachments);
+      if (chain.current) files.push(chain.current);
+      formerAttachments.push(...chain.former);
+      attachmentChanges.push(...chain.changes);
+    }
+    attachmentChanges.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
 
     const candidates = snapshot
       .map((s, idx) => ({ s, idx }))
@@ -111,6 +130,8 @@ export function extractApproverOpinions(
       note,
       target: entry.target,
       attachments: files,
+      formerAttachments,
+      attachmentChanges,
       approverIndex: chosen ? chosen.idx : null,
       approverId: chosen ? chosen.s.id : null,
     });

@@ -24,3 +24,17 @@ export const ADJUSTMENT_HISTORY_PREFIX = "Điều chỉnh sau duyệt";
 
 /** Giới hạn độ dài nội dung điều chỉnh — kiểm ở CẢ ô nhập lẫn máy chủ. */
 export const ADJUSTMENT_MAX_LENGTH = 500;
+
+/**
+ * "Sửa tệp đính kèm khi duyệt" (Sếp duyệt demo 06/10/2026) — dòng lịch sử ghi
+ * khi người đính kèm (hoặc Owner/Admin) thay/gỡ tệp đã gửi kèm quyết định.
+ * KHÔNG phải quyết định duyệt: lib/approver-progress.ts và
+ * lib/approver-opinions.ts chỉ đọc đúng các nhãn quyết định nên tự bỏ qua 2
+ * nhãn này. Đổi chuỗi = dòng cũ không còn được nhận diện, đừng đổi tuỳ tiện.
+ */
+export const DECISION_ATTACHMENT_REPLACED_ACTION = "Đã thay tệp đính kèm";
+export const DECISION_ATTACHMENT_REMOVED_ACTION = "Đã gỡ tệp đính kèm";
+export const DECISION_ATTACHMENT_EDIT_ACTIONS: readonly string[] = [
+  DECISION_ATTACHMENT_REPLACED_ACTION,
+  DECISION_ATTACHMENT_REMOVED_ACTION,
+];

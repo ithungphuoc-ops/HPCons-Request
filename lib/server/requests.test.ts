@@ -453,3 +453,18 @@ describe("findInvalidExternalCodeFields", () => {
     expect(docLaiHopDongCongNo).not.toHaveBeenCalled();
   });
 });
+
+describe("collectAttachmentPaths — tệp đã gỡ/đã thay (Sửa tệp đính kèm khi duyệt)", () => {
+  it("mặc định ẩn tệp đã gỡ khỏi danh sách tải; Owner/Admin (includeRemoved) vẫn tải được", async () => {
+    const { collectAttachmentPaths } = await import("./requests");
+    const req = {
+      values: { f1: [{ name: "a.pdf", path: "requests/u1/1-a.pdf", size: 1 }] },
+      attachments: [
+        { name: "b.pdf", path: "requests/u2/2-b.pdf", size: 1, source: "decision", removedAt: "2026-10-06T00:00:00.000Z" },
+        { name: "c.pdf", path: "requests/u2/3-c.pdf", size: 1, source: "decision" },
+      ],
+    } as unknown as Parameters<typeof collectAttachmentPaths>[0];
+    expect([...collectAttachmentPaths(req)].sort()).toEqual(["requests/u1/1-a.pdf", "requests/u2/3-c.pdf"]);
+    expect(collectAttachmentPaths(req, { includeRemoved: true }).has("requests/u2/2-b.pdf")).toBe(true);
+  });
+});

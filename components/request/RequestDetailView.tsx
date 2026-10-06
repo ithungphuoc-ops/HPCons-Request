@@ -49,6 +49,12 @@ import CommentSection from "@/components/request/CommentSection";
 import AvatarWithCard from "@/components/request/AvatarWithCard";
 import ApproverProgressModal from "@/components/request/ApproverProgressModal";
 import ApproverOpinionsModal from "@/components/request/ApproverOpinionsModal";
+import {
+  DecisionAttachmentEditError,
+  DecisionAttachmentEditMenu,
+  useDecisionAttachmentEditor,
+} from "@/components/request/DecisionAttachmentEditMenu";
+import { activeAttachments } from "@/lib/decision-attachment-edit";
 import { countOpinionsByApprover, extractApproverOpinions } from "@/lib/approver-opinions";
 import { decisionNoteMode, resolveDecisionNoteRules, type DecisionNoteMode } from "@/lib/decision-note";
 import {
@@ -614,6 +620,26 @@ export default function RequestDetailView({
     approve_and_forward: decisionAttachmentMode(attachmentRules.approveAndForward),
     forward_then_approve: decisionAttachmentMode(attachmentRules.forward),
   };
+
+  // "Sửa tệp đính kèm khi duyệt" (06/10/2026) — 1 bộ trạng thái cho cả 3 chỗ
+  // (Thảo luận, popup ý kiến, khối Tài liệu đính kèm); xong thì cập nhật
+  // attachments + history → `opinions` tính lại → 3 chỗ đổi cùng lúc.
+  const onDecisionAttachmentUpdated = useCallback(
+    (data: { attachments: RequestAttachment[]; history: RequestHistoryEntry[] }) => {
+      setAttachments(data.attachments);
+      setHistory(data.history);
+    },
+    [],
+  );
+  const attachmentEditor = useDecisionAttachmentEditor({
+    requestId: request.id,
+    status: request.status,
+    currentUid,
+    isAdmin,
+    onUpdated: onDecisionAttachmentUpdated,
+  });
+  // Tệp đã gỡ/đã thay ẩn khỏi danh sách chính (vẫn còn trong `attachments`).
+  const visibleAttachments = useMemo(() => activeAttachments(attachments), [attachments]);
 
   // Ý kiến người duyệt — trích từ lịch sử (lib/approver-opinions.ts), chỉ đọc.
   const opinions = useMemo(
@@ -1380,7 +1406,7 @@ export default function RequestDetailView({
                 }}
               />
             </div>
-            {attachments.length === 0 ? (
+            {visibleAttachments.length === 0 ? (
               <p className="mt-1.5 text-[14px] text-gray-400">Chưa có tài liệu nào.</p>
             ) : (
               <ul className="mt-1.5 flex flex-col gap-1">
@@ -1393,6 +1419,8 @@ export default function RequestDetailView({
                   const firstPostApprovalIndex = attachments.length - attachmentSupplementEntries.length;
                   const supplementEntry =
                     i >= firstPostApprovalIndex ? attachmentSupplementEntries[i - firstPostApprovalIndex] : null;
+                  // Vị trí tính trên mảng ĐẦY ĐỦ ở trên, rồi mới ẩn tệp đã gỡ/đã thay.
+                  if (att.removedAt) return null;
                   return (
                     <li key={att.path}>
                       <button
@@ -1431,24 +1459,30 @@ export default function RequestDetailView({
             liệu đính kèm" chỉ nằm trong khối "Điều chỉnh đề nghị sau duyệt"
             (chỉ hiện khi ĐÃ DUYỆT), nên thêm khối CHỈ ĐỌC này cho các trạng
             thái khác, chỉ khi có tệp. */}
-        {request.status !== "approved" && request.status !== "draft" && attachments.length > 0 && (
+        {request.status !== "approved" && request.status !== "draft" && visibleAttachments.length > 0 && (
           <div className="mt-4 rounded-[3px] border border-[var(--color-border)] bg-white p-4" data-testid="request-attachments-card">
             <h2 className="mb-2 flex items-center gap-1.5 text-[14px] font-semibold uppercase tracking-wide text-gray-500">
               <Paperclip size={14} /> Tài liệu đính kèm
             </h2>
             <ul className="flex flex-col gap-1">
-              {attachments.map((att) => (
+              {visibleAttachments.map((att) => (
                 <li key={att.path}>
-                  <button
-                    type="button"
-                    onClick={() => setPreviewingAttachment(att)}
-                    className="flex w-full items-center gap-1.5 text-left text-[14px] text-[var(--color-action-blue)] hover:underline"
-                  >
-                    <Paperclip size={13} className="shrink-0" />
-                    <span className="truncate">{att.name}</span>
-                    <span className="shrink-0 text-gray-400">({(att.size / 1024 / 1024).toFixed(1)}MB)</span>
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setPreviewingAttachment(att)}
+                      className="flex min-w-0 flex-1 items-center gap-1.5 text-left text-[14px] text-[var(--color-action-blue)] hover:underline"
+                    >
+                      <Paperclip size={13} className="shrink-0" />
+                      <span className="truncate">{att.name}</span>
+                      <span className="shrink-0 text-gray-400">({(att.size / 1024 / 1024).toFixed(1)}MB)</span>
+                    </button>
+                    <DecisionAttachmentEditMenu file={att} editor={attachmentEditor} />
+                  </div>
                   <DecisionAttachmentMeta att={att} />
+                  <div className="ml-[19px]">
+                    <DecisionAttachmentEditError file={att} editor={attachmentEditor} />
+                  </div>
                 </li>
               ))}
             </ul>
@@ -1472,6 +1506,7 @@ export default function RequestDetailView({
             currentUid={currentUid}
             isOwner={isOwner}
             opinions={opinions}
+            attachmentEditor={attachmentEditor}
           />
         </div>
       </div>
@@ -1513,6 +1548,7 @@ export default function RequestDetailView({
               focusApproverId={opinionsView.focus}
               onShowAll={() => setOpinionsView({ focus: null })}
               onClose={closeOpinions}
+              attachmentEditor={attachmentEditor}
             />
           )}
           {progressOpen && (

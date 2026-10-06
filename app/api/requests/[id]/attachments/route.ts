@@ -35,7 +35,7 @@ export async function GET(
     }
 
     const path = new URL(request.url).searchParams.get("path");
-    if (!path || !collectAttachmentPaths(found).has(path)) {
+    if (!path || !collectAttachmentPaths(found, { includeRemoved: canManageGroupsAtAppScope(session.role) }).has(path)) {
       return NextResponse.json({ error: "Không tìm thấy tệp đính kèm." }, { status: 404 });
     }
 

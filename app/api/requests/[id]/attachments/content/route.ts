@@ -4,6 +4,7 @@ import { MAX_PREVIEW_FILE_SIZE, MAX_PREVIEW_FILE_SIZE_LABEL } from "@/lib/consta
 import { downloadObject, headObjectSize } from "@/lib/r2";
 import { canView, collectAttachmentPaths, loadRequest } from "@/lib/server/requests";
 import { requireSession } from "@/lib/session";
+import { canManageGroupsAtAppScope } from "@/lib/permissions";
 
 export const runtime = "nodejs";
 
@@ -33,7 +34,7 @@ export async function GET(
     }
 
     const path = new URL(request.url).searchParams.get("path");
-    if (!path || !collectAttachmentPaths(found).has(path)) {
+    if (!path || !collectAttachmentPaths(found, { includeRemoved: canManageGroupsAtAppScope(session.role) }).has(path)) {
       return NextResponse.json({ error: "Không tìm thấy tệp đính kèm." }, { status: 404 });
     }
 

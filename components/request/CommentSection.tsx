@@ -17,6 +17,7 @@ import Avatar from "@/components/request/Avatar";
 import { useAvatarsByUids } from "@/lib/useAvatarsByUids";
 import type { ApproverOpinion } from "@/lib/approver-opinions";
 import { OPINION_TONE, OpinionAttachmentChips, opinionActionText } from "@/components/request/ApproverOpinionsModal";
+import type { DecisionAttachmentEditor } from "@/components/request/DecisionAttachmentEditMenu";
 
 /** Hạn sửa/xóa của tác giả — PHẢI khớp `AUTHOR_EDIT_WINDOW_MS` phía server
  * (app/api/requests/[id]/comments/[commentId]/route.ts). Đây chỉ để ẩn/hiện
@@ -71,6 +72,7 @@ export default function CommentSection({
   currentUid,
   isOwner,
   opinions = [],
+  attachmentEditor,
 }: {
   requestId: string;
   initialComments: RequestComment[];
@@ -83,6 +85,8 @@ export default function CommentSection({
   /** `session.role === "owner"` — KHÔNG dùng "admin" gộp chung nữa (đổi
    * hướng 24/08/2026, xem design.md Decision #7). */
   isOwner: boolean;
+  /** Nút ⋯ Thay / Gỡ tệp đính kèm khi duyệt (06/10/2026) — undefined = chỉ xem. */
+  attachmentEditor?: DecisionAttachmentEditor;
 }) {
   const { askConfirm } = useRequestContext();
   const [comments, setComments] = useState<RequestComment[]>(initialComments);
@@ -382,7 +386,13 @@ export default function CommentSection({
               {o.note}
             </p>
           )}
-          <OpinionAttachmentChips files={o.attachments} onOpen={setPreviewing} />
+          <OpinionAttachmentChips
+            files={o.attachments}
+            former={o.formerAttachments}
+            changes={o.attachmentChanges}
+            editor={attachmentEditor}
+            onOpen={setPreviewing}
+          />
           <div className="mt-0.5 text-[12px] text-gray-400">{new Date(o.at).toLocaleString("vi-VN")}</div>
         </div>
       </div>

@@ -8,6 +8,12 @@ import { fileExtLabel } from "@/components/request/DecisionAttachmentInput";
 import Avatar from "@/components/request/Avatar";
 import AvatarWithCard from "@/components/request/AvatarWithCard";
 import { OPINION_VERB, type ApproverOpinion, type ApproverOpinionKind } from "@/lib/approver-opinions";
+import type { AttachmentChange } from "@/lib/decision-attachment-edit";
+import {
+  DecisionAttachmentEditError,
+  DecisionAttachmentEditMenu,
+  type DecisionAttachmentEditor,
+} from "@/components/request/DecisionAttachmentEditMenu";
 import { formatDeadline } from "@/lib/approver-progress";
 import { resolveRequestTitle } from "@/lib/request-title";
 import type { AvatarProfile } from "@/lib/useAvatarProfilesByUids";
@@ -34,38 +40,92 @@ export function opinionActionText(o: ApproverOpinion, capitalize = false): strin
 
 /** Chip tệp người duyệt đính kèm cùng ý kiến — bấm mở popup xem trước/tải
  * (FilePreviewModal, cùng cách mở tài liệu đính kèm sẵn có). Tệp không còn
- * trong đề xuất (`path` rỗng) → chỉ hiện tên, không bấm được. */
+ * trong đề xuất (`path` rỗng) → chỉ hiện tên, không bấm được.
+ *
+ * "Sửa tệp đính kèm khi duyệt" (06/10/2026): `editor` có → nút ⋯ (Thay / Gỡ)
+ * cạnh tệp người xem được sửa; `former` = tệp đã gỡ/đã thay hiện gạch ngang
+ * thu gọn (chỉ Owner/Admin còn mở được); `changes` = dòng lịch sử nhỏ. */
 export function OpinionAttachmentChips({
   files,
   onOpen,
+  former = [],
+  changes = [],
+  editor,
 }: {
   files: RequestAttachment[];
   onOpen: (file: RequestAttachment) => void;
+  former?: RequestAttachment[];
+  changes?: AttachmentChange[];
+  editor?: DecisionAttachmentEditor;
 }) {
-  if (files.length === 0) return null;
+  if (files.length === 0 && former.length === 0) return null;
+  const canOpenFormer = editor?.canOpenRemoved === true;
   return (
-    <div className="mt-1.5 flex flex-wrap gap-1.5" data-testid="opinion-attachments">
-      {files.map((f, i) => (
-        <button
-          key={`${f.path || f.name}-${i}`}
-          type="button"
-          disabled={!f.path}
-          onClick={() => f.path && onOpen(f)}
-          title={f.path ? `Xem / tải ${f.name}` : "Tệp không còn trong đề xuất"}
-          className="inline-flex max-w-full items-center gap-1.5 rounded bg-white px-2 py-1 text-left text-[12.5px] text-[var(--color-action-blue)] ring-1 ring-inset ring-[var(--color-border)] hover:bg-blue-50 disabled:cursor-default disabled:text-gray-400 disabled:hover:bg-white"
-        >
-          <span className="shrink-0 rounded bg-[var(--color-action-blue)] px-1 text-[10px] font-bold text-white">
-            {fileExtLabel(f.name)}
-          </span>
-          <span className="min-w-0 wrap-anywhere">{f.name}</span>
-          {f.size > 0 && (
-            <span className="shrink-0 text-gray-400">({(f.size / 1024 / 1024).toFixed(1)}MB)</span>
-          )}
-          <Paperclip size={11} className="shrink-0 text-gray-400" />
-        </button>
-      ))}
-    </div>
+    <>
+      {files.length > 0 && (
+        <div className="mt-1.5 flex flex-wrap gap-1.5" data-testid="opinion-attachments">
+          {files.map((f, i) => (
+            <span key={`${f.path || f.name}-${i}`} className="inline-flex max-w-full flex-col">
+              <span className="inline-flex max-w-full items-center rounded bg-white ring-1 ring-inset ring-[var(--color-border)]">
+                <button
+                  type="button"
+                  disabled={!f.path}
+                  onClick={() => f.path && onOpen(f)}
+                  title={f.path ? `Xem / tải ${f.name}` : "Tệp không còn trong đề xuất"}
+                  className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded px-2 py-1 text-left text-[12.5px] text-[var(--color-action-blue)] hover:bg-blue-50 disabled:cursor-default disabled:text-gray-400 disabled:hover:bg-white"
+                >
+                  <span className="shrink-0 rounded bg-[var(--color-action-blue)] px-1 text-[10px] font-bold text-white">
+                    {fileExtLabel(f.name)}
+                  </span>
+                  <span className="min-w-0 wrap-anywhere">{f.name}</span>
+                  {f.size > 0 && (
+                    <span className="shrink-0 text-gray-400">({(f.size / 1024 / 1024).toFixed(1)}MB)</span>
+                  )}
+                  <Paperclip size={11} className="shrink-0 text-gray-400" />
+                </button>
+                <DecisionAttachmentEditMenu file={f} editor={editor} />
+              </span>
+              <DecisionAttachmentEditError file={f} editor={editor} />
+            </span>
+          ))}
+        </div>
+      )}
+      {former.length > 0 && (
+        <div className="mt-1 flex flex-wrap gap-1.5" data-testid="opinion-former-attachments">
+          {former.map((f, i) => (
+            <button
+              key={`former-${f.path}-${i}`}
+              type="button"
+              disabled={!canOpenFormer}
+              onClick={() => canOpenFormer && onOpen(f)}
+              title={canOpenFormer ? `Tệp đã gỡ/đã thay — xem lại ${f.name}` : "Tệp đã gỡ/đã thay"}
+              className="inline-flex max-w-full items-center gap-1 rounded px-1.5 py-0.5 text-left text-[11.5px] text-gray-400 line-through ring-1 ring-inset ring-[var(--color-border)] enabled:hover:bg-gray-50 disabled:cursor-default"
+            >
+              <span className="min-w-0 wrap-anywhere">{f.name}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {changes.length > 0 && (
+        <ul className="mt-1 border-l-2 border-[var(--color-border)] pl-2 text-[12px] text-gray-500" data-testid="opinion-attachment-log">
+          {changes.map((c, i) => (
+            <li key={`${c.at}-${i}`} className="break-words">
+              {attachmentChangeText(c)}
+              {c.at ? ` · ${formatDeadline(c.at)}` : ""}
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
   );
+}
+
+/** "Hồ Hữu Phương đã thay tệp "a" bằng "b"" / "… đã gỡ tệp "a"". */
+export function attachmentChangeText(c: AttachmentChange): string {
+  const who = c.by || "Ai đó";
+  return c.kind === "replaced"
+    ? `${who} đã thay tệp "${c.oldName}" bằng "${c.newName ?? ""}"`
+    : `${who} đã gỡ tệp "${c.oldName}"`;
 }
 
 /** Ảnh người có ý kiến — ghép được vào danh sách duyệt thì dùng ảnh thật. */
@@ -117,6 +177,7 @@ export default function ApproverOpinionsModal({
   focusApproverId,
   onShowAll,
   onClose,
+  attachmentEditor,
 }: {
   request: RequestInstance;
   opinions: ApproverOpinion[];
@@ -124,6 +185,8 @@ export default function ApproverOpinionsModal({
   focusApproverId?: string | null;
   onShowAll?: () => void;
   onClose: () => void;
+  /** Nút ⋯ Thay / Gỡ tệp ("Sửa tệp đính kèm khi duyệt", 06/10/2026). */
+  attachmentEditor?: DecisionAttachmentEditor;
 }) {
   const shown = focusApproverId ? opinions.filter((o) => o.approverId === focusApproverId) : opinions;
   const focusName = focusApproverId
@@ -195,7 +258,13 @@ export default function ApproverOpinionsModal({
                     ) : (
                       <span className="font-semibold text-gray-700">Tệp đính kèm:</span>
                     )}
-                    <OpinionAttachmentChips files={o.attachments} onOpen={setPreviewing} />
+                    <OpinionAttachmentChips
+                      files={o.attachments}
+                      former={o.formerAttachments}
+                      changes={o.attachmentChanges}
+                      editor={attachmentEditor}
+                      onOpen={setPreviewing}
+                    />
                   </div>
                 </div>
                 <Icon size={18} className={`mt-0.5 shrink-0 ${tone.text}`} aria-label={opinionActionText(o, true)} />
