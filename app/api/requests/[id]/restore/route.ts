@@ -1,4 +1,5 @@
 import { after, NextResponse } from "next/server";
+import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase/admin";
 import { guiCacViec, taoViecDongBo } from "@/lib/dong-bo/hang-cho";
 import { apiErrorResponse } from "@/lib/http";
@@ -33,11 +34,10 @@ export async function POST(
     }
 
     const nowIso = new Date().toISOString();
-    const history = [
-      ...found.history,
-      { at: nowIso, actor: session.name, action: "Đã khôi phục đề xuất" },
-    ];
-    await adminDb.collection("requests").doc(id).update({ deletedAt: null, history });
+    const entry = { at: nowIso, actor: session.name, action: "Đã khôi phục đề xuất" };
+    const history = [...found.history, entry];
+    // NỐI bằng arrayUnion (06/10/2026) — không ghi đè cả mảng từ bản đọc cũ.
+    await adminDb.collection("requests").doc(id).update({ deletedAt: null, history: FieldValue.arrayUnion(entry) });
     /* ★ 03/10/2026 (đợt 1 "liên kết 4 app", L05/L06) — khôi phục đề xuất ĐÃ DUYỆT thì báo Kho + Thu
        mua hiện lại đề nghị. Lỗi tạo việc không được làm hỏng thao tác khôi phục. */
     if (found.status === "approved") {

@@ -1,5 +1,6 @@
 import { after, NextResponse } from "next/server";
 import { isUserInGroupScope, OUT_OF_SCOPE_MESSAGE } from "@/lib/server/hpcore-org";
+import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase/admin";
 import { guiCacViec, quetViecToiHan, taoViecDongBo } from "@/lib/dong-bo/hang-cho";
 import { apiErrorResponse } from "@/lib/http";
@@ -373,11 +374,11 @@ export async function DELETE(
     }
 
     const nowIso = new Date().toISOString();
-    const history = [
-      ...found.history,
-      { at: nowIso, actor: session.name, action: "Đã xóa đề xuất" },
-    ];
-    await adminDb.collection("requests").doc(id).update({ deletedAt: nowIso, history });
+    const entry = { at: nowIso, actor: session.name, action: "Đã xóa đề xuất" };
+    const history = [...found.history, entry];
+    // NỐI dòng lịch sử bằng arrayUnion (06/10/2026) — không ghi đè cả mảng từ
+    // bản đọc cũ, tránh xoá mất dòng của quyết định duyệt ghi xen giữa.
+    await adminDb.collection("requests").doc(id).update({ deletedAt: nowIso, history: FieldValue.arrayUnion(entry) });
     /* ★ 03/10/2026 (đợt 1 "liên kết 4 app", L03/L04) — đề xuất ĐÃ DUYỆT bị xoá thì báo Kho + Thu mua.
        Chưa duyệt thì chưa từng sang app nào, không cần báo. Lỗi tạo việc không được làm hỏng thao tác xoá. */
     if (found.status === "approved") {
