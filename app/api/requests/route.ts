@@ -89,10 +89,15 @@ export async function GET(request: Request) {
     if (scope === "adjustment-inbox") {
       // "Điều chỉnh sau duyệt" đang chờ CHÍNH người này duyệt (06/10/2026) —
       // cho chuông thông báo. Đề xuất đã duyệt nên không lọt vào "inbox".
-      const snap = await adminDb.collection("requests").where("status", "==", "approved").get();
+      // Chỉ đọc đề xuất ĐANG có điều chỉnh chờ (`!= null` loại cả doc thiếu
+      // field) — 1 điều kiện, dùng index 1 trường tự động, KHÔNG cần index
+      // composite (đừng thêm điều kiện thứ 2 vào truy vấn). Điều chỉnh xong /
+      // bị từ chối luôn ghi `pendingAdjustment: null` (route adjustment/decision),
+      // nên tự rơi khỏi kết quả. Phần còn lại lọc trong bộ nhớ.
+      const snap = await adminDb.collection("requests").where("pendingAdjustment", "!=", null).get();
       const requests = snap.docs
         .map((doc) => ({ id: doc.id, ...doc.data() }) as RequestInstance)
-        .filter((r) => !r.deletedAt && isAwaitingMyAdjustmentDecision(r, session.uid))
+        .filter((r) => !r.deletedAt && r.status === "approved" && isAwaitingMyAdjustmentDecision(r, session.uid))
         .sort((a, b) => (b.pendingAdjustment?.createdAt ?? "").localeCompare(a.pendingAdjustment?.createdAt ?? ""));
       return NextResponse.json({ requests });
     }

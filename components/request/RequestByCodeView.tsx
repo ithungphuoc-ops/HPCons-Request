@@ -25,6 +25,8 @@ export default function RequestByCodeView({ code }: { code: string }) {
   const [requestId, setRequestId] = useState<string | null>(null);
   const [matches, setMatches] = useState<CodeMatch[] | null>(null);
   const [request, setRequest] = useState<RequestInstance | null>(null);
+  // Máy chủ tính sẵn trong cùng lượt GET (như trang /request/requests/[id]).
+  const [viewerAdjustmentAccess, setViewerAdjustmentAccess] = useState<"gated" | "none">("none");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [currentUid, setCurrentUid] = useState<string | null>(null);
 
@@ -41,9 +43,10 @@ export default function RequestByCodeView({ code }: { code: string }) {
   const load = useCallback(() => {
     if (!requestId) return;
     fetch(`/api/requests/${requestId}`)
-      .then((res) => docJson<{ request: RequestInstance }>(res))
+      .then((res) => docJson<{ request: RequestInstance; viewerAdjustmentAccess?: "gated" | "none" }>(res))
       .then((data) => {
         setRequest(data.request);
+        setViewerAdjustmentAccess(data.viewerAdjustmentAccess ?? "none");
         // Gõ thiếu số 0 (`/request/162`) thì thanh địa chỉ tự sửa về đúng mã.
         if (data.request.code && data.request.code !== code) {
           window.history.replaceState(null, "", `/request/${data.request.code}`);
@@ -93,7 +96,14 @@ export default function RequestByCodeView({ code }: { code: string }) {
       )}
 
       {!loadError && !matches && !request && <p className="text-[14px] text-gray-400">Đang tải...</p>}
-      {request && <RequestDetailView request={request} currentUid={currentUid} onActed={load} />}
+      {request && (
+        <RequestDetailView
+          request={request}
+          currentUid={currentUid}
+          viewerAdjustmentAccess={viewerAdjustmentAccess}
+          onActed={load}
+        />
+      )}
     </div>
   );
 }
