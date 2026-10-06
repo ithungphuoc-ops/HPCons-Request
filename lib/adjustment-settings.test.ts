@@ -3,6 +3,11 @@ import {
   buildAdjustmentCancelNote,
   canCancelPendingAdjustment,
   checkAdjustmentContent,
+  DEFAULT_ADJUSTMENT_GUIDE,
+  ADJUSTMENT_GUIDE_MAX_LENGTH,
+  resolveAdjustmentGuide,
+  resolveDefaultAdjustmentGuide,
+  sanitizeAdjustmentGuide,
   findLastApprover,
   findPurchasingDepartment,
   isAdjustmentReviewer,
@@ -199,5 +204,49 @@ describe("canCancelPendingAdjustment / buildAdjustmentCancelNote", () => {
       "Điều chỉnh bị huỷ (do An đề nghị): (chỉ đính tệp) · Tệp kèm (không lưu vào đề xuất): cu.pdf",
     );
     expect(buildAdjustmentCancelNote(pending, "nghỉ")).toMatch(/^Lý do: nghỉ · /);
+  });
+});
+
+describe("resolveAdjustmentGuide — hướng dẫn điều chỉnh theo nhóm (06/10/2026)", () => {
+  it("nhóm đã soạn riêng → dùng đúng nội dung nhóm, bỏ qua mặc định", () => {
+    expect(resolveAdjustmentGuide("HD nhóm", "HD chung cũ")).toBe("HD nhóm");
+    expect(resolveAdjustmentGuide("HD nhóm", undefined)).toBe("HD nhóm");
+  });
+  it("chuỗi rỗng (Admin cố ý xoá trắng) → rỗng = không hiện cảnh báo, KHÔNG rơi về mặc định", () => {
+    expect(resolveAdjustmentGuide("", "HD chung cũ")).toBe("");
+    expect(resolveAdjustmentGuide("", null)).toBe("");
+  });
+  it("nhóm chưa soạn (undefined) / null → hướng dẫn chung cũ ở appSettings nếu từng lưu", () => {
+    expect(resolveAdjustmentGuide(undefined, "HD chung cũ")).toBe("HD chung cũ");
+    expect(resolveAdjustmentGuide(null, "HD chung cũ")).toBe("HD chung cũ");
+    // appSettings từng lưu RỖNG → giữ nghĩa cũ: không hiện cảnh báo.
+    expect(resolveAdjustmentGuide(undefined, "")).toBe("");
+  });
+  it("không có cả 2 → nội dung mặc định trong code", () => {
+    expect(resolveAdjustmentGuide(undefined, undefined)).toBe(DEFAULT_ADJUSTMENT_GUIDE);
+    expect(resolveAdjustmentGuide(null, null)).toBe(DEFAULT_ADJUSTMENT_GUIDE);
+    expect(resolveDefaultAdjustmentGuide(undefined)).toBe(DEFAULT_ADJUSTMENT_GUIDE);
+  });
+});
+
+describe("sanitizeAdjustmentGuide — chuẩn hoá PATCH nhóm", () => {
+  it("null = dùng mặc định", () => {
+    expect(sanitizeAdjustmentGuide(null)).toEqual({ ok: true, value: null });
+  });
+  it("trim 2 đầu + đổi xuống dòng Windows về \n, giữ xuống dòng giữa", () => {
+    expect(sanitizeAdjustmentGuide("  \r\n• Dòng 1\r\n• Dòng 2\r  ")).toEqual({ ok: true, value: "• Dòng 1\n• Dòng 2" });
+  });
+  it("chuỗi chỉ có khoảng trắng → rỗng (không hiện cảnh báo)", () => {
+    expect(sanitizeAdjustmentGuide("   \n ")).toEqual({ ok: true, value: "" });
+  });
+  it("sai kiểu → lỗi", () => {
+    for (const bad of [undefined, 1, true, {}, ["a"]]) {
+      expect(sanitizeAdjustmentGuide(bad).ok).toBe(false);
+    }
+  });
+  it(`tối đa ${ADJUSTMENT_GUIDE_MAX_LENGTH} ký tự (đếm sau khi trim)`, () => {
+    const max = "a".repeat(ADJUSTMENT_GUIDE_MAX_LENGTH);
+    expect(sanitizeAdjustmentGuide(`  ${max}  `)).toEqual({ ok: true, value: max });
+    expect(sanitizeAdjustmentGuide(`${max}a`).ok).toBe(false);
   });
 });

@@ -3,9 +3,10 @@ import { adminDb } from "@/lib/firebase/admin";
 import { getHpcoreDb } from "@/lib/hpcore";
 import { getCachedDepartments } from "@/lib/server/hpcore-org";
 import {
-  DEFAULT_ADJUSTMENT_GUIDE,
   findLastApprover,
   findPurchasingDepartment,
+  resolveAdjustmentGuide,
+  resolveDefaultAdjustmentGuide,
 } from "@/lib/adjustment-settings";
 import type { RequestInstance } from "@/lib/types";
 
@@ -77,22 +78,27 @@ export async function resolveAdjustmentSuggestions(
     .map((c) => ({ key: c.key, label: c.label, user: { id: c.uid, name: active.get(c.uid)!.name } }));
 }
 
-/* ------------------------- Hướng dẫn chung toàn app ------------------------ */
+/* ------------------- Nội dung hướng dẫn MẶC ĐỊNH (fallback) ------------------- */
 
-/** Cài đặt cấp APP (không theo nhóm) — collection riêng, 1 doc. */
+/** Hướng dẫn CHUNG cũ (PR #85, `appSettings/adjustment` — Firestore project
+ * của app Đề xuất). Từ 06/10/2026 mỗi nhóm có hướng dẫn riêng
+ * (`group.adjustmentGuide`); doc này KHÔNG còn chỗ sửa, chỉ còn được ĐỌC làm
+ * nội dung mặc định cho nhóm chưa soạn riêng — để không mất nội dung Admin đã
+ * soạn trước đó. */
 const GUIDE_DOC = () => adminDb.collection("appSettings").doc("adjustment");
 
-/** Nội dung "Hướng dẫn điều chỉnh sau duyệt" — chưa từng lưu → mặc định như
- * demo. Chuỗi rỗng (Owner/Admin cố ý xoá hết) → không hiện cảnh báo. */
-export async function getAdjustmentGuide(): Promise<{ guide: string; isDefault: boolean; updatedAt: string | null; updatedBy: string | null }> {
+/** Nội dung mặc định cho nhóm chưa soạn riêng — xem
+ * `resolveDefaultAdjustmentGuide` (doc cũ nếu từng lưu, không thì mặc định
+ * trong code). */
+export async function getDefaultAdjustmentGuide(): Promise<string> {
   const snap = await GUIDE_DOC().get();
-  const data = snap.data() as { guide?: unknown; updatedAt?: string; updatedBy?: string } | undefined;
-  if (!data || typeof data.guide !== "string") {
-    return { guide: DEFAULT_ADJUSTMENT_GUIDE, isDefault: true, updatedAt: null, updatedBy: null };
-  }
-  return { guide: data.guide, isDefault: false, updatedAt: data.updatedAt ?? null, updatedBy: data.updatedBy ?? null };
+  const data = snap.data() as { guide?: unknown } | undefined;
+  return resolveDefaultAdjustmentGuide(typeof data?.guide === "string" ? data.guide : null);
 }
 
-export async function saveAdjustmentGuide(guide: string, actorName: string): Promise<void> {
-  await GUIDE_DOC().set({ guide, updatedAt: new Date().toISOString(), updatedBy: actorName }, { merge: true });
+/** Hướng dẫn hiện trong hộp Điều chỉnh của 1 nhóm — nhóm đã soạn riêng (kể
+ * cả chuỗi rỗng) thì KHÔNG tốn lượt đọc doc mặc định. */
+export async function getAdjustmentGuideForGroup(groupGuide: string | null | undefined): Promise<string> {
+  if (typeof groupGuide === "string") return resolveAdjustmentGuide(groupGuide, null);
+  return getDefaultAdjustmentGuide();
 }

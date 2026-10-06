@@ -40,7 +40,11 @@ const FIELD_LABELS: Record<string, string> = {
   requireDecisionAttachment: "Ý kiến khi phê duyệt — bắt buộc đính kèm tệp",
   adjustmentFieldRules: "Điều chỉnh sau duyệt — ô Ghi chú / Đính kèm tệp",
   adjustmentApprovalRules: "Điều chỉnh sau duyệt — người theo dõi được bấm",
+  adjustmentGuide: "Điều chỉnh sau duyệt — hướng dẫn",
 };
+
+/** Lịch sử chỉ cần nhận ra nội dung — cắt bớt hướng dẫn dài. */
+const ADJUSTMENT_GUIDE_HISTORY_PREVIEW = 300;
 
 /** Field dạng object cờ theo hành động — hiển thị "Chấp thuận: Có, …" thay
  * vì "[object Object]". */
@@ -73,6 +77,13 @@ function toDisplay(value: unknown, key?: string): string {
       resolveAdjustmentFieldRules({ adjustmentFieldRules: (value ?? undefined) as never }),
     );
   }
+  if (key === "adjustmentGuide") {
+    if (typeof value !== "string") return "Theo nội dung mặc định";
+    if (!value.trim()) return "(Để trống — không hiện cảnh báo)";
+    return value.length > ADJUSTMENT_GUIDE_HISTORY_PREVIEW
+      ? `${value.slice(0, ADJUSTMENT_GUIDE_HISTORY_PREVIEW)}…`
+      : value;
+  }
   if (key === "adjustmentApprovalRules") {
     return (value as { allowFollowers?: unknown } | null | undefined)?.allowFollowers === true ? "Có" : "Không";
   }
@@ -80,6 +91,10 @@ function toDisplay(value: unknown, key?: string): string {
   if (typeof value === "boolean") return value ? "Có" : "Không";
   if (Array.isArray(value)) return value.length === 0 ? "Trống" : `${value.length} mục`;
   return String(value);
+}
+
+function guideOrNull(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
 }
 
 /** So sánh giá trị cũ/mới của từng trường trong patch, trả về danh sách thay
@@ -95,7 +110,10 @@ export function diffGroupPatch(
       // tự khác, JSON.stringify sẽ ghi dòng lịch sử ảo.
       DECISION_NOTE_KEYS.has(key)
         ? describeFlags(key, before[key]) !== describeFlags(key, value)
-        : JSON.stringify(before[key]) !== JSON.stringify(value),
+        : key === "adjustmentGuide"
+          ? // Thiếu field và `null` cùng nghĩa "theo mặc định" — không ghi dòng ảo.
+            guideOrNull(before[key]) !== guideOrNull(value)
+          : JSON.stringify(before[key]) !== JSON.stringify(value),
     )
     .map(([key, value]) => ({
       field: FIELD_LABELS[key] ?? key,

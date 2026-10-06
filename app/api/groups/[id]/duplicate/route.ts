@@ -103,6 +103,8 @@ export async function POST(
       adjustmentFieldRules: source.adjustmentFieldRules
         ? JSON.parse(JSON.stringify(source.adjustmentFieldRules))
         : undefined,
+      // Hướng dẫn điều chỉnh riêng của nhóm — chép nguyên (chuỗi / null).
+      adjustmentGuide: source.adjustmentGuide,
       useOwnCounter: source.useOwnCounter,
       // Reset — người nhân bản là "người tạo" của bản sao, không phải người tạo nhóm gốc.
       createdBy: { uid: session.uid, name: session.name },

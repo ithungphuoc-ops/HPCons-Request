@@ -12,7 +12,7 @@ import {
 } from "@/lib/server/groups";
 import { sanitizeHelpText } from "@/lib/validation";
 import { DECISION_NOTE_ACTIONS, sanitizeDecisionNoteFlags } from "@/lib/decision-note";
-import { sanitizeAdjustmentFieldRules } from "@/lib/adjustment-settings";
+import { sanitizeAdjustmentFieldRules, sanitizeAdjustmentGuide } from "@/lib/adjustment-settings";
 import { resolveDateLeadTimeNumbers, validateDateLeadTimeNumbers } from "@/lib/date-lead-time";
 import {
   resolveTableColumnRequired,
@@ -80,6 +80,15 @@ export async function PATCH(
         return NextResponse.json({ error: "adjustmentFieldRules không hợp lệ." }, { status: 400 });
       }
       patch.adjustmentFieldRules = clean;
+    }
+    // "Hướng dẫn điều chỉnh sau duyệt" riêng của nhóm (06/10/2026): `null` =
+    // dùng mặc định; chuỗi → trim + tối đa 2000 ký tự (chuỗi rỗng = không hiện).
+    if (patch.adjustmentGuide !== undefined) {
+      const clean = sanitizeAdjustmentGuide(patch.adjustmentGuide);
+      if (!clean.ok) {
+        return NextResponse.json({ error: clean.error }, { status: 400 });
+      }
+      patch.adjustmentGuide = clean.value;
     }
     // "Cho phép người theo dõi cũng bấm Điều chỉnh" — `allowFollowers` phải là
     // boolean. Các key cũ (branches/catchAllApprovers, PR #68) client gửi lại

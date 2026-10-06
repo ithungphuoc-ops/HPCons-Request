@@ -13,7 +13,6 @@ import {
   Plus,
   Send,
   Settings,
-  SlidersHorizontal,
   Star,
   Webhook,
 } from "lucide-react";
@@ -36,7 +35,6 @@ const adminLinks = [
   { key: "webhook-history", label: "Lịch sử Webhook", href: "/request/webhook-history", icon: Webhook },
   { key: "webhook-trace", label: "Dấu vết Webhook", href: "/request/webhook-trace", icon: Webhook },
   { key: "group-history", label: "Lịch sử chỉnh sửa nhóm", href: "/request/group-history", icon: History },
-  { key: "app-settings", label: "Cài đặt chung", href: "/request/settings/general", icon: SlidersHorizontal },
 ];
 
 const roleLabels: Record<string, string> = {

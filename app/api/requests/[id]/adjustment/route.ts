@@ -5,7 +5,7 @@ import { apiErrorResponse } from "@/lib/http";
 import { canAdjustAfterApproval, loadAdjustmentGroupSettings } from "@/lib/server/adjustment-approval-rules";
 import { sanitizeAdjustmentFilesInput } from "@/lib/server/adjustment";
 import {
-  getAdjustmentGuide,
+  getAdjustmentGuideForGroup,
   loadActiveUsers,
   resolveAdjustmentSuggestions,
 } from "@/lib/server/adjustment-reviewers";
@@ -32,7 +32,8 @@ const NO_ACCESS = "Bạn không có quyền ghi điều chỉnh cho đề xuất
 
 /**
  * Dữ liệu cho hộp "Điều chỉnh đề nghị sau duyệt" — chỉ người được bấm Điều
- * chỉnh mới lấy được: hướng dẫn chung (cảnh báo vàng), quy tắc ô Ghi chú /
+ * chỉnh mới lấy được: hướng dẫn của NHÓM đề xuất (cảnh báo vàng — xem
+ * `resolveAdjustmentGuide`), quy tắc ô Ghi chú /
  * Đính kèm của nhóm, 2 gợi ý nhanh (Người duyệt cuối, Trưởng phòng Thu mua).
  */
 export async function GET(
@@ -49,11 +50,11 @@ export async function GET(
       throw new ForbiddenError(NO_ACCESS);
     }
     const [guide, suggestions] = await Promise.all([
-      getAdjustmentGuide(),
+      getAdjustmentGuideForGroup(settings.adjustmentGuide),
       resolveAdjustmentSuggestions(found, session.uid),
     ]);
     return NextResponse.json({
-      guide: guide.guide,
+      guide,
       fieldRules: resolveAdjustmentFieldRules(settings),
       approverCount: ADJUSTMENT_APPROVER_COUNT,
       suggestions,

@@ -554,6 +554,12 @@ export interface ProposalGroup {
    * Thiếu field = Ghi chú CÓ + Đính kèm CÓ, đều không bắt buộc. Luôn phải có
    * ít nhất 1 trong 2 khi gửi. Đọc qua `resolveAdjustmentFieldRules()`
    * (lib/adjustment-settings.ts). */
+  /** "Hướng dẫn điều chỉnh sau duyệt" RIÊNG của nhóm (Sếp chốt 06/10/2026 —
+   * thay hướng dẫn chung toàn app của PR #85), hiện thành cảnh báo vàng trong
+   * hộp Điều chỉnh. Thiếu field / `null` = dùng nội dung mặc định; chuỗi rỗng
+   * = không hiện cảnh báo. Tối đa 2000 ký tự, đã trim. Đọc qua
+   * `resolveAdjustmentGuide()` (lib/adjustment-settings.ts). */
+  adjustmentGuide?: string | null;
   adjustmentFieldRules?: {
     noteEnabled?: boolean;
     noteRequired?: boolean;

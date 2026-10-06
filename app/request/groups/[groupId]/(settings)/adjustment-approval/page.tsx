@@ -1,12 +1,13 @@
 "use client";
 
-import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { AlertTriangle } from "lucide-react";
 import RequireAdminRole from "@/components/request/RequireAdminRole";
 import { useRequestContext } from "@/context/RequestContext";
 import {
   ADJUSTMENT_APPROVER_COUNT,
+  ADJUSTMENT_GUIDE_MAX_LENGTH,
   resolveAdjustmentFieldRules,
   type AdjustmentFieldRules,
 } from "@/lib/adjustment-settings";
@@ -15,8 +16,9 @@ import type { AdjustmentApprovalRules, ProposalGroup } from "@/lib/types";
 /**
  * Tab "Điều chỉnh sau duyệt" của nhóm — từ 06/10/2026 (Sếp duyệt demo
  * dieu-chinh-tu-chon-nguoi-duyet) BỎ bảng "nhánh theo phòng ban → người duyệt"
- * (PR #68): người điều chỉnh tự chọn đúng 2 người duyệt, theo "Hướng dẫn điều
- * chỉnh sau duyệt" chung toàn app (Cài đặt chung). Ở đây chỉ còn:
+ * (PR #68): người điều chỉnh tự chọn đúng 2 người duyệt. Ở đây có:
+ * - "Hướng dẫn hiện cho người điều chỉnh" — RIÊNG từng nhóm (Sếp chốt
+ *   06/10/2026, thay trang "Cài đặt chung" toàn app của PR #85).
  * - "Cho phép người theo dõi cũng bấm Điều chỉnh" (giữ theo nhóm như cũ).
  * - Ô Ghi chú / Đính kèm tệp: Có / Bắt buộc (cùng kiểu "Ý kiến khi phê duyệt").
  * Dữ liệu nhánh cũ KHÔNG bị xoá (lưu lại nguyên khi bật/tắt ô người theo dõi).
@@ -81,12 +83,10 @@ function GroupAdjustmentApprovalPageInner() {
       <p className="mb-4 text-[12.5px] text-gray-500">
         Mọi điều chỉnh đề nghị đã duyệt đều phải được duyệt lại: người điều chỉnh tự chọn đúng {ADJUSTMENT_APPROVER_COUNT}{" "}
         người duyệt (gợi ý nhanh: Người duyệt cuối, Trưởng phòng Thu mua) — đủ cả {ADJUSTMENT_APPROVER_COUNT} người duyệt
-        thì điều chỉnh mới có hiệu lực. Nội dung hướng dẫn chọn người là cài đặt chung toàn app, sửa ở{" "}
-        <Link href="/request/settings/general" className="font-medium text-[var(--color-action-blue)] hover:underline">
-          Cài đặt chung
-        </Link>
-        .
+        thì điều chỉnh mới có hiệu lực.
       </p>
+
+      <AdjustmentGuideEditor key={group.id} group={group} onSave={(value) => updateGroup(group.id, { adjustmentGuide: value })} />
 
       <label className="mb-4 flex items-start gap-2 rounded-[3px] border border-[var(--color-border)] bg-white p-3">
         <input
@@ -162,5 +162,128 @@ function GroupAdjustmentApprovalPageInner() {
         </p>
       )}
     </div>
+  );
+}
+
+/**
+ * Khối "Hướng dẫn hiện cho người điều chỉnh" của NHÓM — textarea + xem trước
+ * cảnh báo vàng + nút "Dùng nội dung mặc định". Lưu bằng nút (không lưu theo
+ * từng phím gõ). `null` = theo nội dung mặc định; chuỗi rỗng = không hiện cảnh
+ * báo. Nội dung mặc định lấy từ máy chủ (hướng dẫn chung cũ nếu từng lưu,
+ * không thì mặc định trong code).
+ */
+function AdjustmentGuideEditor({
+  group,
+  onSave,
+}: {
+  group: ProposalGroup;
+  onSave: (value: string | null) => void;
+}) {
+  const ownGuide = typeof group.adjustmentGuide === "string" ? group.adjustmentGuide : null;
+  const [defaultGuide, setDefaultGuide] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  // Nhóm đã soạn riêng → hiện ngay; chưa → chờ tải nội dung mặc định.
+  const [draft, setDraft] = useState<string | null>(ownGuide);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/app-settings/adjustment-guide")
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error("Không tải được nội dung mặc định."))))
+      .then((d: { defaultGuide: string }) => {
+        if (cancelled) return;
+        setDefaultGuide(d.defaultGuide);
+        setDraft((cur) => (cur === null ? d.defaultGuide : cur));
+      })
+      .catch((err) => {
+        if (!cancelled) setLoadError(err instanceof Error ? err.message : "Có lỗi xảy ra.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const usingDefault = ownGuide === null;
+  const effective = usingDefault ? defaultGuide : ownGuide;
+  const text = draft ?? "";
+  const dirty = draft !== null && effective !== null && text.trim() !== effective.trim();
+  const tooLong = text.trim().length > ADJUSTMENT_GUIDE_MAX_LENGTH;
+
+  return (
+    <section
+      className="mb-4 rounded-[3px] border border-[var(--color-border)] bg-white p-3"
+      data-testid="group-adjustment-guide"
+    >
+      <p className="mb-1 text-[14px] font-medium text-gray-700">Hướng dẫn hiện cho người điều chỉnh</p>
+      <p className="mb-2 text-[12px] text-gray-400">
+        Hiện thành cảnh báo vàng mỗi khi có người bấm &quot;Điều chỉnh đề nghị&quot; ở đề xuất của nhóm này — giúp họ
+        chọn đúng {ADJUSTMENT_APPROVER_COUNT} người duyệt. Để trống rồi lưu = không hiện cảnh báo.
+      </p>
+      {draft === null ? (
+        <p className="text-[13px] text-gray-400">{loadError ?? "Đang tải..."}</p>
+      ) : (
+        <>
+          <textarea
+            value={text}
+            maxLength={ADJUSTMENT_GUIDE_MAX_LENGTH}
+            onChange={(e) => setDraft(e.target.value)}
+            rows={5}
+            aria-label="Nội dung hướng dẫn điều chỉnh sau duyệt của nhóm"
+            className="w-full rounded border border-[var(--color-border)] px-3 py-2 text-[14px] leading-relaxed text-gray-800 outline-none focus:border-[var(--color-action-blue)]"
+          />
+          <div className="mt-1 flex flex-wrap items-center justify-between gap-2 text-[12px] text-gray-400">
+            <span>
+              {text.length}/{ADJUSTMENT_GUIDE_MAX_LENGTH} ký tự ·{" "}
+              {usingDefault ? "đang dùng nội dung mặc định" : "nội dung riêng của nhóm"}
+            </span>
+            {defaultGuide !== null && (
+              <button
+                type="button"
+                disabled={usingDefault && !dirty}
+                onClick={() => {
+                  setDraft(defaultGuide);
+                  if (!usingDefault) onSave(null);
+                }}
+                className="text-[12.5px] font-medium text-[var(--color-action-blue)] hover:underline disabled:cursor-default disabled:text-gray-300 disabled:no-underline"
+              >
+                Dùng nội dung mặc định
+              </button>
+            )}
+          </div>
+
+          <p className="mb-1 mt-3 text-[12px] font-medium text-gray-600">Xem trước trong hộp Điều chỉnh</p>
+          {text.trim() ? (
+            <div className="flex gap-2 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-[13.5px] text-amber-800">
+              <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+              <div className="min-w-0">
+                <p className="font-semibold">Hướng dẫn điều chỉnh sau duyệt</p>
+                <p className="whitespace-pre-line break-words">{text.trim()}</p>
+              </div>
+            </div>
+          ) : (
+            <p className="text-[13px] italic text-gray-400">(Không hiện cảnh báo)</p>
+          )}
+
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => onSave(text.trim())}
+              disabled={!dirty || tooLong}
+              className="rounded bg-[var(--color-action-blue)] px-4 py-1.5 text-[14px] font-medium text-white hover:brightness-95 disabled:opacity-50"
+            >
+              Lưu hướng dẫn
+            </button>
+            {dirty && (
+              <button
+                type="button"
+                onClick={() => setDraft(effective)}
+                className="text-[13px] text-gray-500 hover:underline"
+              >
+                Huỷ thay đổi
+              </button>
+            )}
+          </div>
+        </>
+      )}
+    </section>
   );
 }
