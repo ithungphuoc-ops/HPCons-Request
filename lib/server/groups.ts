@@ -55,7 +55,14 @@ export function diffGroupPatch(
   patch: Record<string, unknown>,
 ): GroupHistoryChange[] {
   return Object.entries(patch)
-    .filter(([key, value]) => JSON.stringify(before[key]) !== JSON.stringify(value))
+    .filter(([key, value]) =>
+      // 2 object cờ "Ý kiến khi phê duyệt": so theo NGHĨA (thứ tự key cố định
+      // trong describeDecisionNoteFlags) — Firestore có thể trả key theo thứ
+      // tự khác, JSON.stringify sẽ ghi dòng lịch sử ảo.
+      DECISION_NOTE_KEYS.has(key)
+        ? describeDecisionNoteFlags(before[key]) !== describeDecisionNoteFlags(value)
+        : JSON.stringify(before[key]) !== JSON.stringify(value),
+    )
     .map(([key, value]) => ({
       field: FIELD_LABELS[key] ?? key,
       before: DECISION_NOTE_KEYS.has(key) ? describeDecisionNoteFlags(before[key]) : toDisplay(before[key]),

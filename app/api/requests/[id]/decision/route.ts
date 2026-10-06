@@ -10,6 +10,7 @@ import {
   missingRequiredNote,
 } from "@/lib/approval-logic";
 import { adminDb } from "@/lib/firebase/admin";
+import { sanitizeDecisionNoteInput } from "@/lib/decision-note";
 import { apiErrorResponse } from "@/lib/http";
 import { notifyFollowersFullyApproved, notifyPendingApprovers, notifySubmitterResult } from "@/lib/server/notification-emails";
 import { recomputeDeadlineForNextStep } from "@/lib/server/requests";
@@ -97,6 +98,13 @@ export async function POST(
         approversCanDelegateApproval = false;
       }
     }
+    // Chuẩn hoá ghi chú: không phải chuỗi → 400; ô của hành động này đã tắt
+    // trong nhóm → bỏ note (trừ Trả lại). Xem sanitizeDecisionNoteInput.
+    const noteInput = sanitizeDecisionNoteInput(body.decision, body.note, { requireDecisionNote, decisionNoteEnabled });
+    if (!noteInput.ok) {
+      return NextResponse.json({ error: noteInput.error }, { status: 400 });
+    }
+    body.note = noteInput.note;
     if (missingRequiredNote(body.decision, body.note, requireDecisionNote, decisionNoteEnabled)) {
       const message =
         body.decision === "rejected" || body.decision === "returned"

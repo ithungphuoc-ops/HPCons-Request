@@ -4,6 +4,7 @@ import {
   describeDecisionNoteFlags,
   resolveDecisionNoteRules,
   sanitizeDecisionNoteFlags,
+  sanitizeDecisionNoteInput,
 } from "./decision-note";
 
 describe("resolveDecisionNoteRules", () => {
@@ -61,5 +62,28 @@ describe("decisionNoteMode", () => {
     expect(decisionNoteMode({ enabled: false, required: false })).toBe("hidden");
     expect(decisionNoteMode({ enabled: true, required: false })).toBe("optional");
     expect(decisionNoteMode({ enabled: true, required: true })).toBe("required");
+  });
+});
+
+describe("sanitizeDecisionNoteInput", () => {
+  const off = { decisionNoteEnabled: { approve: false, reject: false, forward: false, approveAndForward: false } };
+  it("note không phải chuỗi → lỗi (route trả 400)", () => {
+    expect(sanitizeDecisionNoteInput("approved", 123, {}).ok).toBe(false);
+    expect(sanitizeDecisionNoteInput("returned", { x: 1 }, {}).ok).toBe(false);
+  });
+  it("thiếu note → undefined, hợp lệ", () => {
+    expect(sanitizeDecisionNoteInput("approved", undefined, {})).toEqual({ ok: true, note: undefined });
+    expect(sanitizeDecisionNoteInput("approved", null, {})).toEqual({ ok: true, note: undefined });
+  });
+  it("ô đã tắt → bỏ note cho cả 4 hành động", () => {
+    for (const d of ["approved", "rejected", "approve_and_forward", "forward_then_approve"] as const) {
+      expect(sanitizeDecisionNoteInput(d, "Ghi chú lén", off)).toEqual({ ok: true, note: undefined });
+    }
+  });
+  it("Trả lại luôn giữ lý do dù tắt mọi ô", () => {
+    expect(sanitizeDecisionNoteInput("returned", "Bổ sung", off)).toEqual({ ok: true, note: "Bổ sung" });
+  });
+  it("ô đang bật → giữ nguyên note", () => {
+    expect(sanitizeDecisionNoteInput("approved", "Ok", {})).toEqual({ ok: true, note: "Ok" });
   });
 });

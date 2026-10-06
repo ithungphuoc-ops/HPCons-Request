@@ -109,3 +109,21 @@ export function decisionNoteMode(rule: DecisionNoteRule): DecisionNoteMode {
   if (!rule.enabled) return "hidden";
   return rule.required ? "required" : "optional";
 }
+
+/**
+ * Chuẩn hoá `note` client gửi lên route decision TRƯỚC khi kiểm/ghi lịch sử:
+ * - Không phải chuỗi (và không rỗng) → lỗi (route trả 400, tránh `.trim()` ném 500).
+ * - Hành động có ô ghi chú đã TẮT trong nhóm → bỏ `note` (không lưu ý kiến
+ *   admin đã tắt). "returned" (Trả lại) luôn giữ — luôn bắt buộc lý do.
+ */
+export function sanitizeDecisionNoteInput(
+  decision: "approved" | "rejected" | "approve_and_forward" | "forward_then_approve" | "returned",
+  note: unknown,
+  group: Partial<DecisionNoteGroupSettings> | null | undefined,
+): { ok: true; note: string | undefined } | { ok: false; error: string } {
+  if (note === undefined || note === null) return { ok: true, note: undefined };
+  if (typeof note !== "string") return { ok: false, error: "Ghi chú không hợp lệ." };
+  const action = DECISION_TO_NOTE_ACTION[decision];
+  if (action && !resolveDecisionNoteRules(group)[action].enabled) return { ok: true, note: undefined };
+  return { ok: true, note };
+}
