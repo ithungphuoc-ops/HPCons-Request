@@ -30,6 +30,26 @@ async function isCommentsLockedByGroupRule(found: RequestInstance): Promise<bool
   return Boolean(permissionRules?.lockCommentsAfterFirstDecision);
 }
 
+/** Ghi lại mảng bình luận trong TRANSACTION (06/10/2026): đọc bản mới nhất
+ * rồi mới sửa/xoá đúng 1 bình luận — trước đây ghi đè cả mảng từ bản đọc lúc
+ * đầu, nếu có người vừa gửi bình luận mới xen vào thì bình luận đó bị mất.
+ * Trả null nếu bình luận không còn (vd vừa bị xoá ở nơi khác). */
+async function rewriteComments(
+  id: string,
+  commentId: string,
+  change: (comments: RequestComment[]) => RequestComment[],
+): Promise<RequestComment[] | null> {
+  const ref = adminDb.collection("requests").doc(id);
+  return adminDb.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const latest = ((snap.data() as RequestInstance | undefined)?.comments ?? []) as RequestComment[];
+    if (!latest.some((c) => c.id === commentId)) return null;
+    const updated = change(latest);
+    tx.update(ref, { comments: updated });
+    return updated;
+  });
+}
+
 interface EditBody {
   text: string;
 }
@@ -79,10 +99,13 @@ export async function PATCH(
       return NextResponse.json({ error: "Nội dung không được để trống." }, { status: 400 });
     }
 
-    const updated: RequestComment[] = comments.map((c) =>
-      c.id === commentId ? { ...c, text, editedAt: new Date().toISOString() } : c,
+    const editedAt = new Date().toISOString();
+    const updated = await rewriteComments(id, commentId, (latest) =>
+      latest.map((c) => (c.id === commentId ? { ...c, text, editedAt } : c)),
     );
-    await adminDb.collection("requests").doc(id).update({ comments: updated });
+    if (!updated) {
+      return NextResponse.json({ error: "Không tìm thấy bình luận." }, { status: 404 });
+    }
 
     return NextResponse.json({ comments: updated });
   } catch (error) {
@@ -133,8 +156,10 @@ export async function DELETE(
       return NextResponse.json({ error: message }, { status: 403 });
     }
 
-    const updated = comments.filter((c) => c.id !== commentId);
-    await adminDb.collection("requests").doc(id).update({ comments: updated });
+    const updated = await rewriteComments(id, commentId, (latest) => latest.filter((c) => c.id !== commentId));
+    if (!updated) {
+      return NextResponse.json({ error: "Không tìm thấy bình luận." }, { status: 404 });
+    }
 
     return NextResponse.json({ comments: updated });
   } catch (error) {

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase/admin";
 import { apiErrorResponse } from "@/lib/http";
 import { expandMentionsToUids } from "@/lib/server/mentions";
@@ -65,16 +66,18 @@ export async function POST(
     // xem design.md của change fix-notification-bell-stale-gaps). Đồng thời
     // ghi luôn `viewedAt` của người bình luận — họ chắc chắn đang xem trang
     // lúc gửi bình luận, không cần chờ lần mở trang kế tiếp mới tính là "đã xem".
-    const patch: {
-      comments: RequestComment[];
-      mentionedUids?: string[];
-      updatedAt: string;
-      viewedAt: Record<string, string>;
-    } = { comments, updatedAt: nowIso, viewedAt: { ...found.viewedAt, [session.uid]: nowIso } };
+    // Nối bình luận bằng arrayUnion (06/10/2026) — trước đây ghi đè CẢ mảng
+    // `comments` từ bản đọc lúc đầu, 2 người gửi cùng lúc có thể làm mất 1
+    // bình luận. `viewedAt` ghi đúng 1 khoá của người bình luận (không đè khoá
+    // người khác), `mentionedUids` cũng nối thêm.
+    const patch: Record<string, unknown> = {
+      comments: FieldValue.arrayUnion(comment),
+      updatedAt: nowIso,
+      [`viewedAt.${session.uid}`]: nowIso,
+    };
     if (mentionIds.length > 0) {
       const expanded = await expandMentionsToUids(mentionIds, session.uid);
-      const merged = new Set([...(found.mentionedUids ?? []), ...expanded]);
-      patch.mentionedUids = Array.from(merged);
+      if (expanded.length > 0) patch.mentionedUids = FieldValue.arrayUnion(...expanded);
     }
 
     await adminDb.collection("requests").doc(id).update(patch);
