@@ -16,7 +16,7 @@ import { uploadAttachments } from "@/lib/upload-client";
 import Avatar from "@/components/request/Avatar";
 import { useAvatarsByUids } from "@/lib/useAvatarsByUids";
 import type { ApproverOpinion } from "@/lib/approver-opinions";
-import { OPINION_TONE, opinionActionText } from "@/components/request/ApproverOpinionsModal";
+import { OPINION_TONE, OpinionAttachmentChips, opinionActionText } from "@/components/request/ApproverOpinionsModal";
 
 /** Hạn sửa/xóa của tác giả — PHẢI khớp `AUTHOR_EDIT_WINDOW_MS` phía server
  * (app/api/requests/[id]/comments/[commentId]/route.ts). Đây chỉ để ẩn/hiện
@@ -376,10 +376,13 @@ export default function CommentSection({
               <Lock size={12} aria-label="Chỉ đọc" />
             </span>
           </div>
-          <p className="mt-0.5 whitespace-pre-wrap break-words text-[14px] text-gray-700">
-            <span className="text-gray-500">Ý kiến phê duyệt: </span>
-            {o.note}
-          </p>
+          {o.note && (
+            <p className="mt-0.5 whitespace-pre-wrap break-words text-[14px] text-gray-700">
+              <span className="text-gray-500">Ý kiến phê duyệt: </span>
+              {o.note}
+            </p>
+          )}
+          <OpinionAttachmentChips files={o.attachments} onOpen={setPreviewing} />
           <div className="mt-0.5 text-[12px] text-gray-400">{new Date(o.at).toLocaleString("vi-VN")}</div>
         </div>
       </div>

@@ -42,7 +42,12 @@ export async function PATCH(
     // "Ý kiến khi phê duyệt" — chỉ giữ 4 key hợp lệ, ép boolean; không tin
     // client. Ô đã tắt thì không thể bắt buộc (resolveDecisionNoteRules cũng
     // tự đảm bảo khi đọc, ở đây ghi gọn luôn cho dữ liệu sạch).
-    for (const key of ["requireDecisionNote", "decisionNoteEnabled"] as const) {
+    for (const key of [
+      "requireDecisionNote",
+      "decisionNoteEnabled",
+      "decisionAttachmentEnabled",
+      "requireDecisionAttachment",
+    ] as const) {
       if (patch[key] === undefined) continue;
       const clean = sanitizeDecisionNoteFlags(patch[key]);
       if (!clean) {
@@ -54,6 +59,14 @@ export async function PATCH(
       for (const action of DECISION_NOTE_ACTIONS) {
         if (patch.decisionNoteEnabled[action] === false && action in patch.requireDecisionNote) {
           patch.requireDecisionNote[action] = false;
+        }
+      }
+    }
+    // "Đính kèm tệp khi duyệt" — ô tắt thì không thể bắt buộc (cùng luật).
+    if (patch.requireDecisionAttachment && patch.decisionAttachmentEnabled) {
+      for (const action of DECISION_NOTE_ACTIONS) {
+        if (patch.decisionAttachmentEnabled[action] !== true && action in patch.requireDecisionAttachment) {
+          patch.requireDecisionAttachment[action] = false;
         }
       }
     }

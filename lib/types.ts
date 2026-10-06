@@ -500,6 +500,24 @@ export interface ProposalGroup {
     forward?: boolean;
     approveAndForward?: boolean;
   };
+  /** "Đính kèm tệp khi duyệt" — hành động nào CÓ ô chọn tệp trong hộp xác
+   * nhận (Sếp duyệt demo dinh-kem-khi-duyet-2026-10-06). KHÁC
+   * `decisionNoteEnabled`: thiếu field/thiếu key = KHÔNG có ô (nhóm cũ giữ
+   * nguyên hộp duyệt). "Trả lại" luôn có ô, không bắt buộc, không thuộc cài
+   * đặt này. Đọc qua `resolveDecisionAttachmentRules()` (lib/decision-attachment.ts). */
+  decisionAttachmentEnabled?: {
+    approve?: boolean;
+    reject?: boolean;
+    forward?: boolean;
+    approveAndForward?: boolean;
+  };
+  /** Bắt buộc đính kèm ít nhất 1 tệp — chỉ có hiệu lực khi ô tương ứng bật. */
+  requireDecisionAttachment?: {
+    approve?: boolean;
+    reject?: boolean;
+    forward?: boolean;
+    approveAndForward?: boolean;
+  };
   /** Bật mã đề xuất tự sinh riêng theo nhóm (transaction riêng), thay vì luôn
    * dùng bộ đếm toàn hệ thống — mặc định false/chưa đặt = dùng bộ đếm chung. */
   useOwnCounter?: boolean;
@@ -716,6 +734,11 @@ export interface RequestHistoryEntry {
    * "đổi 120 xuống 90 cây" là thấy ngay chứng từ đi kèm. Đề xuất cũ không có
    * trường này, UI tự bỏ qua. */
   attachmentName?: string;
+  /** Tên các tệp đính kèm CÙNG quyết định duyệt (chấp thuận/từ chối/chuyển
+   * tiếp/trả lại — "Đính kèm tệp khi duyệt", 06/10/2026). Tệp nằm trong
+   * `RequestInstance.attachments` với `source: "decision"` và `addedAt` = `at`
+   * của dòng này. Dòng cũ không có trường này. */
+  attachmentNames?: string[];
 }
 
 /** Giá trị của trường "file" trong values — path là đường dẫn thật trong
@@ -724,6 +747,13 @@ export interface RequestAttachment {
   name: string;
   path: string;
   size: number;
+  /** "decision" = người duyệt đính kèm cùng quyết định ("Đính kèm tệp khi
+   * duyệt", 06/10/2026). Tệp cũ/tệp khác không có trường này. */
+  source?: "decision";
+  /** Tên người đính kèm — hiện có ở tệp `source: "decision"`. */
+  addedBy?: string;
+  /** Thời điểm đính kèm (ISO) — trùng `at` của dòng lịch sử quyết định. */
+  addedAt?: string;
 }
 
 export interface RequestComment {

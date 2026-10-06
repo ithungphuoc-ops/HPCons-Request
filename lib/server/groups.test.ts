@@ -28,6 +28,19 @@ describe("diffGroupPatch — cờ Ý kiến khi phê duyệt", () => {
     ]);
   });
 
+  it("cờ đính kèm tệp: nhóm cũ (thiếu field) lưu toàn Không → không ghi dòng ảo; bật thật → 1 dòng", () => {
+    const allOff = { approve: false, reject: false, forward: false, approveAndForward: false };
+    expect(diffGroupPatch({}, { decisionAttachmentEnabled: allOff, requireDecisionAttachment: allOff })).toEqual([]);
+    const changes = diffGroupPatch({}, { decisionAttachmentEnabled: { ...allOff, approve: true } });
+    expect(changes).toEqual([
+      {
+        field: "Ý kiến khi phê duyệt — có ô đính kèm tệp",
+        before: "Chấp thuận: Không, Từ chối: Không, Chuyển tiếp: Không, Chấp thuận và chuyển tiếp: Không",
+        after: "Chấp thuận: Có, Từ chối: Không, Chuyển tiếp: Không, Chấp thuận và chuyển tiếp: Không",
+      },
+    ]);
+  });
+
   it("field thường vẫn so như cũ", () => {
     expect(diffGroupPatch({ name: "A" }, { name: "B" })).toHaveLength(1);
     expect(diffGroupPatch({ name: "A" }, { name: "A" })).toEqual([]);

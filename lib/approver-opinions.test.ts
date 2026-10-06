@@ -117,3 +117,41 @@ describe("extractApproverOpinions", () => {
     ).toEqual([]);
   });
 });
+
+describe("extractApproverOpinions — tệp đính kèm khi duyệt", () => {
+  const AT = "2026-10-06T06:54:00.000Z";
+  const meta = { source: "decision" as const, addedBy: "Hồ Hữu Phương", addedAt: AT };
+  const fileA = { name: "Bien ban.pdf", path: "requests/phuong/1-Bien_ban.pdf", size: 10, ...meta };
+  const fileB = { name: "Anh.jpg", path: "requests/phuong/2-Anh.jpg", size: 20, ...meta };
+  const other = { name: "Bien ban.pdf", path: "requests/gui/0-Bien_ban.pdf", size: 5 };
+
+  it("ý kiến chỉ có tệp (không ghi chú) vẫn là 1 ý kiến, ghép đúng tệp theo mốc thời gian", () => {
+    const list = extractApproverOpinions({
+      ...req(
+        [{ at: AT, actor: "Hồ Hữu Phương", action: "Đã chấp thuận", attachmentNames: ["Bien ban.pdf", "Anh.jpg"] }],
+        [THI, PHUONG],
+      ),
+      attachments: [other, fileA, fileB],
+    });
+    expect(list).toHaveLength(1);
+    expect(list[0]).toMatchObject({ kind: "approved", note: "", approverId: "phuong" });
+    expect(list[0].attachments.map((a) => a.path)).toEqual([fileA.path, fileB.path]);
+  });
+
+  it("ghi chú + tệp; tệp không còn trong đề xuất → chỉ tên, path rỗng", () => {
+    const list = extractApproverOpinions({
+      ...req(
+        [{ at: AT, actor: "Hồ Văn Thi", action: "Đã trả lại", note: "Sửa lại", attachmentNames: ["Mat.xlsx"] }],
+        [THI, PHUONG],
+      ),
+      attachments: [],
+    });
+    expect(list[0]).toMatchObject({ kind: "returned", note: "Sửa lại" });
+    expect(list[0].attachments).toEqual([{ name: "Mat.xlsx", path: "", size: 0 }]);
+  });
+
+  it("dòng cũ không có attachmentNames → attachments rỗng, hành vi cũ giữ nguyên", () => {
+    const list = extractApproverOpinions(req([{ at: AT, actor: "Hồ Văn Thi", action: "Đã từ chối", note: "Sai" }], [THI]));
+    expect(list[0].attachments).toEqual([]);
+  });
+});

@@ -1,7 +1,7 @@
 import "server-only";
 import { adminDb } from "@/lib/firebase/admin";
 import type { GroupHistoryChange } from "@/lib/types";
-import { describeDecisionNoteFlags } from "@/lib/decision-note";
+import { DECISION_NOTE_ACTIONS, DECISION_NOTE_ACTION_LABELS, describeDecisionNoteFlags } from "@/lib/decision-note";
 
 export { ensureApproverStepCodes, ensureFieldCodes } from "@/lib/print-template";
 export { sanitizeDescriptionHtml } from "@/lib/validation";
@@ -35,11 +35,34 @@ const FIELD_LABELS: Record<string, string> = {
   pinned: "Đánh dấu quan trọng",
   requireDecisionNote: "Ý kiến khi phê duyệt — bắt buộc",
   decisionNoteEnabled: "Ý kiến khi phê duyệt — có ô ghi chú",
+  decisionAttachmentEnabled: "Ý kiến khi phê duyệt — có ô đính kèm tệp",
+  requireDecisionAttachment: "Ý kiến khi phê duyệt — bắt buộc đính kèm tệp",
 };
 
 /** Field dạng object cờ theo hành động — hiển thị "Chấp thuận: Có, …" thay
  * vì "[object Object]". */
-const DECISION_NOTE_KEYS = new Set(["requireDecisionNote", "decisionNoteEnabled"]);
+const DECISION_NOTE_KEYS = new Set([
+  "requireDecisionNote",
+  "decisionNoteEnabled",
+  "decisionAttachmentEnabled",
+  "requireDecisionAttachment",
+]);
+
+/** 2 cờ "Đính kèm tệp khi duyệt": thiếu key = KHÔNG (khác cờ ghi chú) — mô
+ * tả đủ 4 hành động theo nghĩa đó, để nhóm cũ (chưa có field) lưu lần đầu
+ * toàn "Không" không bị ghi 1 dòng lịch sử ảo. */
+const DECISION_ATTACHMENT_KEYS = new Set(["decisionAttachmentEnabled", "requireDecisionAttachment"]);
+
+function describeDecisionAttachmentFlags(value: unknown): string {
+  const source = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  return DECISION_NOTE_ACTIONS.map(
+    (a) => `${DECISION_NOTE_ACTION_LABELS[a]}: ${source[a] === true ? "Có" : "Không"}`,
+  ).join(", ");
+}
+
+function describeFlags(key: string, value: unknown): string {
+  return DECISION_ATTACHMENT_KEYS.has(key) ? describeDecisionAttachmentFlags(value) : describeDecisionNoteFlags(value);
+}
 
 function toDisplay(value: unknown): string {
   if (value === undefined || value === null) return "—";
@@ -60,13 +83,13 @@ export function diffGroupPatch(
       // trong describeDecisionNoteFlags) — Firestore có thể trả key theo thứ
       // tự khác, JSON.stringify sẽ ghi dòng lịch sử ảo.
       DECISION_NOTE_KEYS.has(key)
-        ? describeDecisionNoteFlags(before[key]) !== describeDecisionNoteFlags(value)
+        ? describeFlags(key, before[key]) !== describeFlags(key, value)
         : JSON.stringify(before[key]) !== JSON.stringify(value),
     )
     .map(([key, value]) => ({
       field: FIELD_LABELS[key] ?? key,
-      before: DECISION_NOTE_KEYS.has(key) ? describeDecisionNoteFlags(before[key]) : toDisplay(before[key]),
-      after: DECISION_NOTE_KEYS.has(key) ? describeDecisionNoteFlags(value) : toDisplay(value),
+      before: DECISION_NOTE_KEYS.has(key) ? describeFlags(key, before[key]) : toDisplay(before[key]),
+      after: DECISION_NOTE_KEYS.has(key) ? describeFlags(key, value) : toDisplay(value),
     }));
 }
 

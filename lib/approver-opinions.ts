@@ -18,7 +18,7 @@
  * theo tên, chỉ không gắn được biểu tượng cạnh tên.
  */
 import { HISTORY_ACTION, sameName } from "./approver-progress";
-import type { RequestInstance } from "./types";
+import type { RequestAttachment, RequestInstance } from "./types";
 
 export type ApproverOpinionKind = "approved" | "rejected" | "approveAndForward" | "forward" | "returned";
 
@@ -31,6 +31,10 @@ export interface ApproverOpinion {
   note: string;
   /** Người nhận khi là chuyển tiếp. */
   target?: string;
+  /** Tệp người duyệt đính kèm cùng quyết định ("Đính kèm tệp khi duyệt",
+   * 06/10/2026). Tệp không tìm thấy trong `attachments` (vd đã bị gỡ) vẫn
+   * liệt kê theo tên với `path` rỗng — UI không cho mở. */
+  attachments: RequestAttachment[];
   /** Vị trí trong `approversSnapshot` — null nếu không ghép được tên. */
   approverIndex: number | null;
   approverId: string | null;
@@ -56,16 +60,35 @@ export const OPINION_VERB: Record<ApproverOpinionKind, string> = {
 
 /** Trích ý kiến người duyệt, xếp theo thời gian tăng dần (cũ → mới). */
 export function extractApproverOpinions(
-  request: Pick<RequestInstance, "history" | "approversSnapshot" | "approvers">,
+  request: Pick<RequestInstance, "history" | "approversSnapshot" | "approvers"> &
+    Partial<Pick<RequestInstance, "attachments">>,
 ): ApproverOpinion[] {
   const snapshot = request.approversSnapshot ?? [];
   const approvers = request.approvers ?? [];
+  const allAttachments = request.attachments ?? [];
+  const used = new Set<RequestAttachment>();
   const out: ApproverOpinion[] = [];
 
   (request.history ?? []).forEach((entry, i) => {
     const kind = ACTION_TO_KIND[entry.action];
-    const note = entry.note?.trim();
-    if (!kind || !note) return;
+    const note = entry.note?.trim() ?? "";
+    const names = (entry.attachmentNames ?? []).filter((n) => typeof n === "string" && n);
+    // Ý kiến có thể chỉ có tệp, không ghi chú — vẫn là 1 ý kiến.
+    if (!kind || (!note && names.length === 0)) return;
+
+    // Ghép tên tệp với tệp thật: ưu tiên tệp `source: "decision"` cùng mốc
+    // `addedAt` = `at` của dòng lịch sử; không có thì tệp quyết định cùng tên.
+    const files: RequestAttachment[] = names.map((name) => {
+      const pick =
+        allAttachments.find(
+          (a) => !used.has(a) && a.source === "decision" && a.addedAt === entry.at && a.name === name,
+        ) ?? allAttachments.find((a) => !used.has(a) && a.source === "decision" && a.name === name);
+      if (pick) {
+        used.add(pick);
+        return pick;
+      }
+      return { name, path: "", size: 0 };
+    });
 
     const candidates = snapshot
       .map((s, idx) => ({ s, idx }))
@@ -87,6 +110,7 @@ export function extractApproverOpinions(
       kind,
       note,
       target: entry.target,
+      attachments: files,
       approverIndex: chosen ? chosen.idx : null,
       approverId: chosen ? chosen.s.id : null,
     });
