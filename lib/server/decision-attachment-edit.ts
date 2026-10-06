@@ -22,6 +22,7 @@ import {
   DECISION_ATTACHMENT_REPLACED_ACTION,
 } from "@/lib/request-history-labels";
 import { isFreshOwnUploadPath } from "@/lib/server/decision-attachments";
+import { REQUEST_DELETED_MESSAGE } from "@/lib/server/request-write-guard";
 import type { RequestAttachment, RequestHistoryEntry, RequestInstance } from "@/lib/types";
 
 export type DecisionAttachmentEditInput =
@@ -82,7 +83,8 @@ export type PlanDecisionAttachmentEditResult =
  *   bỏ qua với "remove".
  */
 export function planDecisionAttachmentEdit(params: {
-  request: Pick<RequestInstance, "status" | "attachments" | "history" | "approversSnapshot" | "approvers">;
+  request: Pick<RequestInstance, "status" | "attachments" | "history" | "approversSnapshot" | "approvers"> &
+    Partial<Pick<RequestInstance, "deletedAt">>;
   input: DecisionAttachmentEditInput;
   actor: { uid: string; name: string; isAdmin: boolean };
   group: Partial<DecisionAttachmentGroupSettings> | null | undefined;
@@ -90,6 +92,8 @@ export function planDecisionAttachmentEdit(params: {
   verifiedSize?: number;
 }): PlanDecisionAttachmentEditResult {
   const { request, input, actor, group, nowIso } = params;
+  // Đề xuất bị xoá mềm xen giữa lúc đọc trước và transaction → không ghi.
+  if (request.deletedAt) return { ok: false, status: 409, error: REQUEST_DELETED_MESSAGE };
   const all = request.attachments ?? [];
   const idx = all.findIndex((a) => a.path === input.path);
   const target = idx >= 0 ? all[idx] : undefined;

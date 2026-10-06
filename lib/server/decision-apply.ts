@@ -27,6 +27,7 @@ import {
   isApprovalTimeValueMissing,
 } from "@/lib/approval-logic";
 import { recomputeDeadlineForNextStep } from "@/lib/server/requests";
+import { deletedGuard } from "@/lib/server/request-write-guard";
 import type {
   ApprovalTimeField,
   RequestAttachment,
@@ -97,6 +98,10 @@ function fail(status: number, error: string): DecisionApplyResult {
  */
 export function applyDecisionToRequest(current: RequestInstance, input: DecisionApplyInput): DecisionApplyResult {
   const { decision, actor, group, nowIso } = input;
+  // Đề xuất đã xoá mềm thì không duyệt được nữa (kiểm cả ở lượt chạy thử lẫn
+  // trong transaction — xoá có thể xen giữa).
+  const deleted = deletedGuard(current);
+  if (deleted) return fail(deleted.status, deleted.error);
   try {
     // Tệp đã kiểm hợp lệ trước transaction, nhưng đề xuất có thể vừa được
     // thêm đúng tệp đó bởi thao tác khác → kiểm lại trên ảnh chụp mới nhất

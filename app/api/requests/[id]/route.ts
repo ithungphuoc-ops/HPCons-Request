@@ -25,7 +25,9 @@ import {
   toProposalGroup,
 } from "@/lib/server/requests";
 import { requireSession } from "@/lib/session";
-import type { RequestInstance, TaggedUser } from "@/lib/types";
+import { checkEditGuard, parseExpectedVersion, REQUEST_CHANGED_MESSAGE, RequestTxError } from "@/lib/server/request-write-guard";
+import { requestVersionKey } from "@/lib/request-version";
+import type { RequestHistoryEntry, RequestInstance, TaggedUser } from "@/lib/types";
 import { retryQlkCtrSyncNeuLoi } from "@/lib/qlkctr-sync";
 import { retryThuMuaSyncNeuLoi } from "@/lib/thumua-sync";
 import { dateLeadTimeBlockedMessage, resolveDateLeadTimeNumbers } from "@/lib/date-lead-time";
@@ -89,6 +91,41 @@ interface UpdateDraftBody {
   isDraft?: boolean;
   // Xem app/api/requests/route.ts SubmitBody.managerOverrides.
   managerOverrides?: Record<number, string | string[]>;
+  /** requestVersionKey() của đề xuất lúc MỞ form sửa (lib/request-version.ts) —
+   * khác bản hiện tại → 409, không ghi đè. Tab cũ không gửi thì bỏ qua. */
+  expectedVersion?: unknown;
+}
+
+/**
+ * Ghi PATCH sửa/gửi lại trong transaction (06/10/2026, Sếp chốt): tx.get bản
+ * MỚI NHẤT → checkEditGuard (đã xoá / phiên bản khác bản đọc lúc đầu / khác
+ * `expectedVersion` client gửi) → 409, KHÔNG ghi đè, giữ nguyên lượt duyệt.
+ * Không đổi thì tx.update `patch` (tính TRƯỚC tx từ dữ liệu không đổi — vì
+ * phiên bản giống hệt nên approvers/status vẫn đúng) và NỐI dòng lịch sử bằng
+ * arrayUnion (không ghi đè mảng — giữ dòng "Đã đồng bộ…"/khác ghi xen giữa).
+ * Trả đề xuất sau khi ghi, dựng trên bản mới nhất.
+ */
+async function commitEdit(
+  id: string,
+  found: RequestInstance,
+  expectedVersion: string | undefined,
+  patch: Partial<RequestInstance>,
+  historyEntry?: RequestHistoryEntry,
+): Promise<RequestInstance> {
+  const ref = adminDb.collection("requests").doc(id);
+  return adminDb.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) throw new RequestTxError(404, "Không tìm thấy đề xuất.");
+    const latest = { id: snap.id, ...snap.data() } as RequestInstance;
+    const blocked = checkEditGuard(found, latest, expectedVersion);
+    if (blocked) throw new RequestTxError(blocked.status, blocked.error);
+    tx.update(ref, historyEntry ? { ...patch, history: FieldValue.arrayUnion(historyEntry) } : patch);
+    return {
+      ...latest,
+      ...patch,
+      history: historyEntry ? [...(latest.history ?? []), historyEntry] : latest.history,
+    };
+  });
 }
 
 export async function PATCH(
@@ -116,6 +153,19 @@ export async function PATCH(
         { status: 409 },
       );
     }
+    const body = (await request.json()) as UpdateDraftBody;
+    const expectedVersion = parseExpectedVersion(body.expectedVersion);
+    // Đang mở form sửa mà đề xuất đã đổi (người duyệt vừa duyệt / trả lại /
+    // chuyển tiếp…) → báo tải lại, KHÔNG ghi đè (Sếp chốt 06/10/2026). Kiểm sớm
+    // ở đây (trước cả luật trạng thái) để người gửi nhận đúng thông báo thay vì
+    // "không có quyền"; transaction bên dưới kiểm lại trên bản mới nhất.
+    if (
+      found.submittedBy.uid === session.uid &&
+      expectedVersion !== undefined &&
+      expectedVersion !== requestVersionKey(found)
+    ) {
+      return NextResponse.json({ error: REQUEST_CHANGED_MESSAGE }, { status: 409 });
+    }
     // "pending" (15/08/2026, Sếp chốt): cho sửa cả khi đang chờ duyệt, không
     // chỉ nháp/bị trả lại — nhưng KHÔNG có khái niệm "lưu nháp" nữa ở trạng
     // thái này (chỉ có "sửa & gửi lại", luôn reset duyệt — xem nhánh dưới).
@@ -127,7 +177,6 @@ export async function PATCH(
         { status: 403 },
       );
     }
-    const body = (await request.json()) as UpdateDraftBody;
     const isEditingPending = found.status === "pending";
     if (isEditingPending && body.isDraft !== false) {
       return NextResponse.json(
@@ -150,16 +199,13 @@ export async function PATCH(
 
     if (!wantsSubmit) {
       const updatedAt = new Date().toISOString();
-      const ref = adminDb.collection("requests").doc(id);
-      await ref.update({ values, groupNameSnapshot, approversSnapshot, followers, updatedAt });
-      const updated: RequestInstance = {
-        ...found,
+      const updated = await commitEdit(id, found, expectedVersion, {
         values,
         groupNameSnapshot,
         approversSnapshot,
         followers,
         updatedAt,
-      };
+      });
       return NextResponse.json({ request: updated });
     }
 
@@ -261,7 +307,6 @@ export async function PATCH(
         (group.useOwnCounter === true
           ? await generateGroupRequestCode(group.id)
           : await generateRequestCode());
-      const ref = adminDb.collection("requests").doc(id);
       const patch = {
         code,
         values,
@@ -292,21 +337,18 @@ export async function PATCH(
         status: "pending" as const,
         deadlineAt,
         updatedAt: nowIso,
-        history: [
-          ...found.history,
-          {
-            at: nowIso,
-            actor: session.name,
-            action: isEditingPending
-              ? "Đã chỉnh sửa đề xuất — duyệt lại từ đầu"
-              : found.status === "returned"
-                ? "Đã gửi lại đề xuất"
-                : "Đã gửi đề xuất",
-          },
-        ],
       };
-      await ref.update(patch);
-      return NextResponse.json({ request: { ...found, ...patch } });
+      const historyEntry: RequestHistoryEntry = {
+        at: nowIso,
+        actor: session.name,
+        action: isEditingPending
+          ? "Đã chỉnh sửa đề xuất — duyệt lại từ đầu"
+          : found.status === "returned"
+            ? "Đã gửi lại đề xuất"
+            : "Đã gửi đề xuất",
+      };
+      const updated = await commitEdit(id, found, expectedVersion, patch, historyEntry);
+      return NextResponse.json({ request: updated });
     }
 
     // Đề xuất trực tiếp.
@@ -321,7 +363,6 @@ export async function PATCH(
     }
     const nowIso = new Date().toISOString();
     const code = found.code ?? (await generateRequestCode());
-    const ref = adminDb.collection("requests").doc(id);
     const patch = {
       code,
       values,
@@ -333,18 +374,18 @@ export async function PATCH(
       status: "pending" as const,
       deadlineAt: null,
       updatedAt: nowIso,
-      history: [
-        ...found.history,
-        {
-          at: nowIso,
-          actor: session.name,
-          action: found.status === "returned" ? "Đã gửi lại đề xuất" : "Đã gửi đề xuất",
-        },
-      ],
     };
-    await ref.update(patch);
-    return NextResponse.json({ request: { ...found, ...patch } });
+    const historyEntry: RequestHistoryEntry = {
+      at: nowIso,
+      actor: session.name,
+      action: found.status === "returned" ? "Đã gửi lại đề xuất" : "Đã gửi đề xuất",
+    };
+    const updated = await commitEdit(id, found, expectedVersion, patch, historyEntry);
+    return NextResponse.json({ request: updated });
   } catch (error) {
+    if (error instanceof RequestTxError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     return apiErrorResponse(error);
   }
 }

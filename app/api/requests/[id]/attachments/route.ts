@@ -5,12 +5,13 @@ import { guiCacViec, taoViecDongBo } from "@/lib/dong-bo/hang-cho";
 import { createSignedReadUrl } from "@/lib/r2";
 import { apiErrorResponse } from "@/lib/http";
 import { MAX_DIRECT_UPLOAD_FILE_SIZE } from "@/lib/constants";
-import { canManageGroupsAtAppScope, canSupplementAfterApproval } from "@/lib/permissions";
+import { canManageGroupsAtAppScope } from "@/lib/permissions";
 import { canView, collectAttachmentPaths, loadRequest } from "@/lib/server/requests";
+import { checkAddAttachmentAccess, planAddAttachment } from "@/lib/server/request-supplement";
+import { RequestTxError } from "@/lib/server/request-write-guard";
 import { verifyUploadedAttachment } from "@/lib/server/verify-upload";
 import { requireSession } from "@/lib/session";
-import { ATTACHMENT_SUPPLEMENT_HISTORY_PREFIX } from "@/lib/request-history-labels";
-import type { RequestAttachment, RequestHistoryEntry } from "@/lib/types";
+import type { RequestAttachment, RequestInstance } from "@/lib/types";
 
 export const runtime = "nodejs";
 // Báo Kho / Thu mua chạy trong after() — cho đủ thời gian gửi (gói miễn phí tối đa 60 giây).
@@ -67,29 +68,14 @@ export async function POST(
     if (!found) {
       return NextResponse.json({ error: "Không tìm thấy đề xuất." }, { status: 404 });
     }
-    if (!canView(found, session.uid, session.role)) {
-      return NextResponse.json({ error: "Bạn không có quyền trên đề xuất này." }, { status: 403 });
-    }
-    const isOwnRequest = found.submittedBy.uid === session.uid;
     // Đề xuất ĐÃ DUYỆT: chỉ CHÍNH submitter được thêm tài liệu — Owner/Admin
-    // không được làm thay (siết chặt hơn quy tắc mặc định bên dưới, đặc thù
-    // cho "xác nhận giữa 2 bên" — không phải ai cũng được xác nhận thay chủ
-    // đề xuất). Trạng thái khác (draft/pending/returned) giữ nguyên hành vi
-    // cũ. Dùng chung 1 hàm với route table-supplement + UI
-    // (lib/permissions.ts) — đổi luật chỉ cần sửa 1 chỗ, xem design.md của
-    // change add-post-approval-supplement.
-    if (found.status === "approved") {
-      if (!canSupplementAfterApproval(found, session.uid)) {
-        return NextResponse.json(
-          { error: "Đề xuất đã duyệt — chỉ chính người làm đề xuất mới thêm được tài liệu." },
-          { status: 403 },
-        );
-      }
-    } else if (!isOwnRequest && !canManageGroupsAtAppScope(session.role)) {
-      return NextResponse.json(
-        { error: "Chỉ chủ đề xuất hoặc Owner/Admin mới thêm được tài liệu." },
-        { status: 403 },
-      );
+    // không được làm thay (đặc thù "xác nhận giữa 2 bên"). Trạng thái khác
+    // (draft/pending/returned): chủ đề xuất hoặc Owner/Admin. Đã xoá mềm → 409.
+    // Kiểm sớm ở đây để không đo R2 vô ích; transaction bên dưới kiểm lại trên
+    // bản mới nhất. Xem checkAddAttachmentAccess (lib/server/request-supplement.ts).
+    const denied = checkAddAttachmentAccess(found, session.uid, session.role);
+    if (denied) {
+      return NextResponse.json({ error: denied.error }, { status: denied.status });
     }
 
     const body = (await request.json()) as AddAttachmentBody;
@@ -127,37 +113,33 @@ export async function POST(
     // `source: "decision"` để mạo nhãn "Đính kèm khi duyệt").
     const cleanAttachment: RequestAttachment = { name: attachment.name, path: attachment.path, size: verified.size };
 
-    // Danh sách trả về cho client (bản đọc lúc đầu + tệp mới). Ghi xuống
-    // Firestore thì NỐI bằng arrayUnion, không ghi đè cả mảng — tránh xoá mất
-    // tệp vừa thêm từ quyết định duyệt chạy song song (review PR #80).
-    const attachments = [...(found.attachments ?? []), cleanAttachment];
-
-    // Chỉ ghi nhật ký "sau duyệt" khi đúng là đang bổ sung sau duyệt — đính
-    // file lúc còn draft/pending/returned là hành vi cũ, không cần đếm "lần
-    // mấy" (không thuộc phạm vi "Bổ sung sau duyệt").
-    const patch: { attachments: FieldValue; history?: RequestHistoryEntry[] } = {
-      attachments: FieldValue.arrayUnion(cleanAttachment),
-    };
-    if (found.status === "approved") {
-      const priorCount = found.history.filter((h) =>
-        h.action.startsWith(ATTACHMENT_SUPPLEMENT_HISTORY_PREFIX),
-      ).length;
-      const historyEntry: RequestHistoryEntry = {
-        at: new Date().toISOString(),
-        actor: session.name,
-        action: `${ATTACHMENT_SUPPLEMENT_HISTORY_PREFIX} (lần ${priorCount + 1}): ${attachment.name}`,
-      };
-      patch.history = [...found.history, historyEntry];
-    }
-
-    await adminDb.collection("requests").doc(id).update(patch);
+    // Đọc – kiểm – ghi trong transaction (06/10/2026, làm tiếp sau PR #82):
+    // kiểm lại quyền/xoá mềm trên bản MỚI NHẤT, đếm "lần N" trên bản mới nhất,
+    // rồi NỐI tệp + dòng lịch sử bằng arrayUnion — không ghi đè cả mảng
+    // `history` từ bản đọc cũ (trước đây có thể xoá mất dòng của quyết định
+    // duyệt / hàng chờ đồng bộ ghi xen giữa). Callback có thể chạy lại — chỉ
+    // đọc/tính/ghi, việc báo Kho/Thu mua làm SAU khi commit.
+    const ref = adminDb.collection("requests").doc(id);
+    const { plan, latest } = await adminDb.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) throw new RequestTxError(404, "Không tìm thấy đề xuất.");
+      const fresh = { id: snap.id, ...snap.data() } as RequestInstance;
+      const freshDenied = checkAddAttachmentAccess(fresh, session.uid, session.role);
+      if (freshDenied) throw new RequestTxError(freshDenied.status, freshDenied.error);
+      const plan = planAddAttachment(fresh, cleanAttachment, session.name, new Date().toISOString());
+      tx.update(ref, {
+        attachments: FieldValue.arrayUnion(cleanAttachment),
+        ...(plan.historyEntry ? { history: FieldValue.arrayUnion(plan.historyEntry) } : {}),
+      });
+      return { plan, latest: fresh };
+    });
     /* ★ 03/10/2026 (đợt 1 "liên kết 4 app", L09/L10) — thêm tài liệu sau duyệt thì báo Kho + Thu mua
        lưu thêm file. Lỗi tạo việc không được làm hỏng thao tác thêm tài liệu. */
-    if (found.status === "approved") {
+    if (latest.status === "approved") {
       try {
         const ids = await taoViecDongBo({
           requestId: id,
-          requestCode: found.code ?? null,
+          requestCode: latest.code ?? null,
           loai: "them_file",
           nguoi: session.name,
           taiLieu: [{ name: attachment.name, path: attachment.path }],
@@ -167,8 +149,11 @@ export async function POST(
         console.error(`Tạo việc báo thêm tài liệu đề xuất ${id} sang Kho / Thu mua lỗi:`, err);
       }
     }
-    return NextResponse.json({ attachments, history: patch.history });
+    return NextResponse.json({ attachments: plan.attachments, history: plan.history });
   } catch (error) {
+    if (error instanceof RequestTxError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     return apiErrorResponse(error);
   }
 }

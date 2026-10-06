@@ -252,3 +252,29 @@ describe("tranh chấp — transaction chạy lại", () => {
     expect(store.doc.history.filter((h) => h.action === "Đã chấp thuận")).toHaveLength(1);
   });
 });
+
+describe("applyDecisionToRequest — đề xuất đã xoá mềm (06/10/2026)", () => {
+  it("không duyệt / trả lại / chuyển tiếp được đề xuất đã xoá → 409", () => {
+    const deleted = makeRequest("sequential", ["a", "b"], { deletedAt: "2026-10-06T02:00:00.000Z" });
+    for (const d of ["approved", "rejected", "returned", "approve_and_forward"] as const) {
+      expect(applyDecisionToRequest(deleted, input("a", d, { target: Z }))).toEqual({
+        ok: false,
+        status: 409,
+        error: "Đề xuất đã bị xoá.",
+      });
+    }
+  });
+
+  it("bị xoá GIỮA lượt chạy thử và transaction → lượt trong transaction 409, không ghi", async () => {
+    const store = new FakeStore(makeRequest("sequential", ["a", "b"]));
+    const result = await store.runTransaction(
+      (snap) => applyDecisionToRequest(snap, input("a", "approved")),
+      async () => {
+        store.doc = { ...store.doc, deletedAt: "2026-10-06T02:00:00.000Z" } as RequestInstance;
+        store.version++;
+      },
+    );
+    expect(result).toEqual({ ok: false, status: 409, error: "Đề xuất đã bị xoá." });
+    expect(store.doc.approvers[0].decision).toBe("pending");
+  });
+});

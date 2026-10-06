@@ -52,6 +52,7 @@ import { ntpVietTat } from "@/lib/ntp-viet-tat";
 import DatePicker from "@/components/ui/DatePicker";
 import Modal from "@/components/shared/Modal";
 import { useCurrentSession } from "@/lib/useCurrentSession";
+import { requestVersionKey } from "@/lib/request-version";
 import { DEFAULT_GROUP_PERMISSION_RULES } from "@/lib/types";
 import {
   cancelButtonClass,
@@ -112,6 +113,9 @@ export default function SubmitRequestPage() {
   // draftId nào) — "pending" thì ẩn "Lưu nháp" (không còn khái niệm nháp ở
   // trạng thái này) và đổi nhãn nút chính, xem loadedStatus bên dưới.
   const [loadedStatus, setLoadedStatus] = useState<RequestInstance["status"] | null>(null);
+  // "Phiên bản" đề xuất lúc mở form — gửi kèm PATCH, máy chủ trả 409 nếu
+  // trong lúc sửa người duyệt đã duyệt/trả lại (lib/request-version.ts).
+  const [loadedVersion, setLoadedVersion] = useState<string | undefined>(undefined);
   // Chặn form tương tác được cho tới khi tải XONG dữ liệu nháp (nếu có
   // draftId) — sửa bug thật (Sếp báo 30/09/2026): bấm "Nhân bản" xong vào
   // sửa NGAY (RequestProvider không unmount giữa trang chi tiết → submit
@@ -182,6 +186,7 @@ export default function SubmitRequestPage() {
         setValues(data.request.values ?? {});
         setFollowers(data.request.followers ?? []);
         setLoadedStatus(data.request.status);
+        setLoadedVersion(requestVersionKey(data.request));
       })
       .catch(() => setSubmitError("Không tải được bản nháp."))
       .finally(() => setDraftLoaded(true));
@@ -460,9 +465,12 @@ export default function SubmitRequestPage() {
         const res = await fetch(`/api/requests/${draftId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ values: payloadValues, followers, isDraft: true }),
+          body: JSON.stringify({ values: payloadValues, followers, isDraft: true, expectedVersion: loadedVersion }),
         });
-        if (!res.ok) throw new Error("Không thể lưu nháp.");
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}) as { error?: string });
+          throw new Error(body.error ?? "Không thể lưu nháp.");
+        }
       } else {
         const res = await fetch("/api/requests", {
           method: "POST",
@@ -614,6 +622,7 @@ export default function SubmitRequestPage() {
               followers,
               isDraft: false,
               managerOverrides: managerOverridesPayload,
+              expectedVersion: loadedVersion,
             }),
           })
         : await fetch("/api/requests", {

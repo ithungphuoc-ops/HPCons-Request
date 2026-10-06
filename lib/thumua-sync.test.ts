@@ -11,6 +11,11 @@ vi.mock("@/lib/r2", () => ({ createSignedReadUrl: vi.fn() }));
 // Cùng lý do với @/lib/r2 ở trên — lib/firebase/admin.ts cũng khai `import "server-only"`.
 // updateMock cho phép từng test kiểm được đã ghi đúng field/history chưa.
 const updateMock = vi.fn().mockResolvedValue(undefined);
+// Dòng lịch sử "tự thử lại" phải NỐI bằng arrayUnion (06/10/2026), không ghi
+// đè cả mảng từ bản đọc trước khi gọi mạng — giả FieldValue để kiểm.
+vi.mock("firebase-admin/firestore", () => ({
+  FieldValue: { arrayUnion: (...items: unknown[]) => ({ __arrayUnion: items }) },
+}));
 vi.mock("@/lib/firebase/admin", () => ({
   adminDb: { collection: () => ({ doc: () => ({ update: updateMock }) }) },
 }));
@@ -179,8 +184,9 @@ describe("retryThuMuaSyncNeuLoi", () => {
     expect(updateMock).toHaveBeenCalledTimes(1);
     const patch = updateMock.mock.calls[0][0];
     expect(patch.thuMuaSyncStatus).toBe("synced");
-    expect(patch.history).toHaveLength(2);
-    expect(patch.history[1].action).toContain("tự thử lại");
+    expect(Array.isArray(patch.history)).toBe(false);
+    expect(patch.history.__arrayUnion).toHaveLength(1);
+    expect(patch.history.__arrayUnion[0].action).toContain("tự thử lại");
     vi.unstubAllGlobals();
   });
 

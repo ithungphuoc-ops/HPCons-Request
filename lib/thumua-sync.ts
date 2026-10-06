@@ -392,6 +392,7 @@ export async function retryThuMuaSyncNeuLoi(request: RequestInstance): Promise<v
 
     const ketQua = await guiSangThuMua(payload);
     const { adminDb } = await import("@/lib/firebase/admin");
+    const { FieldValue } = await import("firebase-admin/firestore");
     const syncEntry = {
       at: new Date().toISOString(),
       actor: "Hệ thống",
@@ -400,7 +401,10 @@ export async function retryThuMuaSyncNeuLoi(request: RequestInstance): Promise<v
     };
     await adminDb.collection("requests").doc(request.id).update({
       thuMuaSyncStatus: ketQua.ok ? "synced" : "failed",
-      history: [...request.history, syncEntry],
+      // NỐI bằng arrayUnion (06/10/2026) — `request` là bản đọc TRƯỚC khi gọi
+      // mạng (có thể vài giây), ghi đè cả mảng từ bản đó sẽ xoá mất dòng lịch
+      // sử của thao tác khác (bổ sung tài liệu, hàng chờ…) ghi xen giữa.
+      history: FieldValue.arrayUnion(syncEntry),
     });
   } catch (err) {
     console.error(`Tự thử lại đồng bộ App Thu mua cho đề xuất ${request.id} lỗi:`, err);
