@@ -59,7 +59,9 @@ export async function POST(
     // bản đề xuất cũ đang mất hết người theo dõi, phải hiển thị lại đúng theo
     // thiết lập nhóm HIỆN HÀNH — không chép lại followers CŨ của đề xuất gốc,
     // vì cấu hình nhóm có thể đã đổi từ lúc đó). Đề xuất trực tiếp (không có
-    // nhóm) không có khái niệm "mặc định" nên vẫn để trống như cũ.
+    // nhóm) không có khái niệm "mặc định" nên vẫn để trống (defaultFollowers
+    // rỗng) — xem bên dưới, rỗng nghĩa là MỌI người theo dõi bản gốc đều được
+    // coi là "thêm tay", giữ lại nguyên vẹn.
     let defaultFollowers: TaggedUser[] = [];
     if (source.groupId) {
       const groupSnap = await adminDb.collection("groups").doc(source.groupId).get();
@@ -73,6 +75,16 @@ export async function POST(
         defaultFollowers = group.followers;
       }
     }
+
+    // Giữ lại người theo dõi đề xuất GỐC đã thêm TAY ngoài mặc định (Sếp phản
+    // hồi 06/10/2026: bản vá 29/09 ở trên chỉ tính "lấy lại mặc định", vô tình
+    // làm mất người thêm tay — vd nhóm có 10 mặc định, người gửi tự thêm 3
+    // người, nhân bản lại chỉ còn 10). Ai trong followers bản gốc KHÔNG nằm
+    // trong mặc định HIỆN HÀNH thì coi là thêm tay, giữ nguyên.
+    const extraFollowers = source.followers.filter(
+      (f) => !defaultFollowers.some((d) => d.id === f.id),
+    );
+    const followers = [...defaultFollowers, ...extraFollowers];
 
     const nowIso = new Date().toISOString();
     const ref = adminDb.collection("requests").doc();
@@ -91,7 +103,7 @@ export async function POST(
       approvalFlow: source.approvalFlow,
       approversSnapshot: [],
       approvers: [],
-      followers: defaultFollowers,
+      followers,
       status: "draft",
       deadlineAt: null,
       history: [{ at: nowIso, actor: session.name, action: `Đã nhân bản từ đề xuất ${source.code ?? source.id}` }],
