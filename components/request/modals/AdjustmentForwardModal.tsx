@@ -15,10 +15,14 @@ import type { TaggedUser } from "@/lib/types";
  */
 export default function AdjustmentForwardModal({
   currentApproverName,
+  excludeIds,
   onClose,
   onConfirm,
 }: {
   currentApproverName: string;
+  /** Người đề nghị điều chỉnh + những người đang trong danh sách duyệt — ẩn
+   * khỏi gợi ý (máy chủ vẫn chặn lại nếu gọi thẳng API). */
+  excludeIds?: string[];
   onClose: () => void;
   onConfirm: (user: TaggedUser) => Promise<void>;
 }) {
@@ -57,16 +61,19 @@ export default function AdjustmentForwardModal({
         </>
       }
     >
-      <div className="flex flex-col gap-2">
+      {/* Đủ cao để danh sách gợi ý (gõ @) không bị khung hộp thoại cắt mất. */}
+      <div className="flex min-h-[260px] flex-col gap-2">
         <p className="text-[13px] text-gray-500">
           Đang giao cho <span className="font-medium text-gray-700">{currentApproverName}</span> — chọn người khác
-          xử lý thay (ví dụ vắng mặt tạm thời).
+          xử lý thay (ví dụ vắng mặt tạm thời). Người nhận thay đúng phần duyệt của bạn, không được là người
+          đề nghị điều chỉnh hay người duyệt còn lại.
         </p>
         <label className="text-[14px] font-medium text-gray-700">Chuyển tiếp cho</label>
         <TagUserInput
           value={selected}
           onChange={(users) => setSelected(users.slice(-1))}
           placeholder="Gõ @ để tìm người xử lý thay"
+          excludeIds={excludeIds}
         />
         {error && <p className="text-[12px] text-[var(--color-danger-red)]">{error}</p>}
       </div>

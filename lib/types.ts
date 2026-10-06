@@ -544,11 +544,22 @@ export interface ProposalGroup {
   /** 7 cờ + 2 vị trí QR cho tab "In đề xuất" — CHỈ lưu cấu hình/ẩn-hiện nút,
    * KHÔNG tự sinh PDF/chèn QR thật (PDF chờ capability `pdf-export` riêng). */
   printOptions?: GroupPrintOptions;
-  /** Tab "Điều chỉnh sau duyệt" — thiếu field (hoặc `null`, dùng khi Admin bấm
-   * "Tắt" — PATCH JSON bỏ qua key `undefined` nên phải dùng `null` làm tín
-   * hiệu xoá) = tính năng TẮT cho nhóm này, giữ nguyên hành vi cũ (chỉ
-   * submitter, lưu thẳng ngay). Xem `AdjustmentApprovalRules`. */
+  /** Tab "Điều chỉnh sau duyệt" — từ 06/10/2026 chỉ còn đọc `allowFollowers`
+   * (người theo dõi có được bấm "Điều chỉnh" không). Thiếu field / `null` =
+   * chỉ người gửi bấm được. Mọi điều chỉnh đều phải qua 2 người duyệt do người
+   * điều chỉnh tự chọn. Xem `AdjustmentApprovalRules`. */
   adjustmentApprovalRules?: AdjustmentApprovalRules | null;
+  /** "Điều chỉnh sau duyệt" — có ô Ghi chú / Đính kèm tệp không, có bắt buộc
+   * không (Sếp bổ sung 06/10/2026, cùng kiểu bảng "Ý kiến khi phê duyệt").
+   * Thiếu field = Ghi chú CÓ + Đính kèm CÓ, đều không bắt buộc. Luôn phải có
+   * ít nhất 1 trong 2 khi gửi. Đọc qua `resolveAdjustmentFieldRules()`
+   * (lib/adjustment-settings.ts). */
+  adjustmentFieldRules?: {
+    noteEnabled?: boolean;
+    noteRequired?: boolean;
+    attachmentEnabled?: boolean;
+    attachmentRequired?: boolean;
+  };
 }
 
 /**
@@ -748,8 +759,10 @@ export interface RequestAttachment {
   path: string;
   size: number;
   /** "decision" = người duyệt đính kèm cùng quyết định ("Đính kèm tệp khi
-   * duyệt", 06/10/2026). Tệp cũ/tệp khác không có trường này. */
-  source?: "decision";
+   * duyệt", 06/10/2026). "adjustment" = tệp đi kèm 1 lần "Điều chỉnh sau
+   * duyệt" (ghi từ 06/10/2026 khi điều chỉnh có hiệu lực). Tệp cũ/tệp khác
+   * không có trường này. */
+  source?: "decision" | "adjustment";
   /** Tên người đính kèm — hiện có ở tệp `source: "decision"`. */
   addedBy?: string;
   /** Thời điểm đính kèm (ISO) — trùng `at` của dòng lịch sử quyết định. */
@@ -912,7 +925,11 @@ export interface RequestInstance {
    */
   pendingAdjustment?: {
     noiDung: string;
+    /** Dạng CŨ (1 tệp, trước 06/10/2026) — điều chỉnh mới ghi `null` và dùng
+     * `attachments`. Đọc qua `pendingAdjustmentFiles()` để chịu được cả 2. */
     attachment: RequestAttachment | null;
+    /** Nhiều tệp (tối đa 6) — từ 06/10/2026. */
+    attachments?: RequestAttachment[];
     requestedByUid: string;
     requestedByName: string;
     createdAt: string;
@@ -921,6 +938,11 @@ export interface RequestInstance {
      * lúc đang có 1 điều chỉnh dở dang. */
     approvers: { uid: string; name: string; approvedAt: string | null }[];
   } | null;
+  /** uid MỌI người từng được giao duyệt điều chỉnh sau duyệt (lúc gửi + lúc
+   * được chuyển tiếp tới) — chỉ NỐI THÊM. Cho họ tiếp tục XEM được đề xuất
+   * sau khi điều chỉnh đã xong/bị từ chối (canView), không đưa họ vào người
+   * theo dõi (tránh nhận mọi thông báo về sau). Từ 06/10/2026. */
+  adjustmentReviewerUids?: string[];
 }
 
 /**
@@ -957,15 +979,18 @@ export interface AdjustmentApprovalBranch {
  */
 export interface AdjustmentApprovalRules {
   /** "Cho phép người theo dõi (không phải người gửi) cũng bấm Điều chỉnh" —
-   * tắt thì chỉ submitter bấm được (vẫn áp dụng branches/catchAll cho CHÍNH
-   * submitter nếu phòng ban của họ khớp). */
+   * tắt (hoặc nhóm chưa có field `adjustmentApprovalRules`) thì chỉ người gửi
+   * bấm được. Từ 06/10/2026 đây là phần DUY NHẤT còn được đọc. */
   allowFollowers: boolean;
-  branches: AdjustmentApprovalBranch[];
-  /** Áp dụng cho NGƯỜI THEO DÕI (không phải submitter) khi không khớp branch
+  /** ⚠️ NGỪNG DÙNG từ 06/10/2026 (Sếp duyệt demo
+   * dieu-chinh-tu-chon-nguoi-duyet): người điều chỉnh tự chọn 2 người duyệt.
+   * Dữ liệu cũ còn trong Firestore, KHÔNG xoá, code không đọc nữa. */
+  branches?: AdjustmentApprovalBranch[];
+  /** ⚠️ NGỪNG DÙNG từ 06/10/2026 — xem `branches`. Áp dụng cho NGƯỜI THEO DÕI (không phải submitter) khi không khớp branch
    * nào ở trên — rỗng = người đó không được bấm (an toàn, giữ tinh thần hành
    * vi cũ). Submitter không khớp branch nào LUÔN LUÔN là "direct", không đọc
    * field này. */
-  catchAllApprovers: AdjustmentApproverRef[];
+  catchAllApprovers?: AdjustmentApproverRef[];
 }
 
 export type ModalWindowStatus =

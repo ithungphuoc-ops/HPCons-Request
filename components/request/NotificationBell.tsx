@@ -43,6 +43,7 @@ interface NotificationItem {
 
 function buildNotifications(
   inbox: RequestInstance[],
+  adjustmentInbox: RequestInstance[],
   mine: RequestInstance[],
   mentioned: RequestInstance[],
   followingUnseen: RequestInstance[],
@@ -69,6 +70,21 @@ function buildNotifications(
           ? `Bạn được chuyển tiếp đề xuất "${r.groupNameSnapshot}"`
           : `"${r.groupNameSnapshot}" đang chờ bạn duyệt`,
         at: lastEntry?.at ?? r.submittedAt,
+      });
+    }
+  }
+
+  // "Điều chỉnh sau duyệt" đang chờ mình duyệt (06/10/2026) — cùng loại
+  // "đang chờ bạn duyệt" (cùng công tắc cá nhân approver_pending).
+  if (enabled("approver_pending")) {
+    for (const r of adjustmentInbox) {
+      const pa = r.pendingAdjustment;
+      items.push({
+        id: `adjustment-${r.id}`,
+        requestId: r.id,
+        kind: "approver_pending",
+        text: `${pa?.requestedByName ?? "Có người"} đề nghị điều chỉnh "${r.groupNameSnapshot}" — chờ bạn duyệt`,
+        at: pa?.createdAt ?? r.updatedAt,
       });
     }
   }
@@ -220,6 +236,7 @@ export default function NotificationBell() {
   useEffect(() => {
     Promise.all([
       fetch("/api/requests?scope=inbox").then((res) => (res.ok ? res.json() : { requests: [] })),
+      fetch("/api/requests?scope=adjustment-inbox").then((res) => (res.ok ? res.json() : { requests: [] })),
       fetch("/api/requests?scope=mine").then((res) => (res.ok ? res.json() : { requests: [] })),
       fetch("/api/requests?scope=mentioned").then((res) => (res.ok ? res.json() : { requests: [] })),
       fetch("/api/requests?scope=following-unseen").then((res) => (res.ok ? res.json() : { requests: [] })),
@@ -230,6 +247,7 @@ export default function NotificationBell() {
       .then(
         ([
           inboxData,
+          adjustmentInboxData,
           mineData,
           mentionedData,
           followingData,
@@ -243,14 +261,17 @@ export default function NotificationBell() {
           { requests: RequestInstance[] },
           { requests: RequestInstance[] },
           { requests: RequestInstance[] },
+          { requests: RequestInstance[] },
           { settings: NotificationSettings | null },
         ]) => {
           const settings = settingsData.settings ?? null;
           const inboxRequests = settings?.approver_pending === false ? [] : (inboxData.requests ?? []);
-          setPendingCount(inboxRequests.length);
+          const adjustmentInbox = settings?.approver_pending === false ? [] : (adjustmentInboxData.requests ?? []);
+          setPendingCount(inboxRequests.length + adjustmentInbox.length);
           setItems(
             buildNotifications(
               inboxData.requests ?? [],
+              adjustmentInboxData.requests ?? [],
               mineData.requests ?? [],
               mentionedData.requests ?? [],
               followingData.requests ?? [],

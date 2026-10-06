@@ -9,7 +9,7 @@ export default function RequestDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const [request, setRequest] = useState<RequestInstance | null>(null);
-  const [viewerAdjustmentAccess, setViewerAdjustmentAccess] = useState<"direct" | "gated" | "none">("none");
+  const [viewerAdjustmentAccess, setViewerAdjustmentAccess] = useState<"gated" | "none">("none");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [currentUid, setCurrentUid] = useState<string | null>(null);
 
@@ -22,7 +22,7 @@ export default function RequestDetailPage() {
         }
         return res.json() as Promise<{
           request: RequestInstance;
-          viewerAdjustmentAccess?: "direct" | "gated" | "none";
+          viewerAdjustmentAccess?: "gated" | "none";
         }>;
       })
       .then((data) => {

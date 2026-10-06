@@ -41,7 +41,7 @@ function currentlyActionableUids(request: RequestInstance): string[] {
  * TRỰC TIẾP (không groupId) do người dùng tự đặt (`title`) — KHÔNG được tin
  * thẳng khi chèn vào HTML email (vá lỗ hổng CodeRabbit phát hiện, xem
  * escapeHtml() ở lib/server/mailer.ts). */
-function escapedRequestLabel(request: RequestInstance): string {
+function escapedRequestLabel(request: Pick<RequestInstance, "groupNameSnapshot" | "code" | "id">): string {
   const name = escapeHtml(request.groupNameSnapshot);
   const code = escapeHtml(request.code ?? request.id);
   return `<b>"${name}"</b> (mã ${code})`;
@@ -150,5 +150,30 @@ export async function notifyFollowersFullyApproved(request: RequestInstance, gro
   });
   await Promise.all(
     request.followers.map((f) => sendToUid(f.id, subject, html, { groupId: request.groupId, category: "following" })),
+  );
+}
+
+/** "Điều chỉnh đề nghị sau duyệt" (06/10/2026): báo đúng những người VỪA được
+ * giao duyệt điều chỉnh — lúc gửi điều chỉnh (2 người được chọn) hoặc lúc 1
+ * người chuyển tiếp cho người khác (chỉ người nhận). Theo công tắc email của
+ * nhóm (`emailNotify`) và công tắc riêng "approver_pending" của từng người,
+ * giống email "đang chờ bạn duyệt". Chuông thông báo trong app thì LUÔN có
+ * (scope `adjustment-inbox`), không phụ thuộc email. */
+export async function notifyAdjustmentApprovers(
+  uids: string[],
+  request: Pick<RequestInstance, "id" | "groupId" | "groupNameSnapshot" | "code">,
+  requestedByName: string,
+  group: GroupNotificationSource,
+) {
+  if (!emailNotifyEnabled(group) || uids.length === 0) return;
+  const subject = `[App Đề xuất] Điều chỉnh "${request.groupNameSnapshot}" đang chờ bạn duyệt`;
+  const html = buildRequestEmailHtml({
+    greeting: "Xin chào,",
+    body: `${escapeHtml(requestedByName)} đề nghị điều chỉnh đề xuất ${escapedRequestLabel(request)} (đã duyệt) và chọn bạn duyệt điều chỉnh này. Điều chỉnh chỉ có hiệu lực khi đủ người được chọn duyệt.`,
+    requestId: request.id,
+    ctaLabel: "Xem điều chỉnh",
+  });
+  await Promise.all(
+    uids.map((uid) => sendToUid(uid, subject, html, { groupId: request.groupId, category: "approver_pending" })),
   );
 }

@@ -1,8 +1,13 @@
 import { after, NextResponse } from "next/server";
+import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase/admin";
 import { apiErrorResponse } from "@/lib/http";
 import { guiCacViec, taoViecDongBo } from "@/lib/dong-bo/hang-cho";
+import { pendingAdjustmentFiles } from "@/lib/adjustment-settings";
 import { buildAdjustmentHistoryPatch } from "@/lib/server/adjustment";
+import { loadAdjustmentGroupSettings } from "@/lib/server/adjustment-approval-rules";
+import { loadActiveUsers } from "@/lib/server/adjustment-reviewers";
+import { notifyAdjustmentApprovers } from "@/lib/server/notification-emails";
 import { loadRequest } from "@/lib/server/requests";
 import { requireSession, ForbiddenError } from "@/lib/session";
 import type { RequestInstance } from "@/lib/types";
@@ -102,13 +107,28 @@ export async function POST(
 
     if (decision === "forward") {
       const targetId = typeof body.target?.id === "string" ? body.target.id.trim() : "";
-      const targetName = typeof body.target?.name === "string" ? body.target.name.trim() : "";
-      if (!targetId || !targetName) {
+      if (!targetId) {
         return NextResponse.json({ error: "Thiếu người được chuyển tiếp." }, { status: 400 });
       }
       if (targetId === session.uid) {
         return NextResponse.json({ error: "Không thể chuyển tiếp cho chính mình." }, { status: 400 });
       }
+      if (targetId === pending.requestedByUid) {
+        return NextResponse.json(
+          { error: "Không chuyển tiếp cho chính người đã đề nghị điều chỉnh." },
+          { status: 400 },
+        );
+      }
+      // Người nhận phải còn hoạt động ở App Tổng; tên lấy từ App Tổng (06/10/2026
+      // — trước đây tin nguyên `target.name` client gửi lên).
+      const targetUser = (await loadActiveUsers([targetId])).get(targetId);
+      if (!targetUser) {
+        return NextResponse.json(
+          { error: "Người được chuyển tiếp không còn hoạt động ở App Tổng — chọn người khác." },
+          { status: 400 },
+        );
+      }
+      const targetName = targetUser.name;
       const nowIso = new Date().toISOString();
       const ketQua = await adminDb.runTransaction(async (tx) => {
         const snap = await tx.get(ref);
@@ -117,6 +137,9 @@ export async function POST(
         const checked = checkPendingInTx(moiNhat);
         if ("loi" in checked) return checked;
         const { pendingNow, idx } = checked;
+        if (targetId === pendingNow.requestedByUid) {
+          return { loi: "Không chuyển tiếp cho chính người đã đề nghị điều chỉnh." as const, ma: 400 };
+        }
         // Người được chuyển tiếp tới ĐÃ có mặt ở 1 slot khác (dù đã duyệt hay
         // chưa) — từ chối thẳng thay vì tự gộp/xoá slot (CodeRabbit PR #68:
         // gộp sai lúc slot kia ĐÃ duyệt từng làm "mất" 1 yêu cầu duyệt mà
@@ -131,11 +154,22 @@ export async function POST(
           i === idx ? { uid: targetId, name: targetName, approvedAt: null } : a,
         );
         const pendingAdjustment = { ...pendingNow, approvers };
-        tx.update(ref, { pendingAdjustment, updatedAt: nowIso });
-        return { request: { ...moiNhat, pendingAdjustment, updatedAt: nowIso } };
+        tx.update(ref, {
+          pendingAdjustment,
+          // Người nhận chuyển tiếp xem được đề xuất (canView) cả sau khi xong.
+          adjustmentReviewerUids: FieldValue.arrayUnion(targetId),
+          updatedAt: nowIso,
+        });
+        const adjustmentReviewerUids = Array.from(new Set([...(moiNhat.adjustmentReviewerUids ?? []), targetId]));
+        return { request: { ...moiNhat, pendingAdjustment, adjustmentReviewerUids, updatedAt: nowIso } };
       });
       if ("loi" in ketQua) return NextResponse.json({ error: ketQua.loi }, { status: ketQua.ma });
-      return NextResponse.json({ request: ketQua.request });
+      const saved = ketQua.request;
+      after(async () => {
+        const settings = await loadAdjustmentGroupSettings(saved.groupId);
+        await notifyAdjustmentApprovers([targetId], saved, pending.requestedByName, settings);
+      });
+      return NextResponse.json({ request: saved });
     }
 
     if (decision === "rejected") {
@@ -180,8 +214,10 @@ export async function POST(
 
       const historyPatch = buildAdjustmentHistoryPatch(moiNhat, {
         noiDung: pendingNow.noiDung,
-        attachment: pendingNow.attachment,
+        // Đọc được cả điều chỉnh CŨ (1 tệp `attachment`) lẫn mới (`attachments`).
+        files: pendingAdjustmentFiles(pendingNow),
         actorName: pendingNow.requestedByName,
+        actorUid: pendingNow.requestedByUid,
       });
       const patch = { ...historyPatch, pendingAdjustment: null };
       tx.update(ref, patch);
@@ -192,6 +228,7 @@ export async function POST(
     }
     if (ketQua.finalized) {
       const pendingSnapshot = ketQua.pendingSnapshot;
+      const files = pendingAdjustmentFiles(pendingSnapshot);
       try {
         const ids = await taoViecDongBo({
           requestId: id,
@@ -200,10 +237,8 @@ export async function POST(
           nguoi: pendingSnapshot.requestedByName,
           noiDung:
             pendingSnapshot.noiDung ||
-            (pendingSnapshot.attachment ? `(chỉ đính tệp: ${pendingSnapshot.attachment.name})` : ""),
-          taiLieu: pendingSnapshot.attachment
-            ? [{ name: pendingSnapshot.attachment.name, path: pendingSnapshot.attachment.path }]
-            : [],
+            (files.length > 0 ? `(chỉ đính tệp: ${files.map((f) => f.name).join(", ")})` : ""),
+          taiLieu: files.map((f) => ({ name: f.name, path: f.path })),
         });
         after(() => guiCacViec(ids));
       } catch (err) {

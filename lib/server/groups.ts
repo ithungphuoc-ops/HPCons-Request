@@ -2,6 +2,7 @@ import "server-only";
 import { adminDb } from "@/lib/firebase/admin";
 import type { GroupHistoryChange } from "@/lib/types";
 import { DECISION_NOTE_ACTIONS, DECISION_NOTE_ACTION_LABELS, describeDecisionNoteFlags } from "@/lib/decision-note";
+import { describeAdjustmentFieldRules, resolveAdjustmentFieldRules } from "@/lib/adjustment-settings";
 
 export { ensureApproverStepCodes, ensureFieldCodes } from "@/lib/print-template";
 export { sanitizeDescriptionHtml } from "@/lib/validation";
@@ -37,6 +38,8 @@ const FIELD_LABELS: Record<string, string> = {
   decisionNoteEnabled: "Ý kiến khi phê duyệt — có ô ghi chú",
   decisionAttachmentEnabled: "Ý kiến khi phê duyệt — có ô đính kèm tệp",
   requireDecisionAttachment: "Ý kiến khi phê duyệt — bắt buộc đính kèm tệp",
+  adjustmentFieldRules: "Điều chỉnh sau duyệt — ô Ghi chú / Đính kèm tệp",
+  adjustmentApprovalRules: "Điều chỉnh sau duyệt — người theo dõi được bấm",
 };
 
 /** Field dạng object cờ theo hành động — hiển thị "Chấp thuận: Có, …" thay
@@ -64,7 +67,15 @@ function describeFlags(key: string, value: unknown): string {
   return DECISION_ATTACHMENT_KEYS.has(key) ? describeDecisionAttachmentFlags(value) : describeDecisionNoteFlags(value);
 }
 
-function toDisplay(value: unknown): string {
+function toDisplay(value: unknown, key?: string): string {
+  if (key === "adjustmentFieldRules") {
+    return describeAdjustmentFieldRules(
+      resolveAdjustmentFieldRules({ adjustmentFieldRules: (value ?? undefined) as never }),
+    );
+  }
+  if (key === "adjustmentApprovalRules") {
+    return (value as { allowFollowers?: unknown } | null | undefined)?.allowFollowers === true ? "Có" : "Không";
+  }
   if (value === undefined || value === null) return "—";
   if (typeof value === "boolean") return value ? "Có" : "Không";
   if (Array.isArray(value)) return value.length === 0 ? "Trống" : `${value.length} mục`;
@@ -88,8 +99,8 @@ export function diffGroupPatch(
     )
     .map(([key, value]) => ({
       field: FIELD_LABELS[key] ?? key,
-      before: DECISION_NOTE_KEYS.has(key) ? describeFlags(key, before[key]) : toDisplay(before[key]),
-      after: DECISION_NOTE_KEYS.has(key) ? describeFlags(key, value) : toDisplay(value),
+      before: DECISION_NOTE_KEYS.has(key) ? describeFlags(key, before[key]) : toDisplay(before[key], key),
+      after: DECISION_NOTE_KEYS.has(key) ? describeFlags(key, value) : toDisplay(value, key),
     }));
 }
 

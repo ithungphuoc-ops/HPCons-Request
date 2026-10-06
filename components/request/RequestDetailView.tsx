@@ -55,6 +55,8 @@ import {
   useDecisionAttachmentEditor,
 } from "@/components/request/DecisionAttachmentEditMenu";
 import { activeAttachments } from "@/lib/decision-attachment-edit";
+import AdjustmentControl from "@/components/request/AdjustmentControl";
+import { pendingAdjustmentFiles } from "@/lib/adjustment-settings";
 import { countOpinionsByApprover, extractApproverOpinions } from "@/lib/approver-opinions";
 import { decisionNoteMode, resolveDecisionNoteRules, type DecisionNoteMode } from "@/lib/decision-note";
 import {
@@ -97,7 +99,6 @@ import KhoiDongBo from "@/components/request/KhoiDongBo";
 import { canSupplementAfterApproval as canSupplementAfterApprovalCheck } from "@/lib/permissions";
 import {
   ADJUSTMENT_HISTORY_PREFIX,
-  ADJUSTMENT_MAX_LENGTH,
   ATTACHMENT_SUPPLEMENT_HISTORY_PREFIX,
 } from "@/lib/request-history-labels";
 import { resolveRequestTitle } from "@/lib/request-title";
@@ -159,7 +160,7 @@ export default function RequestDetailView({
    * — nơi KHÔNG truyền prop này (vd preview trong list) rơi về đúng hành vi
    * CŨ (chỉ submitter, lưu thẳng ngay) qua `canSupplementAfterApproval` phía
    * dưới. Xem design.md của change add-adjustment-approval-conditions. */
-  viewerAdjustmentAccess?: "direct" | "gated" | "none";
+  viewerAdjustmentAccess?: "gated" | "none";
   onActed: () => void;
 }) {
   const router = useRouter();
@@ -320,8 +321,11 @@ export default function RequestDetailView({
   // `canSupplementAfterApproval` ở trên (vẫn giữ nguyên cho table-supplement/
   // attachments). Server đã tính sẵn qua `viewerAdjustmentAccess`; nơi CHƯA
   // truyền prop này (preview trong danh sách) rơi về đúng hành vi CŨ.
-  const resolvedAdjustmentAccess: "direct" | "gated" | "none" =
-    viewerAdjustmentAccess ?? (canSupplementAfterApproval ? "direct" : "none");
+  // Từ 06/10/2026 mọi điều chỉnh đều chờ 2 người duyệt do người điều chỉnh
+  // chọn ("gated") — nơi không truyền prop (xem trong danh sách) rơi về: chỉ
+  // người gửi được bấm (giống hành vi cũ), máy chủ vẫn kiểm lại.
+  const resolvedAdjustmentAccess: "gated" | "none" =
+    viewerAdjustmentAccess ?? (canSupplementAfterApproval ? "gated" : "none");
   const attachmentSupplementEntries = history.filter((h) =>
     h.action.startsWith(ATTACHMENT_SUPPLEMENT_HISTORY_PREFIX),
   );
@@ -640,6 +644,12 @@ export default function RequestDetailView({
   });
   // Tệp đã gỡ/đã thay ẩn khỏi danh sách chính (vẫn còn trong `attachments`).
   const visibleAttachments = useMemo(() => activeAttachments(attachments), [attachments]);
+  /** Path các tệp "thường" (không kèm quyết định/điều chỉnh) theo đúng thứ tự
+   * — dùng ghép nhãn "Đính sau duyệt · lần N". */
+  const plainAttachmentPaths = useMemo(
+    () => attachments.filter((a) => !a.source).map((a) => a.path),
+    [attachments],
+  );
 
   // Ý kiến người duyệt — trích từ lịch sử (lib/approver-opinions.ts), chỉ đọc.
   const opinions = useMemo(
@@ -1268,15 +1278,29 @@ export default function RequestDetailView({
                   <span className="font-medium">{request.pendingAdjustment.requestedByName}</span> đề nghị điều
                   chỉnh:
                 </p>
-                <p className="mb-2 text-[14px] text-gray-800">
+                <p className="mb-2 whitespace-pre-line break-words text-[14px] text-gray-800">
                   {request.pendingAdjustment.noiDung || "(chỉ đính tệp)"}
                 </p>
-                {request.pendingAdjustment.attachment && (
-                  <p className="mb-2 flex items-center gap-1 text-[12px] text-[var(--color-action-blue)]">
-                    <Paperclip size={11} className="shrink-0" />
-                    {request.pendingAdjustment.attachment.name}
-                  </p>
+                {pendingAdjustmentFiles(request.pendingAdjustment).length > 0 && (
+                  <ul className="mb-2 flex flex-col gap-0.5" data-testid="pending-adjustment-files">
+                    {pendingAdjustmentFiles(request.pendingAdjustment).map((att) => (
+                      <li key={att.path}>
+                        <button
+                          type="button"
+                          onClick={() => setPreviewingAttachment(att)}
+                          className="flex items-center gap-1 text-left text-[12.5px] text-[var(--color-action-blue)] hover:underline"
+                        >
+                          <Paperclip size={11} className="shrink-0" />
+                          <span className="break-all">{att.name}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
                 )}
+                <p className="mb-1.5 text-[12px] text-amber-700">
+                  ⏳ Đang chờ duyệt — chưa có hiệu lực, chưa báo Kho/Thu mua. Cần đủ{" "}
+                  {request.pendingAdjustment.approvers.length} người duyệt.
+                </p>
                 <div className="flex flex-col gap-1.5">
                   {request.pendingAdjustment.approvers.map((a) => {
                     const isDone = a.approvedAt !== null;
@@ -1284,7 +1308,7 @@ export default function RequestDetailView({
                     return (
                       <div
                         key={a.uid}
-                        className={`flex items-center gap-2 rounded border px-2.5 py-1.5 text-[13px] ${
+                        className={`flex flex-wrap items-center gap-2 rounded border px-2.5 py-1.5 text-[13px] ${
                           isDone
                             ? "border-emerald-200 bg-emerald-50 text-emerald-700"
                             : "border-amber-200 bg-white text-amber-700"
@@ -1297,7 +1321,7 @@ export default function RequestDetailView({
                         >
                           {isDone ? "✓" : "…"}
                         </span>
-                        <span className="flex-1">
+                        <span className="min-w-[9rem] flex-1">
                           {a.name}
                           {isDone ? " đã duyệt" : " — chưa duyệt"}
                         </span>
@@ -1341,14 +1365,10 @@ export default function RequestDetailView({
               resolvedAdjustmentAccess !== "none" && (
                 <AdjustmentControl
                   requestId={request.id}
-                  submitLabel={resolvedAdjustmentAccess === "gated" ? "Gửi duyệt điều chỉnh" : "Cập nhật điều chỉnh"}
-                  onDone={(data) => {
-                    setAttachments(data.attachments);
-                    setHistory(data.history);
-                    // "gated": chuyển sang trạng thái chờ duyệt — nạp lại để
-                    // lấy đúng `pendingAdjustment` mới (xem design.md).
-                    if (resolvedAdjustmentAccess === "gated") onActed();
-                  }}
+                  currentUid={currentUid}
+                  // Gửi xong → điều chỉnh chuyển sang chờ duyệt: nạp lại để
+                  // lấy đúng `pendingAdjustment` mới.
+                  onDone={onActed}
                 />
               )
             )}
@@ -1357,6 +1377,10 @@ export default function RequestDetailView({
                 currentApproverName={
                   request.pendingAdjustment.approvers.find((a) => a.uid === adjForwardTarget)?.name ?? ""
                 }
+                excludeIds={[
+                  request.pendingAdjustment.requestedByUid,
+                  ...request.pendingAdjustment.approvers.map((a) => a.uid),
+                ]}
                 onClose={() => setAdjForwardTarget(null)}
                 onConfirm={(user) => decideAdjustment("forward", user)}
               />
@@ -1373,12 +1397,15 @@ export default function RequestDetailView({
                     {/* Tệp đi kèm ĐÚNG lần điều chỉnh này (Sếp chốt "cách 1",
                         15/09/2026) — tệp vẫn nằm trong danh sách "Tài liệu đính
                         kèm" bên dưới, đây chỉ là chỗ cho biết nó thuộc lần nào. */}
-                    {h.attachmentName && (
-                      <span className="mt-0.5 flex items-center gap-1 text-[12px] text-[var(--color-action-blue)]">
+                    {(h.attachmentNames ?? (h.attachmentName ? [h.attachmentName] : [])).map((name, k) => (
+                      <span
+                        key={`${name}-${k}`}
+                        className="mt-0.5 flex items-center gap-1 text-[12px] text-[var(--color-action-blue)]"
+                      >
                         <Paperclip size={11} className="shrink-0" />
-                        {h.attachmentName}
+                        {name}
                       </span>
-                    )}
+                    ))}
                   </li>
                 ))}
               </ul>
@@ -1410,15 +1437,21 @@ export default function RequestDetailView({
               <p className="mt-1.5 text-[14px] text-gray-400">Chưa có tài liệu nào.</p>
             ) : (
               <ul className="mt-1.5 flex flex-col gap-1">
-                {attachments.map((att, i) => {
+                {attachments.map((att) => {
                   // `attachments[]` chỉ NỐI THÊM (không chèn giữa/xoá), và
                   // trạng thái "approved" không quay lại trạng thái khác — nên
                   // K mục cuối cùng luôn ĐÚNG là K lần đính "sau duyệt" đã ghi
                   // trong history, cùng thứ tự. Xem design.md của change
                   // add-post-approval-supplement, Decision 5.
-                  const firstPostApprovalIndex = attachments.length - attachmentSupplementEntries.length;
+                  // Tệp kèm quyết định / kèm điều chỉnh (có `source`) KHÔNG phải
+                  // "đính sau duyệt" — bỏ khỏi phép đếm để không lệch "lần N"
+                  // (06/10/2026: điều chỉnh có thể nối nhiều tệp xen giữa).
+                  const plainIndex = att.source ? -1 : plainAttachmentPaths.indexOf(att.path);
+                  const firstPostApprovalIndex = plainAttachmentPaths.length - attachmentSupplementEntries.length;
                   const supplementEntry =
-                    i >= firstPostApprovalIndex ? attachmentSupplementEntries[i - firstPostApprovalIndex] : null;
+                    plainIndex >= 0 && plainIndex >= firstPostApprovalIndex
+                      ? attachmentSupplementEntries[plainIndex - firstPostApprovalIndex]
+                      : null;
                   // Vị trí tính trên mảng ĐẦY ĐỦ ở trên, rồi mới ẩn tệp đã gỡ/đã thay.
                   if (att.removedAt) return null;
                   return (
@@ -1433,9 +1466,15 @@ export default function RequestDetailView({
                         <span className="shrink-0 text-gray-400">({(att.size / 1024 / 1024).toFixed(1)}MB)</span>
                       </button>
                       <DecisionAttachmentMeta att={att} />
+                      {att.source === "adjustment" && (
+                        <p className="ml-[19px] text-[10.5px] font-medium text-amber-600">
+                          ✏️ Kèm điều chỉnh sau duyệt{att.addedBy ? ` · ${att.addedBy}` : ""}
+                          {att.addedAt ? ` · ${new Date(att.addedAt).toLocaleString("vi-VN")}` : ""}
+                        </p>
+                      )}
                       {supplementEntry && !isDecisionAttachment(att) && (
                         <p className="ml-[19px] text-[10.5px] font-medium text-amber-600">
-                          🕘 Đính sau duyệt · lần {i - firstPostApprovalIndex + 1} ·{" "}
+                          🕘 Đính sau duyệt · lần {plainIndex - firstPostApprovalIndex + 1} ·{" "}
                           {new Date(supplementEntry.at).toLocaleString("vi-VN")}
                         </p>
                       )}
@@ -1986,141 +2025,6 @@ function DecisionAttachmentMeta({ att }: { att: RequestAttachment }) {
       {att.addedBy ? ` · ${att.addedBy}` : ""}
       {att.addedAt ? ` · ${new Date(att.addedAt).toLocaleDateString("vi-VN")}` : ""}
     </p>
-  );
-}
-
-/**
- * Ô ghi điều chỉnh sau duyệt — Sếp chốt 15/09/2026 thay cho khối bảng cũ.
- *
- * Gửi đi KHÔNG sửa `values`: bảng gốc là thứ người duyệt đã đọc và đã đồng ý,
- * ghi đè vào đó là mất dấu "duyệt cái gì / cuối cùng lấy cái gì". Nội dung đi
- * vào `history` kèm tên người và giờ (xem route adjustment).
- */
-function AdjustmentControl({
-  requestId,
-  submitLabel = "Cập nhật điều chỉnh",
-  onDone,
-}: {
-  requestId: string;
-  /** "Gửi duyệt điều chỉnh" khi phải qua duyệt (gated), giữ nhãn cũ khi ghi
-   * thẳng ngay (direct) — xem design.md của change
-   * add-adjustment-approval-conditions. */
-  submitLabel?: string;
-  onDone: (data: { attachments: RequestAttachment[]; history: RequestHistoryEntry[] }) => void;
-}) {
-  const [noiDung, setNoiDung] = useState("");
-  const [tep, setTep] = useState<File | null>(null);
-  const [dangGui, setDangGui] = useState(false);
-  const [loi, setLoi] = useState<string | null>(null);
-  const oTepRef = useRef<HTMLInputElement>(null);
-
-  const gui = async () => {
-    const text = noiDung.trim();
-    if (!text && !tep) {
-      setLoi("Nhập nội dung điều chỉnh hoặc đính kèm tệp.");
-      return;
-    }
-    setDangGui(true);
-    setLoi(null);
-    try {
-      // Tệp lên R2 TRƯỚC, rồi mới gọi route — cùng luồng với nút "Thêm tệp
-      // tin" bên dưới (xem uploadAttachment ở component cha).
-      let attachment: RequestAttachment | undefined;
-      if (tep) {
-        const uploaded = await uploadAttachments([tep]);
-        attachment = uploaded[0];
-        if (!attachment) throw new Error("Không tải được tệp lên.");
-      }
-      const res = await fetch(`/api/requests/${requestId}/adjustment`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ noiDung: text, ...(attachment ? { attachment } : {}) }),
-      });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
-        setLoi(body.error ?? "Không gửi được điều chỉnh.");
-        return;
-      }
-      const data = (await res.json()) as { request: RequestInstance };
-      setNoiDung("");
-      setTep(null);
-      if (oTepRef.current) oTepRef.current.value = "";
-      onDone({
-        attachments: data.request.attachments ?? [],
-        history: data.request.history,
-      });
-    } catch (err) {
-      setLoi(err instanceof Error ? err.message : "Có lỗi xảy ra, vui lòng thử lại.");
-    } finally {
-      setDangGui(false);
-    }
-  };
-
-  return (
-    <div className="print-hide">
-      {/* Bố cục Sếp chốt 15/09/2026: giống hệt ô Thảo luận — kẹp tệp bên trái,
-          ô chữ NHIỀU DÒNG ở giữa, nút CÓ CHỮ bên phải.
-          Vì sao không dùng nút mũi tên như Thảo luận: mũi tên hợp với ô chat
-          (ai cũng hiểu là "gửi"), còn đây là hành động ghi vào hồ sơ nên phải
-          nói thẳng đang làm gì.
-          Vì sao bỏ nhãn "Nội dung điều chỉnh": câu hướng dẫn ngay phía trên đã
-          nói rõ rồi, thêm nhãn nữa là ba dòng chữ chồng nhau. */}
-      <div className="flex items-start gap-2">
-        <input
-          ref={oTepRef}
-          type="file"
-          className="hidden"
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) setTep(f);
-          }}
-        />
-        <button
-          type="button"
-          onClick={() => oTepRef.current?.click()}
-          disabled={dangGui}
-          title="Đính kèm tệp cho lần điều chỉnh này"
-          aria-label="Đính kèm tệp cho lần điều chỉnh này"
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded border border-[var(--color-border)] text-gray-500 hover:border-[var(--color-action-blue)] hover:text-[var(--color-action-blue)] disabled:opacity-50"
-        >
-          <Paperclip size={15} />
-        </button>
-        <textarea
-          value={noiDung}
-          maxLength={ADJUSTMENT_MAX_LENGTH}
-          onChange={(e) => setNoiDung(e.target.value)}
-          rows={2}
-          placeholder="Mô tả điều chỉnh — ví dụ: Thép hộp 40x80 đổi từ 120 cây xuống 90 cây"
-          className="min-w-0 flex-1 rounded border border-[var(--color-border)] px-3 py-2 text-[14px] text-gray-800 outline-none focus:border-[var(--color-action-blue)]"
-        />
-        <button
-          type="button"
-          onClick={gui}
-          disabled={dangGui}
-          className="flex h-9 shrink-0 items-center rounded bg-[var(--color-action-blue)] px-4 text-[14px] font-medium text-white hover:brightness-95 disabled:opacity-50"
-        >
-          {dangGui ? "Đang gửi..." : submitLabel}
-        </button>
-      </div>
-      {tep && (
-        <span className="mt-2 inline-flex items-center gap-1.5 rounded border border-[var(--color-border)] bg-blue-50 px-2 py-1 text-[12px] text-gray-700">
-          <Paperclip size={12} className="shrink-0" />
-          {tep.name}
-          <button
-            type="button"
-            onClick={() => {
-              setTep(null);
-              if (oTepRef.current) oTepRef.current.value = "";
-            }}
-            aria-label="Bỏ tệp đã chọn"
-            className="text-gray-400 hover:text-[var(--color-danger-red)]"
-          >
-            <X size={12} />
-          </button>
-        </span>
-      )}
-      {loi && <p className="mt-1 text-[12px] text-[var(--color-danger-red)]">{loi}</p>}
-    </div>
   );
 }
 

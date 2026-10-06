@@ -100,6 +100,9 @@ export async function POST(
       requireDecisionAttachment: source.requireDecisionAttachment
         ? JSON.parse(JSON.stringify(source.requireDecisionAttachment))
         : undefined,
+      adjustmentFieldRules: source.adjustmentFieldRules
+        ? JSON.parse(JSON.stringify(source.adjustmentFieldRules))
+        : undefined,
       useOwnCounter: source.useOwnCounter,
       // Reset — người nhân bản là "người tạo" của bản sao, không phải người tạo nhóm gốc.
       createdBy: { uid: session.uid, name: session.name },

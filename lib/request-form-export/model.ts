@@ -4,6 +4,7 @@ import { printFileBaseName } from "@/lib/letterhead";
 import { formatCountdown } from "@/lib/approver-progress";
 import { formatFieldValue, formatValue } from "@/lib/request-field-format";
 import { ADJUSTMENT_HISTORY_PREFIX, ATTACHMENT_SUPPLEMENT_HISTORY_PREFIX } from "@/lib/request-history-labels";
+import { pendingAdjustmentFiles } from "@/lib/adjustment-settings";
 import { resolveRequestTitle } from "@/lib/request-title";
 import {
   deserializeTableRows,
@@ -285,26 +286,38 @@ export function buildRequestFormModel(input: RequestFormInput): RequestFormModel
       ? {
           note: `${pa.requestedByName} đề nghị điều chỉnh: ${pa.noiDung || "(chỉ đính tệp)"}`,
           meta: `Đang chờ duyệt · ${pa.approvers.map((a) => `${a.name} ${a.approvedAt ? "đã duyệt" : "chưa duyệt"}`).join(" · ")}`,
-          file: pa.attachment?.name,
+          file: pendingAdjustmentFiles(pa).map((f) => f.name).join(", ") || undefined,
         }
       : null;
 
     const entries = history
       .filter((h) => h.action.startsWith(ADJUSTMENT_HISTORY_PREFIX))
-      .map((h, i) => ({ note: h.note ?? "", meta: `${h.actor} · ${vnDateTime(h.at)} · lần ${i + 1}`, file: h.attachmentName }));
+      .map((h, i) => ({
+        note: h.note ?? "",
+        meta: `${h.actor} · ${vnDateTime(h.at)} · lần ${i + 1}`,
+        file: (h.attachmentNames ?? (h.attachmentName ? [h.attachmentName] : [])).join(", ") || undefined,
+      }));
 
     // Nhãn "Đính sau duyệt · lần N" cho K tệp CUỐI — cùng luật với trang chi tiết.
     const supplementEntries = history.filter((h) => h.action.startsWith(ATTACHMENT_SUPPLEMENT_HISTORY_PREFIX));
-    const firstPostApproval = attachments.length - supplementEntries.length;
+    // Chỉ đếm tệp "thường" (không kèm quyết định/điều chỉnh — có `source`),
+    // cùng luật trang chi tiết (06/10/2026: điều chỉnh có thể nối nhiều tệp).
+    const plainPaths = attachments.filter((a) => !a.source).map((a) => a.path);
+    const firstPostApproval = plainPaths.length - supplementEntries.length;
     // Vị trí tính trên mảng ĐẦY ĐỦ, rồi mới bỏ tệp đã gỡ/đã thay (giữ dấu vết
     // trong dữ liệu, không in ra — "Sửa tệp đính kèm khi duyệt", 06/10/2026).
     const attachmentList = attachments
-      .map((att, i) => {
-        const entry = i >= firstPostApproval ? supplementEntries[i - firstPostApproval] : null;
+      .map((att) => {
+        const i = att.source ? -1 : plainPaths.indexOf(att.path);
+        const entry = i >= 0 && i >= firstPostApproval ? supplementEntries[i - firstPostApproval] : null;
         return {
           removed: !!att.removedAt,
           name: att.name,
-          meta: entry ? `Đính sau duyệt · lần ${i - firstPostApproval + 1} · ${vnDateTime(entry.at)}` : undefined,
+          meta: entry
+            ? `Đính sau duyệt · lần ${i - firstPostApproval + 1} · ${vnDateTime(entry.at)}`
+            : att.source === "adjustment"
+              ? `Kèm điều chỉnh sau duyệt${att.addedAt ? ` · ${vnDateTime(att.addedAt)}` : ""}`
+              : undefined,
         };
       })
       .filter((a) => !a.removed)
