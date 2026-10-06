@@ -272,3 +272,41 @@ export function canAdjustAfterApproval(
   const isFollower = found.followers.some((f) => f.id === uid);
   return isFollower && rules?.allowFollowers === true;
 }
+
+/* --------------------------- Huỷ điều chỉnh chờ duyệt --------------------- */
+
+/** Lý do huỷ tối đa (kiểm ở CẢ ô nhập lẫn máy chủ). */
+export const ADJUSTMENT_CANCEL_REASON_MAX_LENGTH = 500;
+
+/**
+ * Ai được bấm "Huỷ điều chỉnh" cho 1 điều chỉnh ĐANG CHỜ duyệt — Sếp đồng ý
+ * 06/10/2026 (tránh treo khi người duyệt nghỉ/không xử lý):
+ * - Người đã gửi điều chỉnh (`pendingAdjustment.requestedByUid`).
+ * - Owner/Admin (vai trò toàn cục App Tổng — cùng chuẩn `canManageGroupsAtAppScope`).
+ * Người duyệt điều chỉnh KHÔNG có quyền huỷ (họ đã có nút Từ chối).
+ *
+ * Hàm THUẦN — dùng chung route `adjustment/cancel` và nút ở trang chi tiết.
+ */
+export function canCancelPendingAdjustment(
+  pending: Pick<PendingAdjustment, "requestedByUid"> | null | undefined,
+  uid: string | null,
+  isAdmin: boolean,
+): boolean {
+  if (!pending || !uid) return false;
+  return isAdmin || pending.requestedByUid === uid;
+}
+
+/** Ghi chú cho dòng lịch sử "Đã huỷ điều chỉnh chờ duyệt": lý do (nếu có) +
+ * tóm tắt nội dung điều chỉnh bị huỷ (ghi chú, tên tệp, người đề nghị). */
+export function buildAdjustmentCancelNote(
+  pending: Pick<PendingAdjustment, "noiDung" | "attachment" | "attachments" | "requestedByName">,
+  reason: string,
+): string {
+  const parts: string[] = [];
+  if (reason) parts.push(`Lý do: ${reason}`);
+  parts.push(`Điều chỉnh bị huỷ (do ${pending.requestedByName} đề nghị): ${pending.noiDung || "(chỉ đính tệp)"}`);
+  const names = pendingAdjustmentFiles(pending).map((f) => f.name);
+  if (names.length > 0) parts.push(`Tệp kèm (không lưu vào đề xuất): ${names.join(", ")}`);
+  // Dòng lịch sử hiện trên 1 dòng (không pre-line) → nối bằng " · ".
+  return parts.join(" · ");
+}
