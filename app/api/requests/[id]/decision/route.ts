@@ -10,6 +10,7 @@ import {
   missingRequiredNote,
 } from "@/lib/approval-logic";
 import { adminDb } from "@/lib/firebase/admin";
+import { sanitizeDecisionNoteInput } from "@/lib/decision-note";
 import { apiErrorResponse } from "@/lib/http";
 import { notifyFollowersFullyApproved, notifyPendingApprovers, notifySubmitterResult } from "@/lib/server/notification-emails";
 import { recomputeDeadlineForNextStep } from "@/lib/server/requests";
@@ -59,12 +60,13 @@ export async function POST(
     const current = { id: snap.id, ...snap.data() } as RequestInstance;
     const nowIso = new Date().toISOString();
 
-    // Nhóm có thể bắt buộc thêm ghi chú cho "Chấp thuận"/"Chuyển tiếp" (mặc
-    // định KHÔNG bắt buộc, giữ đúng hành vi hiện có) — "rejected"/"returned"
-    // LUÔN bắt buộc sẵn, không phụ thuộc cấu hình nhóm (xem missingRequiredNote).
+    // "Ý kiến khi phê duyệt" theo nhóm (có ô / bắt buộc cho 4 hành động) —
+    // "returned" LUÔN bắt buộc, "rejected" mặc định bắt buộc như cũ, ô đã tắt
+    // thì không bắt buộc (xem missingRequiredNote + lib/decision-note.ts).
     const isForwardDecision =
       body.decision === "approve_and_forward" || body.decision === "forward_then_approve";
-    let requireDecisionNote: { approve?: boolean; forward?: boolean } | undefined;
+    let requireDecisionNote: ProposalGroup["requireDecisionNote"];
+    let decisionNoteEnabled: ProposalGroup["decisionNoteEnabled"];
     let approvalTimeFields: ApprovalTimeField[] = [];
     // 3 field dùng để TÍNH LẠI deadlineAt khi chuyển sang bước duyệt tiếp
     // theo — xem recomputeDeadlineForNextStep() (lib/server/requests.ts).
@@ -86,6 +88,7 @@ export async function POST(
       const groupSnap = await adminDb.collection("groups").doc(current.groupId).get();
       const groupData = groupSnap.data() as Partial<ProposalGroup> | undefined;
       requireDecisionNote = groupData?.requireDecisionNote;
+      decisionNoteEnabled = groupData?.decisionNoteEnabled;
       approvalTimeFields = groupData?.approvalTimeFields ?? [];
       approverSlaEnabled = groupData?.approverSlaEnabled;
       slaByWorkCalendar = groupData?.slaByWorkCalendar;
@@ -95,7 +98,14 @@ export async function POST(
         approversCanDelegateApproval = false;
       }
     }
-    if (missingRequiredNote(body.decision, body.note, requireDecisionNote)) {
+    // Chuẩn hoá ghi chú: không phải chuỗi → 400; ô của hành động này đã tắt
+    // trong nhóm → bỏ note (trừ Trả lại). Xem sanitizeDecisionNoteInput.
+    const noteInput = sanitizeDecisionNoteInput(body.decision, body.note, { requireDecisionNote, decisionNoteEnabled });
+    if (!noteInput.ok) {
+      return NextResponse.json({ error: noteInput.error }, { status: 400 });
+    }
+    body.note = noteInput.note;
+    if (missingRequiredNote(body.decision, body.note, requireDecisionNote, decisionNoteEnabled)) {
       const message =
         body.decision === "rejected" || body.decision === "returned"
           ? "Cần nhập lý do khi từ chối hoặc trả lại đề xuất."

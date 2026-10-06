@@ -2,14 +2,17 @@
 
 import { useState } from "react";
 import Modal from "@/components/shared/Modal";
-import { cancelButtonClass, confirmButtonClass, textareaClass } from "@/components/shared/form-styles";
+import { cancelButtonClass, confirmButtonClass } from "@/components/shared/form-styles";
 import ApprovalTimeFieldControl, { isApprovalTimeValueMissing } from "@/components/request/ApprovalTimeFieldControl";
+import DecisionNoteInput from "@/components/request/DecisionNoteInput";
+import type { DecisionNoteMode } from "@/lib/decision-note";
 import type { ApprovalTimeField } from "@/lib/types";
 
 export default function ReasonModal({
   title,
   confirmLabel,
   extraField,
+  noteMode = "required",
   onClose,
   onConfirm,
 }: {
@@ -18,6 +21,9 @@ export default function ReasonModal({
   /** "Mẫu form phê duyệt" khớp đúng (bước × hành động "Từ chối") của người
    * đang xử lý — undefined = không có field nào, giữ nguyên hành vi cũ. */
   extraField?: ApprovalTimeField["field"];
+  /** "Ý kiến khi phê duyệt" của nhóm (chỉ áp cho Từ chối). Mặc định
+   * "required" — "Trả lại" luôn dùng mặc định này (giữ nguyên như cũ). */
+  noteMode?: DecisionNoteMode;
   onClose: () => void;
   onConfirm: (note: string, approvalTimeValue?: unknown) => Promise<void>;
 }) {
@@ -25,9 +31,11 @@ export default function ReasonModal({
   const [fieldValue, setFieldValue] = useState<unknown>(undefined);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [noteInvalid, setNoteInvalid] = useState(false);
 
   const handleConfirm = async () => {
-    if (!note.trim()) {
+    if (noteMode === "required" && !note.trim()) {
+      setNoteInvalid(true);
       setError("Cần nhập lý do.");
       return;
     }
@@ -38,7 +46,7 @@ export default function ReasonModal({
     setSubmitting(true);
     setError(null);
     try {
-      await onConfirm(note.trim(), extraField ? fieldValue : undefined);
+      await onConfirm(noteMode === "hidden" ? "" : note.trim(), extraField ? fieldValue : undefined);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Có lỗi xảy ra.");
       setSubmitting(false);
@@ -70,19 +78,24 @@ export default function ReasonModal({
         {extraField && (
           <ApprovalTimeFieldControl field={extraField} value={fieldValue} onChange={setFieldValue} />
         )}
-        <div>
-          <label className="mb-1 block text-[14px] font-medium text-gray-700">
-            Lý do <span className="text-[var(--color-danger-red)]">*</span>
-          </label>
-          <textarea
-            className={textareaClass}
-            rows={4}
-            autoFocus
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="Nhập lý do..."
-          />
-        </div>
+        {/* Ô ghi chú tắt (nhóm bỏ "Có ghi chú") — vẫn giữ hộp xác nhận cho
+            hành động không đảo ngược được như Từ chối, tránh bấm nhầm. */}
+        {noteMode === "hidden" && !extraField && (
+          <p className="text-[14px] text-gray-700">Xác nhận {confirmLabel.toLowerCase()} đề xuất này?</p>
+        )}
+        <DecisionNoteInput
+          mode={noteMode}
+          label="Lý do"
+          value={note}
+          onChange={(v) => {
+            setNote(v);
+            if (noteInvalid && v.trim()) setNoteInvalid(false);
+          }}
+          invalid={noteInvalid}
+          rows={4}
+          autoFocus
+          placeholder="Nhập lý do..."
+        />
         {error && <p className="text-[12px] text-[var(--color-danger-red)]">{error}</p>}
       </div>
     </Modal>

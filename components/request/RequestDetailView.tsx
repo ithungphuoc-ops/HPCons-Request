@@ -48,6 +48,9 @@ import FilePreviewModal from "@/components/request/FilePreviewModal";
 import CommentSection from "@/components/request/CommentSection";
 import AvatarWithCard from "@/components/request/AvatarWithCard";
 import ApproverProgressModal from "@/components/request/ApproverProgressModal";
+import ApproverOpinionsModal from "@/components/request/ApproverOpinionsModal";
+import { countOpinionsByApprover, extractApproverOpinions } from "@/lib/approver-opinions";
+import { decisionNoteMode, resolveDecisionNoteRules, type DecisionNoteMode } from "@/lib/decision-note";
 import { formatCountdown, type ProgressGroupSettings } from "@/lib/approver-progress";
 import { useAvatarProfilesByUids } from "@/lib/useAvatarProfilesByUids";
 import { canApproverAct } from "@/lib/approval-logic";
@@ -168,6 +171,10 @@ export default function RequestDetailView({
   // Ổn định tham chiếu — Modal gắn lại phím Esc mỗi khi onClose đổi, mà
   // `now` làm trang render lại mỗi giây lúc popup mở.
   const closeProgress = useCallback(() => setProgressOpen(false), []);
+  // Popup "Ý kiến của người duyệt": null = đóng; { focus: null } = tất cả;
+  // { focus: uid } = chỉ ý kiến của 1 người (bấm bong bóng cạnh tên).
+  const [opinionsView, setOpinionsView] = useState<{ focus: string | null } | null>(null);
+  const closeOpinions = useCallback(() => setOpinionsView(null), []);
   // `now` đổi mỗi giây (đếm ngược hạn) khiến component re-render liên tục —
   // memo hoá để không tính lại tuần ISO mỗi lần re-render dù submittedAt
   // không đổi.
@@ -563,21 +570,48 @@ export default function RequestDetailView({
   // categoryGroups RequestContext đã tải sẵn (GET /api/groups trả đủ mọi
   // nhóm), không đọc thêm. Đề xuất trực tiếp / không thấy nhóm → null (giờ
   // đồng hồ, xem lib/approver-progress.ts).
-  const progressGroup = useMemo<ProgressGroupSettings | null>(() => {
+  const currentGroup = useMemo(() => {
     if (!request.groupId) return null;
     for (const category of categoryGroups) {
       const g = category.groups.find((x) => x.id === request.groupId);
-      if (g) {
-        return {
-          slaByWorkCalendar: g.slaByWorkCalendar,
-          approverSlaEnabled: g.approverSlaEnabled,
-          slaHours: g.slaHours,
-          approverSteps: g.approverSteps,
-        };
-      }
+      if (g) return g;
     }
     return null;
   }, [categoryGroups, request.groupId]);
+  const progressGroup = useMemo<ProgressGroupSettings | null>(
+    () =>
+      currentGroup
+        ? {
+            slaByWorkCalendar: currentGroup.slaByWorkCalendar,
+            approverSlaEnabled: currentGroup.approverSlaEnabled,
+            slaHours: currentGroup.slaHours,
+            approverSteps: currentGroup.approverSteps,
+          }
+        : null,
+    [currentGroup],
+  );
+  // "Ý kiến khi phê duyệt" của nhóm (cùng nguồn categoryGroups, không đọc
+  // thêm). Đề xuất trực tiếp / chưa thấy nhóm → mặc định: có ô, chỉ Từ chối
+  // bắt buộc (server vẫn kiểm lại theo nhóm thật).
+  const noteRules = useMemo(() => resolveDecisionNoteRules(currentGroup), [currentGroup]);
+  const approveNoteMode = decisionNoteMode(noteRules.approve);
+  const rejectNoteMode = decisionNoteMode(noteRules.reject);
+  const forwardNoteModes: Partial<Record<ForwardMode, DecisionNoteMode>> = {
+    approve_and_forward: decisionNoteMode(noteRules.approveAndForward),
+    forward_then_approve: decisionNoteMode(noteRules.forward),
+  };
+
+  // Ý kiến người duyệt — trích từ lịch sử (lib/approver-opinions.ts), chỉ đọc.
+  const opinions = useMemo(
+    () =>
+      extractApproverOpinions({
+        history,
+        approversSnapshot: request.approversSnapshot,
+        approvers: request.approvers,
+      }),
+    [history, request.approversSnapshot, request.approvers],
+  );
+  const opinionCounts = useMemo(() => countOpinionsByApprover(opinions), [opinions]);
 
   const canAct =
     currentUid !== null && canApproverAct(request.approvalFlow, request.approvers, currentUid);
@@ -658,7 +692,7 @@ export default function RequestDetailView({
       body: JSON.stringify({
         decision: mode,
         target,
-        note,
+        note: note.trim() || undefined,
         approvalTimeValue: matchedRecord ? approvalTimeValue : undefined,
         approvalTimeFieldId: matchedRecord?.id,
       }),
@@ -971,7 +1005,9 @@ export default function RequestDetailView({
             <button
               type="button"
               onClick={() =>
-                approveField ? setApproveConfirmOpen(true) : decide("approved").catch(() => {})
+                approveField || approveNoteMode !== "hidden"
+                  ? setApproveConfirmOpen(true)
+                  : decide("approved").catch(() => {})
               }
               disabled={actingOn}
               className="flex h-9 items-center gap-1.5 rounded bg-[var(--color-confirm-green)] px-4 text-[14px] font-medium text-white shadow-sm transition-all hover:brightness-95 active:scale-[0.98] disabled:opacity-60"
@@ -1374,6 +1410,7 @@ export default function RequestDetailView({
             initialComments={request.comments ?? []}
             currentUid={currentUid}
             isOwner={isOwner}
+            opinions={opinions}
           />
         </div>
       </div>
@@ -1395,6 +1432,27 @@ export default function RequestDetailView({
               <span className="flex-1">Tiến trình của người duyệt</span>
               <ChevronDown size={14} className="-rotate-90 shrink-0" />
             </button>
+          )}
+          {opinions.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setOpinionsView({ focus: null })}
+              className="-mt-1 mb-3 flex w-full items-center gap-2 rounded-[3px] bg-green-50 px-2.5 py-2 text-left text-[13.5px] font-semibold text-[var(--color-confirm-green)] hover:bg-green-100 dark:bg-green-500/10 dark:hover:bg-green-500/20"
+            >
+              <MessageSquare size={14} className="shrink-0" />
+              <span className="flex-1">Xem {opinions.length} ý kiến của người duyệt</span>
+              <ChevronDown size={14} className="-rotate-90 shrink-0" />
+            </button>
+          )}
+          {opinionsView && (
+            <ApproverOpinionsModal
+              request={request}
+              opinions={opinions}
+              avatarProfiles={avatarProfiles}
+              focusApproverId={opinionsView.focus}
+              onShowAll={() => setOpinionsView({ focus: null })}
+              onClose={closeOpinions}
+            />
           )}
           {progressOpen && (
             <ApproverProgressModal
@@ -1453,7 +1511,21 @@ export default function RequestDetailView({
                     fallbackClassName="bg-[var(--color-action-blue)] font-semibold text-white"
                   />
                   <span className="min-w-0 flex-1 text-gray-700">
-                    <span className="block truncate">{approver.name}</span>
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <span className="truncate">{approver.name}</span>
+                      {(opinionCounts[approver.id] ?? 0) > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setOpinionsView({ focus: approver.id })}
+                          title={`Xem ${opinionCounts[approver.id]} ý kiến của ${approver.name}`}
+                          aria-label={`Xem ${opinionCounts[approver.id]} ý kiến của ${approver.name}`}
+                          className="flex shrink-0 items-center gap-0.5 rounded px-1 text-[11.5px] font-semibold text-[var(--color-confirm-green)] ring-1 ring-inset ring-[var(--color-confirm-green)]/50 hover:bg-green-50 dark:hover:bg-green-500/10"
+                        >
+                          <MessageSquare size={11} />
+                          {opinionCounts[approver.id]}
+                        </button>
+                      )}
+                    </span>
                     {(stepMeta?.name || stepMeta?.slaHours) && (
                       <span className="block truncate text-[12px] text-gray-400">
                         {stepMeta?.name}
@@ -1607,6 +1679,7 @@ export default function RequestDetailView({
         <ForwardModal
           extraFieldByMode={forwardFieldsByMode}
           allowForwardThenApprove={permissionRules.approversCanDelegateApproval}
+          noteModeByMode={forwardNoteModes}
           onClose={() => setForwardOpen(false)}
           onConfirm={forward}
         />
@@ -1616,9 +1689,10 @@ export default function RequestDetailView({
           title="Từ chối đề xuất"
           confirmLabel="Từ chối"
           extraField={rejectField}
+          noteMode={rejectNoteMode}
           onClose={() => setRejectOpen(false)}
           onConfirm={(note, approvalTimeValue) =>
-            decide("rejected", note, approvalTimeValue, rejectFieldRecord?.id)
+            decide("rejected", note || undefined, approvalTimeValue, rejectFieldRecord?.id)
           }
         />
       )}
@@ -1630,11 +1704,14 @@ export default function RequestDetailView({
           onConfirm={(note) => decide("returned", note)}
         />
       )}
-      {approveConfirmOpen && approveField && (
+      {approveConfirmOpen && (
         <ApproveConfirmModal
           field={approveField}
+          noteMode={approveNoteMode}
           onClose={() => setApproveConfirmOpen(false)}
-          onConfirm={(approvalTimeValue) => decide("approved", undefined, approvalTimeValue, approveFieldRecord?.id)}
+          onConfirm={(note, approvalTimeValue) =>
+            decide("approved", note, approveField ? approvalTimeValue : undefined, approveFieldRecord?.id)
+          }
         />
       )}
       {addFollowerOpen && (

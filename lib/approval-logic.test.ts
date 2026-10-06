@@ -173,7 +173,7 @@ describe("Chuyển tiếp và Duyệt (forwardThenApprove)", () => {
 });
 
 describe("missingRequiredNote", () => {
-  it("rejected luôn bắt buộc ghi chú, không phụ thuộc cấu hình nhóm", () => {
+  it("rejected mặc định bắt buộc ghi chú khi nhóm chưa cài (giữ hành vi cũ)", () => {
     expect(missingRequiredNote("rejected", undefined, undefined)).toBe(true);
     expect(missingRequiredNote("rejected", "  ", undefined)).toBe(true);
     expect(missingRequiredNote("rejected", "Lý do", undefined)).toBe(false);
@@ -204,6 +204,32 @@ describe("missingRequiredNote", () => {
     expect(missingRequiredNote("approve_and_forward", "Chuyển", { forward: true })).toBe(false);
     expect(missingRequiredNote("forward_then_approve", undefined, { forward: true })).toBe(true);
     expect(missingRequiredNote("forward_then_approve", "Chuyển", { forward: true })).toBe(false);
+  });
+
+  it("cờ riêng approveAndForward/reject (cài đặt mới) được tôn trọng", () => {
+    expect(missingRequiredNote("approve_and_forward", undefined, { forward: true, approveAndForward: false })).toBe(false);
+    expect(missingRequiredNote("approve_and_forward", undefined, { forward: false, approveAndForward: true })).toBe(true);
+    expect(missingRequiredNote("forward_then_approve", undefined, { forward: false, approveAndForward: true })).toBe(false);
+    expect(missingRequiredNote("rejected", undefined, { reject: false })).toBe(false);
+  });
+
+  it("ô ghi chú đã tắt thì không thể bắt buộc, kể cả khi cờ bắt buộc còn true", () => {
+    expect(missingRequiredNote("approved", undefined, { approve: true }, { approve: false })).toBe(false);
+    expect(missingRequiredNote("rejected", undefined, undefined, { reject: false })).toBe(false);
+    expect(missingRequiredNote("approve_and_forward", undefined, { forward: true }, { approveAndForward: false })).toBe(false);
+    // Tắt ô của hành động KHÁC không ảnh hưởng.
+    expect(missingRequiredNote("approved", undefined, { approve: true }, { reject: false })).toBe(true);
+  });
+
+  it("Trả lại luôn bắt buộc dù tắt mọi ô ghi chú", () => {
+    expect(
+      missingRequiredNote("returned", undefined, undefined, {
+        approve: false,
+        reject: false,
+        forward: false,
+        approveAndForward: false,
+      }),
+    ).toBe(true);
   });
 });
 
