@@ -1917,7 +1917,19 @@ type ExternalCodeSuggestionRow = {
   displayText: string;
   matchedNote: string | null;
   rawFields: Record<string, string>;
+  // ★ (06/10/2026, "khóa công trình lan truyền") Chỉ nguồn congno_contracts có field này — nguồn
+  // khác luôn false. Xem findLockedExternalCodeFields (lib/server/requests.ts) cho hàng rào thật.
+  khoa: boolean;
 };
+
+function LockIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <rect x="4" y="11" width="16" height="9" rx="2" />
+      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+    </svg>
+  );
+}
 
 /** Cột phụ hiện trong dropdown gợi ý — 1 field CỐ ĐỊNH cho contracts (đúng
  * định dạng đã chốt 26/09/2026); với subcontractors thì linh động theo
@@ -2012,6 +2024,7 @@ function ShortTextWithExternalCodeLookup({
       displayText: computeSecondary(sourceId, matchField, r.fields),
       matchedNote: computeMatchedNote(sourceId, matchField, r.fields),
       rawFields: r.fields,
+      khoa: r.fields.khoaMa === "true",
     }))
     .filter((r) => r.code);
 
@@ -2184,14 +2197,22 @@ function ShortTextWithExternalCodeLookup({
               // ô nhập, tránh onBlur chạy TRƯỚC khi kịp ghi nhận lựa chọn.
               onMouseDown={(e) => {
                 e.preventDefault();
+                if (r.khoa) return;
                 onChange(r.code);
                 setMismatch(false);
                 setOpen(false);
               }}
-              className="flex cursor-pointer items-center justify-between gap-3 px-3 py-1.5 text-[14px] hover:bg-gray-50"
+              className={
+                r.khoa
+                  ? "flex cursor-not-allowed items-center justify-between gap-3 px-3 py-1.5 text-[14px] text-gray-400"
+                  : "flex cursor-pointer items-center justify-between gap-3 px-3 py-1.5 text-[14px] hover:bg-gray-50"
+              }
             >
-              <span className="text-gray-800">{r.code}</span>
-              <span className="text-[12px] text-gray-400">{r.displayText}</span>
+              <span className={r.khoa ? "flex items-center gap-1.5 text-gray-400" : "flex items-center gap-1.5 text-gray-800"}>
+                {r.khoa && <LockIcon className="h-3 w-3 shrink-0" />}
+                {r.code}
+              </span>
+              <span className="text-[12px] text-gray-400">{r.khoa ? "Đã khóa" : r.displayText}</span>
             </li>
           ))}
           {canAddNew && trimmedQuery && (
@@ -2207,7 +2228,13 @@ function ShortTextWithExternalCodeLookup({
           )}
         </ul>
       )}
-      {matchedRow?.matchedNote && (
+      {matchedRow?.khoa && (
+        <p className="mt-1 flex items-center gap-1 text-[12px] text-red-600">
+          <LockIcon className="h-3 w-3 shrink-0" />
+          Mã này đã bị khóa — không thể dùng để tạo đề nghị mới.
+        </p>
+      )}
+      {!matchedRow?.khoa && matchedRow?.matchedNote && (
         <p className="mt-1 text-[12px] text-gray-600">{matchedRow.matchedNote}</p>
       )}
       {mismatch && (

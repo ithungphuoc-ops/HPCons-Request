@@ -46,7 +46,15 @@ export interface ExternalCodeSourceDef {
 
 const banGhiHopDong = (contracts: ContractCodeSuggestion[]): ExternalCodeRecord[] =>
   contracts.map((c) => ({
-    fields: { code: c.code, project: c.project, work: c.work, customerNameShort: c.customerNameShort },
+    fields: {
+      code: c.code,
+      project: c.project,
+      work: c.work,
+      customerNameShort: c.customerNameShort,
+      // ★ (06/10/2026) "true"/"false" (không phải bool thật) vì `fields` quy định kiểu Record<string,
+      // string> — xem findLockedExternalCodeFields (lib/server/requests.ts) và UI dropdown gợi ý.
+      khoaMa: c.khoaMa ? "true" : "false",
+    },
   }));
 
 const banGhiNhaThau = (subcontractors: SubcontractorCodeSuggestion[]): ExternalCodeRecord[] =>

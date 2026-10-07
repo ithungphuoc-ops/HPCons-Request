@@ -16,6 +16,7 @@ import {
   findBlockedDateLeadTimeFields,
   findInvalidExternalCodeFields,
   findInvalidTableRows,
+  findLockedExternalCodeFields,
   findMissingRequiredFields,
   generateGroupRequestCode,
   generateRequestCode,
@@ -366,6 +367,18 @@ export async function POST(request: Request) {
             {
               error: `Chưa đúng số hợp đồng nào trong hệ thống Công nợ: ${invalidCodes.map((f) => f.name).join(", ")}.`,
               invalidFields: invalidCodes.map((f) => ({ id: f.id, name: f.name })),
+            },
+            { status: 400 },
+          );
+        }
+        // ★ (06/10/2026, "khóa công trình lan truyền") Mã khớp đúng nhưng Công nợ đã khóa — chặn
+        // riêng, thông báo khác "không khớp mã" ở trên.
+        const lockedCodes = await findLockedExternalCodeFields(group.fields, body.values ?? {});
+        if (lockedCodes.length > 0) {
+          return NextResponse.json(
+            {
+              error: `Mã hợp đồng đã bị khóa, không thể dùng để tạo đề nghị mới: ${lockedCodes.map((f) => f.name).join(", ")}.`,
+              invalidFields: lockedCodes.map((f) => ({ id: f.id, name: f.name })),
             },
             { status: 400 },
           );

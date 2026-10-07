@@ -81,6 +81,10 @@ export interface ContractCodeSuggestion {
    * NAM", giữ nguyên phần tên thương hiệu còn lại — xem `shortenCustomerName`.
    * Đây là giá trị hiện ở cột phụ dropdown gợi ý. */
   customerNameShort: string;
+  /** ★ (06/10/2026, "khóa công trình lan truyền") Công nợ đã khóa mã hợp đồng này — chặn chọn để tạo
+   * đề nghị mới (xem findLockedExternalCodeFields ở lib/server/requests.ts). KHÔNG liên quan tới
+   * `khoaMa` của app khác nào — field gốc bên Công nợ, collection `contracts`. */
+  khoaMa: boolean;
 }
 
 /**
@@ -101,7 +105,8 @@ async function loadContractCodeSuggestionsUncached(): Promise<ContractCodeSugges
     const work = typeof data.work === "string" ? data.work.trim() : "";
     const customerName = typeof data.customerName === "string" ? data.customerName.trim() : "";
     const customerNameShort = customerName ? shortenCustomerName(customerName) : "";
-    return { code: String(data.code ?? "").trim(), project, work, customerName, customerNameShort };
+    const khoaMa = data.khoaMa === true;
+    return { code: String(data.code ?? "").trim(), project, work, customerName, customerNameShort, khoaMa };
   }).filter((c) => c.code);
 }
 

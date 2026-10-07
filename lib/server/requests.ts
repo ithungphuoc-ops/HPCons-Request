@@ -312,6 +312,45 @@ export async function findInvalidExternalCodeFields(
   return sai.filter(khongKhop).map(({ field }) => field);
 }
 
+/**
+ * ★ (06/10/2026, "khóa công trình lan truyền") Field đã khớp đúng 1 mã hợp đồng THẬT nhưng mã đó
+ * đang bị Công nợ khóa — chặn gửi RIÊNG (thông báo khác hẳn "không khớp mã", xem
+ * app/api/requests/route.ts + .../[id]/route.ts). Chỉ nguồn `congno_contracts` có khái niệm khóa
+ * (field `khoaMa` — xem banGhiHopDong ở lib/external-code-sources.ts); nguồn khác không có field
+ * này nên `rec.fields.khoaMa` luôn undefined, tự động coi là không khóa.
+ */
+export async function findLockedExternalCodeFields(
+  fields: ProposalField[],
+  values: Record<string, unknown>,
+): Promise<ProposalField[]> {
+  const targets = fields
+    .map((f) => ({ field: f, lookup: resolveExternalCodeLookup(f) }))
+    .filter(({ field: f, lookup }) => {
+      if (!lookup) return false;
+      if (f.visibleWhen && !evaluateConditionGroup(f.visibleWhen, values ?? {}, fields)) return false;
+      return !isEmptyValue(values?.[f.id]);
+    });
+  if (targets.length === 0) return [];
+
+  const sourceIds = [...new Set(targets.map((t) => t.lookup!.sourceId))];
+  const recordsBySource = new Map<ExternalCodeSourceId, ExternalCodeRecord[]>();
+  await Promise.all(
+    sourceIds.map(async (sourceId) => {
+      recordsBySource.set(sourceId, await EXTERNAL_CODE_SOURCES[sourceId].loadRecords());
+    }),
+  );
+
+  return targets
+    .filter((t) => {
+      const raw = values?.[t.field.id];
+      if (typeof raw !== "string") return false;
+      const records = recordsBySource.get(t.lookup!.sourceId)!;
+      const rec = records.find((r) => r.fields[t.lookup!.matchField] === raw);
+      return rec?.fields.khoaMa === "true";
+    })
+    .map(({ field }) => field);
+}
+
 /** Khởi tạo approvers "pending" theo đúng thứ tự của danh sách người duyệt. */
 export function buildInitialApprovers(approvers: TaggedUser[]): ApproverState[] {
   return approvers.map((a) => ({ id: a.id, decision: "pending" as const }));

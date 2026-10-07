@@ -29,6 +29,14 @@ const FAKE_DOCS: Record<string, Record<string, unknown>[]> = {
       customerName: "CÔNG TY TNHH CÔNG NGHIỆP CHÍNH XÁC CHENKAI",
       totalAfterTax: 999_999_999, // KHÔNG được lộ ra
     },
+    // ★ (06/10/2026, "khóa công trình lan truyền") 1 mã đã bị Công nợ khóa — test forward đúng khoaMa.
+    {
+      code: "02/2026/HĐXD-VT",
+      group: "KCN Điện Nam",
+      work: "Thi công điện",
+      customerName: "CÔNG TY TNHH VIETTEL",
+      khoaMa: true,
+    },
   ],
   subcontractors: [
     {
@@ -80,26 +88,34 @@ describe("docLaiHopDongCongNo", () => {
   it("lần đầu: đọc thẳng + xoá nhớ tạm hợp đồng; gọi lại ngay trong 60 giây: không xoá nhớ tạm thêm", async () => {
     revalidateTagMock.mockClear();
     const lan1 = await docLaiHopDongCongNo();
-    expect(lan1.map((c) => c.code)).toEqual(["01/2026/HĐXD-HPCS"]);
+    expect(lan1.map((c) => c.code).sort()).toEqual(["01/2026/HĐXD-HPCS", "02/2026/HĐXD-VT"]);
     expect(revalidateTagMock).toHaveBeenCalledWith("contract-code-suggestions");
     revalidateTagMock.mockClear();
     const lan2 = await docLaiHopDongCongNo();
-    expect(lan2.map((c) => c.code)).toEqual(["01/2026/HĐXD-HPCS"]);
+    expect(lan2.map((c) => c.code).sort()).toEqual(["01/2026/HĐXD-HPCS", "02/2026/HĐXD-VT"]);
     expect(revalidateTagMock).not.toHaveBeenCalled();
   });
 });
 
 describe("loadContractCodeSuggestions", () => {
-  it("chỉ forward đúng code/project/work/customerName(Short) — không có totalAfterTax", async () => {
+  it("chỉ forward đúng code/project/work/customerName(Short)/khoaMa — không có totalAfterTax", async () => {
     const result = await loadContractCodeSuggestions();
-    expect(result).toHaveLength(1);
+    expect(result).toHaveLength(2);
     const r = result[0] as unknown as Record<string, unknown>;
     expect(r.code).toBe("01/2026/HĐXD-HPCS");
     expect(r.project).toBe("KCN Tam Hiệp");
     expect(r.work).toBe("Thi công phần thô");
     expect(r.customerName).toContain("CHENKAI");
+    expect(r.khoaMa).toBe(false);
     expect("totalAfterTax" in r).toBe(false);
-    expect(Object.keys(r).sort()).toEqual(["code", "customerName", "customerNameShort", "project", "work"].sort());
+    expect(Object.keys(r).sort()).toEqual(["code", "customerName", "customerNameShort", "khoaMa", "project", "work"].sort());
+  });
+
+  // ★ (06/10/2026, "khóa công trình lan truyền")
+  it("khoaMa = true khi Công nợ đã khóa mã hợp đồng này", async () => {
+    const result = await loadContractCodeSuggestions();
+    const locked = result.find((c) => c.code === "02/2026/HĐXD-VT");
+    expect(locked?.khoaMa).toBe(true);
   });
 });
 
