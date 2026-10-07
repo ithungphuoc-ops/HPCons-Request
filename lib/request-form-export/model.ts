@@ -8,8 +8,8 @@ import { pendingAdjustmentFiles } from "@/lib/adjustment-settings";
 import { resolveRequestTitle } from "@/lib/request-title";
 import {
   deserializeTableRows,
-  trimCellTextEnd,
   formatCellForDisplay,
+  formatCellForReading,
   isNumericColumnType,
   numericTypeForFieldDataType,
   resolveTableColumnSum,
@@ -170,7 +170,8 @@ export function buildFormTable(
       if (isNumericColumnType(types[c])) return numericCell(raw, types[c], true);
       // Xuống dòng trong ô (Enter khi nhập, 07/10/2026) giữ nguyên ký tự xuống dòng (bỏ dòng trắng thừa cuối ô):
       // Word tách thành ngắt dòng, Excel bật wrapText — xem docx.ts/xlsx.ts.
-      let text = trimCellTextEnd(raw) || "—";
+      // Cột ngày → dd/MM/yyyy (ngày giờ thêm HH:mm), nhiều lựa chọn → "A, B" (07/10/2026).
+      let text = formatCellForReading(raw, types[c]) || "—";
       const note = c === columns.length - 1 ? lastColumnNote?.(r) : null;
       if (note) text = `${text}\n${note}`;
       return { text };
@@ -276,8 +277,15 @@ export function buildRequestFormModel(input: RequestFormInput): RequestFormModel
       const logged = loggedSupplementRows(field.name, columns.length, deserializeTableRows(request.values[field.id]), history);
       if (!logged.length) continue;
       const table = buildFormTable(
-        // Bảng cũ hiện mọi cột dạng chữ như trên web (không dòng tổng).
-        { tableColumns: columns, tableColumnTypes: columns.map(() => "text"), tableColumnSum: columns.map(() => false) },
+        // Bảng cũ hiện cột số dạng chữ như trên web (không dòng tổng); cột
+        // ngày/nhiều lựa chọn vẫn định dạng như bảng chính (07/10/2026).
+        {
+          tableColumns: columns,
+          tableColumnTypes: resolveTableColumnTypes(columns, field.tableColumnTypes).map((t) =>
+            isNumericColumnType(t) ? "text" : t,
+          ),
+          tableColumnSum: columns.map(() => false),
+        },
         logged.map((l) => l.row.map((cell) => cell || "—")),
         (r) => `Cập nhật lúc ${vnDateTime(logged[r].at)}`,
       );

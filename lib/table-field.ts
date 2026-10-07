@@ -97,9 +97,49 @@ export const TABLE_COLUMN_TYPE_LABELS: Record<TableColumnType, string> = {
   decimal: "Số thập phân",
   money: "Tiền tệ (VNĐ)",
   percent: "Phần trăm",
+  date: "Ngày",
+  datetime: "Ngày giờ",
+  single_choice: "Danh sách (một lựa chọn)",
+  multiple_choice: "Danh sách (nhiều lựa chọn)",
 };
 
 export const TABLE_COLUMN_TYPES = Object.keys(TABLE_COLUMN_TYPE_LABELS) as TableColumnType[];
+
+/**
+ * Nhóm hiển thị trong ô chọn kiểu cột có "Lọc nhanh" (Sếp duyệt demo
+ * 07/10/2026, theo mẫu Base): Chữ / Số / Ngày / Danh sách.
+ */
+export const TABLE_COLUMN_TYPE_GROUPS: { label: string; types: TableColumnType[] }[] = [
+  { label: "Chữ", types: ["text"] },
+  { label: "Số", types: ["int", "decimal", "money", "percent"] },
+  { label: "Ngày", types: ["date", "datetime"] },
+  { label: "Danh sách", types: ["single_choice", "multiple_choice"] },
+];
+
+/**
+ * Bỏ dấu tiếng Việt + chữ thường — để ô "Lọc nhanh" gõ "ngay" vẫn ra "Ngày".
+ */
+export function foldVietnamese(text: string): string {
+  return String(text ?? "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
+    .toLowerCase()
+    .trim();
+}
+
+/** Lọc danh sách nhóm kiểu cột theo từ khoá (không phân biệt dấu/hoa thường); nhóm rỗng bị bỏ. */
+export function filterTableColumnTypeGroups(query: string): { label: string; types: TableColumnType[] }[] {
+  const q = foldVietnamese(query);
+  if (!q) return TABLE_COLUMN_TYPE_GROUPS;
+  return TABLE_COLUMN_TYPE_GROUPS.map((g) => ({
+    label: g.label,
+    types: g.types.filter(
+      (t) => foldVietnamese(TABLE_COLUMN_TYPE_LABELS[t]).includes(q) || foldVietnamese(g.label).includes(q),
+    ),
+  })).filter((g) => g.types.length > 0);
+}
 
 /**
  * Kiểu CỘT tương ứng với kiểu TRƯỜNG đứng riêng — `null` nghĩa là trường đó
@@ -128,8 +168,30 @@ export function numericTypeForFieldDataType(dataType: FieldDataType): TableColum
   }
 }
 
+const NUMERIC_COLUMN_TYPES: ReadonlySet<TableColumnType> = new Set<TableColumnType>([
+  "int",
+  "decimal",
+  "money",
+  "percent",
+]);
+
+/**
+ * 🔴 Trước 07/10/2026 hàm này là `type !== "text"` — chỉ đúng khi mới có 1
+ * kiểu chữ. Nay có thêm Ngày/Danh sách (không phải số) nên phải liệt kê đúng
+ * 4 kiểu số, nếu không cột Ngày sẽ bị lọc mất chữ khi gõ và bật được "Tổng".
+ */
 export function isNumericColumnType(type: TableColumnType): boolean {
-  return type !== "text";
+  return NUMERIC_COLUMN_TYPES.has(type);
+}
+
+export function isDateColumnType(type: TableColumnType | undefined): type is "date" | "datetime" {
+  return type === "date" || type === "datetime";
+}
+
+export function isChoiceColumnType(
+  type: TableColumnType | undefined,
+): type is "single_choice" | "multiple_choice" {
+  return type === "single_choice" || type === "multiple_choice";
 }
 
 /**
@@ -144,9 +206,256 @@ export function resolveTableColumnTypes(
 ): TableColumnType[] {
   return columns.map((name, i) => {
     const declared = types?.[i];
-    if (declared && declared in TABLE_COLUMN_TYPE_LABELS) return declared;
+    // hasOwnProperty, KHÔNG dùng `in`: "constructor"/"toString" đi qua `in`
+    // (thuộc tính kế thừa của Object) — dữ liệu rác lọt thành "kiểu cột".
+    if (typeof declared === "string" && Object.prototype.hasOwnProperty.call(TABLE_COLUMN_TYPE_LABELS, declared)) {
+      return declared;
+    }
     return isQuantityColumn(name) ? "decimal" : "text";
   });
+}
+
+// =========================================================================
+// CỘT DANH SÁCH (Sếp duyệt demo 07/10/2026)
+// -------------------------------------------------------------------------
+// Admin gõ phương án cách nhau bằng dấu phẩy, y như Base: "Có,Không".
+// Lưu ở `ProposalField.tableColumnOptions` dạng CHUỖI cho từng cột (Firestore
+// không cho mảng lồng mảng). Ô "nhiều lựa chọn" lưu các phương án nối bằng
+// ", " — KHÔNG mơ hồ vì phương án không chứa được dấu phẩy, và mọi nơi đọc
+// cũ (in Word, xuất Excel, đồng bộ Thu mua/Kho, tìm kiếm) vẫn thấy đúng một
+// chuỗi người đọc được "Base, NAS" mà không cần biết kiểu cột. Ô vẫn là
+// string như mọi ô khác → không phải đổi `string[][]` / `WireTableRow`.
+// =========================================================================
+
+/**
+ * "Có, Không,,có " → ["Có", "Không"]: bỏ khoảng trắng 2 đầu, bỏ phương án
+ * rỗng, gộp phương án trùng (không phân biệt hoa/thường — giữ cách viết lần
+ * đầu) vì lúc nhập Excel phương án được so khớp không phân biệt hoa thường,
+ * để "Có" và "có" cùng tồn tại là không biết khớp vào đâu.
+ */
+export function parseChoiceOptionsText(text: string | undefined | null): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const part of String(text ?? "").split(",")) {
+    const option = part.trim().replace(/\s+/g, " ");
+    if (!option) continue;
+    const key = option.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(option);
+  }
+  return result;
+}
+
+/**
+ * Phương án của TỪNG cột (cùng mẫu `resolveTableColumnTypes`): cột không phải
+ * danh sách → `[]`; thiếu/lệch độ dài → `[]` (không đoán). `types` nên là kết
+ * quả đã resolve, nhận cả mảng thô cho tiện — tự resolve lại.
+ */
+export function resolveTableColumnOptions(
+  columns: string[],
+  types?: TableColumnType[],
+  saved?: string[],
+): string[][] {
+  const resolvedTypes = resolveTableColumnTypes(columns, types);
+  return columns.map((_, i) => {
+    if (!isChoiceColumnType(resolvedTypes[i])) return [];
+    const declared = saved?.[i];
+    return typeof declared === "string" ? parseChoiceOptionsText(declared) : [];
+  });
+}
+
+/** Chuẩn hoá `tableColumnOptions` trước khi ghi DB: đúng độ dài `columns`, cột không phải danh sách để "". */
+export function normalizeTableColumnOptionsForStorage(
+  columns: string[],
+  types?: TableColumnType[],
+  saved?: string[],
+): string[] {
+  return resolveTableColumnOptions(columns, types, saved).map((options) => options.join(","));
+}
+
+/**
+ * Ô coi như TRỐNG chưa — dùng cho luật "bắt buộc". Ô nhiều lựa chọn chỉ có
+ * dấu phẩy/khoảng trắng ("," hay " , ", gọi thẳng API) tách ra không còn
+ * phương án nào → trống, không được lách qua cột bắt buộc.
+ */
+export function isTableCellEmpty(raw: string | undefined | null, type: TableColumnType | undefined): boolean {
+  if (type === "multiple_choice") return splitMultiChoiceCell(raw).length === 0;
+  return String(raw ?? "").trim() === "";
+}
+
+/** Tách ô "nhiều lựa chọn" đã lưu ("Base, NAS") thành từng phương án. */
+export function splitMultiChoiceCell(raw: string | undefined | null): string[] {
+  return String(raw ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Ghép các phương án đã chọn thành giá trị ô — theo THỨ TỰ admin khai (không
+ * theo thứ tự bấm) để cùng một tập chọn luôn ra cùng một chuỗi; phương án lạ
+ * (không còn trong danh sách) giữ ở cuối để không lặng lẽ mất dữ liệu.
+ */
+export function joinMultiChoiceCell(selected: string[], options: string[]): string {
+  const picked = new Set(selected);
+  const ordered = options.filter((o) => picked.has(o));
+  const extras = selected.filter((s, i) => !options.includes(s) && selected.indexOf(s) === i);
+  return [...ordered, ...extras].join(", ");
+}
+
+/**
+ * Khớp chữ người dùng gõ/dán (file Excel) vào phương án: bỏ khoảng trắng 2
+ * đầu, không phân biệt hoa/thường → trả ĐÚNG chữ của phương án. Không khớp
+ * → `null`.
+ */
+export function matchChoiceOption(input: string, options: string[]): string | null {
+  const key = String(input ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+  if (!key) return null;
+  return options.find((o) => o.toLowerCase() === key) ?? null;
+}
+
+/**
+ * Chuẩn hoá ô danh sách lúc NHẬP FILE: khớp được hết thì trả chữ đúng của
+ * phương án (nhiều lựa chọn: nối ", " theo thứ tự admin khai); có phương án
+ * không khớp thì trả nguyên chữ (đã trim) để ô hiện đỏ + bị chặn lúc gửi, y
+ * như ô số gõ sai. Cột chưa có phương án nào → giữ nguyên (không có gì để khớp).
+ */
+export function normalizeChoiceCell(input: string, type: TableColumnType, options: string[]): string {
+  const text = String(input ?? "").trim();
+  if (!text || options.length === 0) return text;
+  if (type === "single_choice") return matchChoiceOption(text, options) ?? text;
+  // Nhiều lựa chọn ngăn bằng dấu phẩy (đúng quy ước lưu/khai phương án),
+  // chấp nhận thêm xuống dòng (Alt+Enter trong ô Excel). KHÔNG tách theo ";"
+  // — phương án được phép chứa ";" (chỉ cấm dấu phẩy), tách theo ";" sẽ
+  // làm phương án đó không bao giờ nhập được.
+  const parts = text
+    .split(/[,\n]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const matched = parts.map((p) => matchChoiceOption(p, options));
+  if (matched.some((m) => m === null)) return text;
+  return joinMultiChoiceCell(matched as string[], options);
+}
+
+// =========================================================================
+// CỘT NGÀY / NGÀY GIỜ (Sếp duyệt demo 07/10/2026)
+// -------------------------------------------------------------------------
+// Lưu "YYYY-MM-DD" / "YYYY-MM-DDTHH:mm" — đúng giá trị của <input type="date">
+// / <input type="datetime-local">, giờ VN đúng như người gõ, KHÔNG qua
+// new Date(chuỗi) để khỏi lệch múi giờ (máy chủ Vercel chạy UTC — xem sự cố
+// SLA 05/10/2026).
+// =========================================================================
+
+const ISO_DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+const ISO_DATETIME_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/;
+
+function isRealDate(y: number, m: number, d: number): boolean {
+  if (y < 1000 || y > 9999 || m < 1 || m > 12 || d < 1) return false;
+  const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return d <= daysInMonth;
+}
+
+const pad2 = (n: number) => String(n).padStart(2, "0");
+
+function isoDate(y: number, m: number, d: number): string | null {
+  return isRealDate(y, m, d) ? `${y}-${pad2(m)}-${pad2(d)}` : null;
+}
+
+function isoTime(h: number, min: number): string | null {
+  return h >= 0 && h <= 23 && min >= 0 && min <= 59 ? `${pad2(h)}:${pad2(min)}` : null;
+}
+
+/** Chỉ kiểm HÌNH DẠNG (chưa kiểm ngày có thật) — để ô ngày đang gõ dở
+ * ("0002-10-07" khi gõ năm) không bị xoá trắng. */
+export function isDateCellShape(raw: string, type: "date" | "datetime"): boolean {
+  return (type === "date" ? ISO_DATE_RE : ISO_DATETIME_RE).test(String(raw ?? "").trim());
+}
+
+/** Ô ngày / ngày giờ đã lưu có đúng định dạng + là ngày có thật không. */
+export function isValidDateCellValue(raw: string, type: "date" | "datetime"): boolean {
+  const value = String(raw ?? "").trim();
+  const m = (type === "date" ? ISO_DATE_RE : ISO_DATETIME_RE).exec(value);
+  if (!m) return false;
+  if (!isRealDate(Number(m[1]), Number(m[2]), Number(m[3]))) return false;
+  if (type === "datetime") return isoTime(Number(m[4]), Number(m[5])) !== null;
+  return true;
+}
+
+/**
+ * Số ngày kiểu Excel (ô định dạng ngày trong file .xlsx đọc ra là số, vd
+ * 46302 = 07/10/2026; phần lẻ là giờ trong ngày) → ngày/giờ. Mốc 30/12/1899
+ * đã tính sẵn lỗi năm nhuận 1900 của Excel. Tính bằng UTC thuần để không
+ * dính múi giờ máy chạy.
+ */
+/** Số seri nhỏ hơn mốc này (≈ năm 1908) không coi là ngày — "2026" gõ trong
+ * ô ngày là năm chứ không phải 18/07/1905. */
+const MIN_EXCEL_DATE_SERIAL = 3000;
+
+function excelSerialToParts(serial: number): { y: number; m: number; d: number; h: number; min: number } | null {
+  if (!Number.isFinite(serial) || serial < MIN_EXCEL_DATE_SERIAL || serial > 2958465) return null;
+  const totalMinutes = Math.round(serial * 24 * 60);
+  const dt = new Date(Date.UTC(1899, 11, 30) + totalMinutes * 60 * 1000);
+  return {
+    y: dt.getUTCFullYear(),
+    m: dt.getUTCMonth() + 1,
+    d: dt.getUTCDate(),
+    h: dt.getUTCHours(),
+    min: dt.getUTCMinutes(),
+  };
+}
+
+/**
+ * Chữ người dùng gõ/dán/nhập file → giá trị lưu của ô ngày. Nhận:
+ *   - đã đúng chuẩn lưu ("2026-10-07", "2026-10-07T08:30"; có giây thì bỏ giây),
+ *   - kiểu Việt "07/10/2026", "7/10/2026", "07-10-2026", "07.10.2026"
+ *     (ngày giờ thêm " 08:30"),
+ *   - số ngày kiểu Excel (chỉ khi `allowExcelSerial` — lúc nhập file VÀ ô
+ *     trong file là ô SỐ, xem `parseImportedCell`; tối thiểu 3000).
+ * Không hiểu được → trả nguyên chữ đã trim (để ô hiện đỏ + bị chặn lúc gửi,
+ * không lặng lẽ xoá chữ người dùng gõ).
+ */
+export function parseDateCellInput(input: string, type: "date" | "datetime", allowExcelSerial = false): string {
+  const text = String(input ?? "").trim();
+  if (!text) return "";
+
+  const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ](\d{1,2}):(\d{2})(?::\d{2}(?:\.\d+)?)?)?$/.exec(text);
+  const vn = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})(?:[ T,]+(\d{1,2})[:h](\d{2})(?::\d{2})?)?$/.exec(text);
+  let y: number;
+  let m: number;
+  let d: number;
+  let h = 0;
+  let min = 0;
+  if (iso) {
+    [y, m, d] = [Number(iso[1]), Number(iso[2]), Number(iso[3])];
+    if (iso[4] !== undefined) [h, min] = [Number(iso[4]), Number(iso[5])];
+  } else if (vn) {
+    [d, m, y] = [Number(vn[1]), Number(vn[2]), Number(vn[3])];
+    if (vn[4] !== undefined) [h, min] = [Number(vn[4]), Number(vn[5])];
+  } else if (allowExcelSerial && /^\d+(\.\d+)?$/.test(text)) {
+    const parts = excelSerialToParts(Number(text));
+    if (!parts) return text;
+    ({ y, m, d, h, min } = parts);
+  } else {
+    return text;
+  }
+
+  const datePart = isoDate(y, m, d);
+  if (!datePart) return text;
+  if (type === "date") return datePart;
+  // Ngày giờ mà chỉ có ngày → 00:00 (giống ô chọn ngày giờ chưa chọn giờ).
+  const timePart = isoTime(h, min);
+  return timePart ? `${datePart}T${timePart}` : text;
+}
+
+/** "2026-10-07" → "07/10/2026"; "2026-10-07T08:30" → "07/10/2026 08:30". Sai định dạng → trả nguyên. */
+function formatDateCell(raw: string, type: "date" | "datetime"): string {
+  const value = String(raw ?? "").trim();
+  if (!isValidDateCellValue(value, type)) return value;
+  const [datePart, timePart] = value.split("T");
+  const [y, m, d] = datePart.split("-");
+  const vn = `${d}/${m}/${y}`;
+  return type === "datetime" ? `${vn} ${timePart}` : vn;
 }
 
 /** 3 mức gợi ý nhanh khi chọn độ rộng cột — bấm để áp nhanh, KHÔNG khoá cứng
@@ -267,6 +576,11 @@ export function flattenLineBreaks(text: string): string {
  * hợp này là làm hỏng số liệu cũ (2,5 tấn thành 25 tấn).
  */
 export function parseCellToRaw(input: string, type: TableColumnType): string {
+  // Cột ngày: đưa "07/10/2026" về chuẩn lưu "2026-10-07" (07/10/2026).
+  if (isDateColumnType(type)) return parseDateCellInput(input, type);
+  // Cột danh sách: chỉ bỏ khoảng trắng 2 đầu — khớp phương án cần biết danh
+  // sách phương án, xem `normalizeChoiceCell`.
+  if (isChoiceColumnType(type)) return String(input ?? "").trim();
   // Cột văn bản: giữ nguyên chữ, chỉ đưa xuống dòng về "\n" (ô Excel gõ
   // Alt+Enter / file CSV Windows có thể mang "\r\n") — 07/10/2026.
   if (!isNumericColumnType(type)) return normalizeLineBreaks(input);
@@ -304,10 +618,21 @@ export function normalizeRawForStorage(raw: string, type: TableColumnType): stri
   return String(Math.round(parsed));
 }
 
-export function isValidCellValue(raw: string, type: TableColumnType): boolean {
-  if (!isNumericColumnType(type)) return true;
-  const value = raw.trim();
+/**
+ * `options` = phương án của cột (chỉ dùng cho cột danh sách, xem
+ * `resolveTableColumnOptions`). Cột danh sách chưa có phương án nào (dữ liệu
+ * lệch) → nhận mọi giá trị, vì không có gì để đối chiếu.
+ */
+export function isValidCellValue(raw: string, type: TableColumnType, options?: string[]): boolean {
+  const value = String(raw ?? "").trim();
   if (value === "") return true;
+  if (isDateColumnType(type)) return isValidDateCellValue(value, type);
+  if (isChoiceColumnType(type)) {
+    if (!options || options.length === 0) return true;
+    if (type === "single_choice") return options.includes(value);
+    return splitMultiChoiceCell(value).every((part) => options.includes(part));
+  }
+  if (!isNumericColumnType(type)) return true;
   if (!/^\d+(\.\d+)?$/.test(value)) return false;
   if (type === "int" && value.includes(".")) return false;
   return true;
@@ -319,7 +644,34 @@ const MAX_FRACTION_DIGITS: Record<TableColumnType, number> = {
   decimal: 3,
   money: 0,
   percent: 2,
+  date: 0,
+  datetime: 0,
+  single_choice: 0,
+  multiple_choice: 0,
 };
+
+/**
+ * Câu báo lỗi cho 1 ô sai định dạng, dùng chung giữa trang gửi đề xuất và máy
+ * chủ để 2 nơi nói cùng một câu. `null` = ô hợp lệ (ô rỗng luôn hợp lệ ở
+ * đây — "bắt buộc" là luật riêng). Câu cho cột số giữ đúng như trước 07/10/2026.
+ */
+export function invalidCellReason(raw: string, type: TableColumnType, options?: string[]): string | null {
+  if (isValidCellValue(raw, type, options)) return null;
+  switch (type) {
+    case "int":
+      return "phải là số nguyên";
+    case "date":
+      return "phải là ngày hợp lệ (dd/mm/yyyy)";
+    case "datetime":
+      return "phải là ngày giờ hợp lệ (dd/mm/yyyy hh:mm)";
+    case "single_choice":
+      return "phải là một phương án trong danh sách";
+    case "multiple_choice":
+      return "chỉ được chọn các phương án trong danh sách";
+    default:
+      return "phải là số";
+  }
+}
 
 /**
  * Số thô → chuỗi cho người đọc: dấu phẩy sau mỗi 3 chữ số, dấu chấm ngăn phần
@@ -328,6 +680,9 @@ const MAX_FRACTION_DIGITS: Record<TableColumnType, number> = {
  * để không nuốt mất thông tin.
  */
 export function formatCellForDisplay(raw: string, type: TableColumnType): string {
+  if (isDateColumnType(type)) return formatDateCell(raw, type);
+  // Đã lưu sẵn dạng "A, B" — tách rồi nối lại cho chắc đúng 1 kiểu ngăn.
+  if (type === "multiple_choice") return splitMultiChoiceCell(raw).join(", ");
   if (!isNumericColumnType(type)) return raw;
   const value = String(raw ?? "").trim();
   if (value === "") return "";
@@ -337,6 +692,18 @@ export function formatCellForDisplay(raw: string, type: TableColumnType): string
   if (type === "money") return `${text} VNĐ`;
   if (type === "percent") return `${text}%`;
   return text;
+}
+
+/**
+ * Ô bảng → chữ cho NGƯỜI ĐỌC (xem chi tiết, xuất Excel/Word): cột số/ngày/
+ * nhiều lựa chọn định dạng theo kiểu; cột chữ và một lựa chọn chỉ bỏ dòng
+ * trắng thừa cuối ô (07/10/2026). `type` vắng (ô thừa ngoài số cột) → như chữ.
+ */
+export function formatCellForReading(raw: string, type: TableColumnType | undefined): string {
+  if (type && (isNumericColumnType(type) || isDateColumnType(type) || type === "multiple_choice")) {
+    return formatCellForDisplay(raw ?? "", type);
+  }
+  return trimCellTextEnd(raw ?? "");
 }
 
 /** Tổng 1 cột số — bỏ qua ô rỗng/không phải số. `null` = không có ô nào cộng được. */
@@ -369,7 +736,17 @@ export async function downloadTableTemplateFile(columns: string[], filename: str
 }
 
 export type TableImportResult =
-  | { ok: true; newHeaders: string[]; finalColumns: string[]; newRows: string[][] }
+  | {
+      ok: true;
+      newHeaders: string[];
+      finalColumns: string[];
+      newRows: string[][];
+      /** Ô cột Ngày/Danh sách trong file không hiểu được (07/10/2026) — vẫn
+       * nhập nguyên chữ (ô hiện đỏ, bị chặn lúc gửi), mảng này để báo người
+       * dùng biết dòng nào cần sửa (tối đa vài câu đầu, đếm đủ ở `invalidCellCount`). */
+      invalidCells: string[];
+      invalidCellCount: number;
+    }
   // newHeaders/finalColumns có mặt CẢ KHI ok:false, đúng cho trường hợp file
   // đọc được tiêu đề (nên đã tính ra được cột mới) nhưng KHÔNG có dòng dữ
   // liệu nào — giữ đúng hành vi gốc ở submit/page.tsx (trước khi tách hàm
@@ -392,13 +769,18 @@ export async function parseTableImportFile(
   file: File,
   existingColumns: string[],
   existingColumnTypes?: TableColumnType[],
+  existingColumnOptions?: string[],
 ): Promise<TableImportResult> {
   try {
     const XLSX = await import("xlsx");
     const buffer = await file.arrayBuffer();
-    const wb = XLSX.read(buffer, { type: "array" });
+    // dateNF "dd/mm/yyyy": file CSV gõ "07/10/2026" được SheetJS tự hiểu là
+    // ngày — mặc định theo kiểu Mỹ (tháng/ngày) nên thành 10/07/2026, lặng lẽ
+    // đảo ngày-tháng (review PR #90). Báo đúng định dạng Việt để ra 07/10.
+    // KHÔNG dùng raw:true (làm hỏng bóc số "1,234" ở cột số).
+    const wb = XLSX.read(buffer, { type: "array", dateNF: "dd/mm/yyyy" });
     const sheet = wb.Sheets[wb.SheetNames[0]];
-    const rowsFromFile = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1, defval: "" });
+    const rowsFromFile = XLSX.utils.sheet_to_json<(string | number)[]>(sheet, { header: 1, defval: "" });
     const [headerRow, ...dataRows] = rowsFromFile;
     if (!headerRow || headerRow.every((h) => !String(h).trim())) {
       return { ok: false, error: "File không có dòng tiêu đề hợp lệ." };
@@ -418,16 +800,78 @@ export async function parseTableImportFile(
     // đề xuất — người dùng hay định dạng sẵn trong Excel, lưu nguyên chuỗi đó
     // là làm `Number(ô)` bên Thu mua ra NaN (Sếp chốt 13/09/2026).
     const finalTypes = resolveTableColumnTypes(finalColumns, existingColumnTypes);
+    const finalOptions = resolveTableColumnOptions(finalColumns, finalTypes, existingColumnOptions);
     const newRows = filledDataRows.map((r) =>
       finalColumns.map((col, colIndex) => {
         const fileColIndex = fileHeaders.findIndex((h) => normalizeColumnName(h) === normalizeColumnName(col));
-        const cell = fileColIndex >= 0 ? String(r[fileColIndex] ?? "") : "";
-        return parseCellToRaw(cell, finalTypes[colIndex]);
+        const source = fileColIndex >= 0 ? r[fileColIndex] : "";
+        return parseImportedCell(
+          String(source ?? ""),
+          finalTypes[colIndex],
+          finalOptions[colIndex],
+          typeof source === "number",
+        );
       }),
     );
+    const { messages: invalidCells, count: invalidCellCount } = describeInvalidImportedCells(
+      newRows,
+      finalColumns,
+      finalTypes,
+      finalOptions,
+    );
 
-    return { ok: true, newHeaders, finalColumns, newRows };
+    return { ok: true, newHeaders, finalColumns, newRows, invalidCells, invalidCellCount };
   } catch {
     return { ok: false, error: "Không đọc được file — kiểm tra lại định dạng .xlsx/.csv." };
   }
+}
+
+/**
+ * 1 ô đọc từ file Excel/CSV → giá trị lưu. Cột ngày nhận thêm số ngày kiểu
+ * Excel (ô định dạng ngày trong .xlsx đọc ra là số); cột danh sách khớp
+ * phương án không phân biệt hoa thường (07/10/2026). Cột số/chữ: y như cũ.
+ */
+export function parseImportedCell(
+  cell: string,
+  type: TableColumnType,
+  options: string[] = [],
+  /** Ô trong file là ô SỐ (ô ngày Excel / CSV ngày đã được SheetJS hiểu) —
+   * chỉ khi đó mới đọc số như số seri ngày; "2026" gõ dạng chữ thì không. */
+  sourceIsNumber = false,
+): string {
+  if (isDateColumnType(type)) return parseDateCellInput(cell, type, sourceIsNumber);
+  if (isChoiceColumnType(type)) return normalizeChoiceCell(cell, type, options);
+  return parseCellToRaw(cell, type);
+}
+
+const MAX_IMPORT_INVALID_MESSAGES = 5;
+
+/**
+ * Liệt kê ô cột Ngày/Danh sách không hợp lệ sau khi nhập file. CHỈ xét 2 nhóm
+ * kiểu mới — cột số sai vẫn chỉ hiện đỏ trong bảng như trước 07/10/2026,
+ * không đổi hành vi nhập file của nhóm cũ.
+ */
+export function describeInvalidImportedCells(
+  rows: string[][],
+  columns: string[],
+  types: TableColumnType[],
+  options: string[][],
+): { messages: string[]; count: number } {
+  const messages: string[] = [];
+  let count = 0;
+  rows.forEach((row, rowIndex) => {
+    columns.forEach((col, colIndex) => {
+      const type = types[colIndex];
+      if (!isDateColumnType(type) && !isChoiceColumnType(type)) return;
+      const value = row[colIndex] ?? "";
+      if (!value.trim()) return;
+      const reason = invalidCellReason(value, type, options[colIndex]);
+      if (!reason) return;
+      count += 1;
+      if (messages.length < MAX_IMPORT_INVALID_MESSAGES) {
+        messages.push(`Dòng ${rowIndex + 1} trong file, cột "${col}": "${value}" ${reason}.`);
+      }
+    });
+  });
+  return { messages, count };
 }

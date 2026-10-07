@@ -3,7 +3,10 @@ import { resolveRequestTitle } from "@/lib/request-title";
 import {
   deserializeTableRows,
   formatCellForDisplay,
+  formatCellForReading,
+  isNumericColumnType,
   numericTypeForFieldDataType,
+  resolveTableColumnTypes,
   trimCellTextEnd,
 } from "./table-field";
 import type {
@@ -104,9 +107,18 @@ export function ensureApproverStepCodes(steps: ApproverStepDef[]): {
 function formatFieldValueForPrint(field: ProposalField, value: unknown): string {
   if (value === undefined || value === null || value === "") return "";
   if (field.dataType === "table" || field.dataType === "base_table") {
+    const types = resolveTableColumnTypes(field.tableColumns ?? [], field.tableColumnTypes);
     return deserializeTableRows(value)
       // Bỏ dòng trắng thừa cuối từng ô (07/10/2026) — docxtemplater đổi xuống dòng thành ngắt dòng.
-      .map((row) => row.map((cell) => trimCellTextEnd(cell)).filter(Boolean).join(" / "))
+      // Cột ngày → dd/MM/yyyy, nhiều lựa chọn → "A, B"; cột số giữ nguyên số thô như trước.
+      .map((row) =>
+        row
+          .map((cell, i) =>
+            types[i] && !isNumericColumnType(types[i]) ? formatCellForReading(cell, types[i]) : trimCellTextEnd(cell),
+          )
+          .filter(Boolean)
+          .join(" / "),
+      )
       .filter(Boolean)
       .join("; ");
   }

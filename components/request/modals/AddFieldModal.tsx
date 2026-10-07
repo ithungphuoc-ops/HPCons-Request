@@ -35,16 +35,19 @@ import {
 } from "@/lib/date-lead-time";
 import {
   DEFAULT_TABLE_COLUMN_WIDTH_PX,
+  isChoiceColumnType,
   isNumericColumnType,
   isLockedRequiredTableColumn,
+  parseChoiceOptionsText,
+  resolveTableColumnOptions,
   resolveTableColumnRequired,
   resolveTableColumnSum,
   resolveTableColumnTypes,
   resolveTableColumnWidths,
   TABLE_COLUMN_TYPE_LABELS,
-  TABLE_COLUMN_TYPES,
   TABLE_COLUMN_WIDTH_PRESETS,
 } from "@/lib/table-field";
+import ColumnTypePicker from "@/components/request/field-editor/ColumnTypePicker";
 import { slugifyFieldName } from "@/lib/print-template";
 import { validateFieldName, validateFieldOptions } from "@/lib/validation";
 import {
@@ -85,6 +88,7 @@ type FieldErrors = {
   code?: string;
   computed?: string;
   dateLeadTime?: string;
+  tableColumns?: string;
 };
 
 export default function AddFieldModal() {
@@ -111,6 +115,9 @@ export default function AddFieldModal() {
   // duyệt demo 05/10/2026). "Tổng" chỉ bật được ở cột kiểu số.
   const [tableColumnRequired, setTableColumnRequired] = useState<boolean[]>([false]);
   const [tableColumnSum, setTableColumnSum] = useState<boolean[]>([false]);
+  // Phương án cột Danh sách (Sếp duyệt demo 07/10/2026) — CHUỖI admin gõ
+  // ("Có,Không"), SONG SONG index với tableColumns; tách lúc lưu.
+  const [tableColumnOptionsText, setTableColumnOptionsText] = useState<string[]>([""]);
   const [formula, setFormula] = useState("");
   const [visibleWhen, setVisibleWhen] = useState<ConditionGroup | undefined>(undefined);
   // null = tắt "tự động ghép giá trị"; mảng (kể cả rỗng) = đang bật, mỗi phần
@@ -243,6 +250,7 @@ export default function AddFieldModal() {
     setTableColumnWidths([DEFAULT_TABLE_COLUMN_WIDTH_PX]);
     setTableColumnRequired([false]);
     setTableColumnSum([false]);
+    setTableColumnOptionsText([""]);
     setFormula("");
     setVisibleWhen(undefined);
     setComputedBranches(null);
@@ -284,6 +292,11 @@ export default function AddFieldModal() {
       setTableColumnRequired(resolveTableColumnRequired(editingColumns, editingField.tableColumnRequired));
       setTableColumnSum(
         resolveTableColumnSum(editingColumns, editingField.tableColumnTypes, editingField.tableColumnSum),
+      );
+      setTableColumnOptionsText(
+        resolveTableColumnOptions(editingColumns, editingField.tableColumnTypes, editingField.tableColumnOptions).map(
+          (opts) => opts.join(","),
+        ),
       );
       setFormula(editingField.formula ?? "");
       setVisibleWhen(editingField.visibleWhen);
@@ -399,9 +412,20 @@ export default function AddFieldModal() {
           width: tableColumnWidths[i] ?? DEFAULT_TABLE_COLUMN_WIDTH_PX,
           required: isLockedRequiredTableColumn(name) || tableColumnRequired[i] === true,
           sum: isNumericColumnType(type) && tableColumnSum[i] === true,
+          options: isChoiceColumnType(type) ? parseChoiceOptionsText(tableColumnOptionsText[i]) : [],
         };
       })
       .filter((c) => c.name);
+    // Cột Danh sách phải có ít nhất 1 phương án (máy chủ cũng kiểm lại).
+    if (tableTypes.includes(dataType)) {
+      const emptyChoice = cleanedColumns.find((c) => isChoiceColumnType(c.type) && c.options.length === 0);
+      if (emptyChoice) {
+        failWith({
+          tableColumns: `Cột "${emptyChoice.name}" kiểu ${TABLE_COLUMN_TYPE_LABELS[emptyChoice.type]} cần ít nhất 1 phương án.`,
+        });
+        return;
+      }
+    }
 
     setErrors({});
     const fieldData = {
@@ -416,6 +440,7 @@ export default function AddFieldModal() {
       tableColumnWidths: tableTypes.includes(dataType) ? cleanedColumns.map((c) => c.width) : undefined,
       tableColumnRequired: tableTypes.includes(dataType) ? cleanedColumns.map((c) => c.required) : undefined,
       tableColumnSum: tableTypes.includes(dataType) ? cleanedColumns.map((c) => c.sum) : undefined,
+      tableColumnOptions: tableTypes.includes(dataType) ? cleanedColumns.map((c) => c.options.join(",")) : undefined,
       formula: dataType === "formula" ? formula : undefined,
       visibleWhen,
       computedFrom: cleanedBranches && cleanedBranches.length > 0 ? { branches: cleanedBranches } : undefined,
@@ -757,7 +782,7 @@ export default function AddFieldModal() {
                       {tableColumns.length > 0 && (
                         <div className="hidden items-center gap-2 text-[10.5px] font-semibold uppercase tracking-wide text-gray-400 lg:flex">
                           <span className="min-w-[140px] flex-1">Tên cột</span>
-                          <span className="w-[170px] shrink-0">Kiểu dữ liệu</span>
+                          <span className="w-[210px] shrink-0">Kiểu dữ liệu</span>
                           <span className="w-[148px] shrink-0">Độ rộng (px)</span>
                           <span
                             className="w-[60px] shrink-0 whitespace-nowrap text-center"
@@ -774,154 +799,202 @@ export default function AddFieldModal() {
                           <span className="w-[14px] shrink-0" />
                         </div>
                       )}
-                      {tableColumns.map((col, index) => (
-                        <div
-                          key={index}
-                          className="flex flex-wrap items-center gap-2 rounded border border-gray-200 p-2 lg:flex-nowrap lg:rounded-none lg:border-0 lg:p-0"
-                        >
-                          <input
-                            className={`${inputClass} basis-full lg:min-w-[140px] lg:flex-1 lg:basis-auto`}
-                            value={col}
-                            onChange={(e) =>
-                              setTableColumns((prev) => prev.map((c, i) => (i === index ? e.target.value : c)))
-                            }
-                            placeholder={`Tên cột ${index + 1}`}
-                          />
-                          <select
-                            // `!w-[130px]` (không phải `w-[130px]` suông) — Sếp phát
-                            // hiện 01/10/2026 (annotate "cải tiến tên cột"): lỗi CÓ
-                            // SẴN từ trước (bản cũ `w-[170px]`) bị chính `w-full` có
-                            // sẵn trong `selectClass` đè mất do thứ tự CSS Tailwind,
-                            // khiến select giãn hết cỡ (≈ rộng bằng cả hàng) và ép ô
-                            // tên cột bên cạnh (flex-1, có flex-shrink) co lại gần
-                            // như biến mất — `!` ép đúng độ rộng bất kể thứ tự cascade.
-                            className={`${selectClass} !w-[170px] shrink-0`}
-                            value={tableColumnTypes[index] ?? "text"}
-                            aria-label={`Kiểu dữ liệu cột ${index + 1}`}
-                            onChange={(e) => {
-                              const nextType = e.target.value as TableColumnType;
-                              setTableColumnTypes((prev) => {
-                                const next = [...prev];
-                                next[index] = nextType;
-                                return next;
-                              });
-                              // Đổi sang văn bản thì tự bỏ tick Tổng (chỉ cột số mới có tổng).
-                              if (!isNumericColumnType(nextType)) {
-                                setTableColumnSum((prev) => {
-                                  const next = [...prev];
-                                  next[index] = false;
-                                  return next;
-                                });
-                              }
-                            }}
+                      {tableColumns.map((col, index) => {
+                        const columnType = tableColumnTypes[index] ?? "text";
+                        const parsedOptions = isChoiceColumnType(columnType)
+                          ? parseChoiceOptionsText(tableColumnOptionsText[index])
+                          : [];
+                        return (
+                          <div
+                            key={index}
+                            className="rounded border border-gray-200 p-2 lg:rounded-none lg:border-0 lg:p-0"
                           >
-                            {TABLE_COLUMN_TYPES.map((t) => (
-                              <option key={t} value={t}>
-                                {TABLE_COLUMN_TYPE_LABELS[t]}
-                              </option>
-                            ))}
-                          </select>
-                          <div className="flex w-[148px] shrink-0 items-center gap-1">
-                            {TABLE_COLUMN_WIDTH_PRESETS.map((preset) => (
-                              <button
-                                key={preset.label}
-                                type="button"
-                                title={`${preset.label} (${preset.px}px)`}
-                                onClick={() =>
-                                  setTableColumnWidths((prev) => {
-                                    const next = [...prev];
-                                    next[index] = preset.px;
-                                    return next;
-                                  })
+                            <div className="flex flex-wrap items-center gap-2 lg:flex-nowrap">
+                              <input
+                                className={`${inputClass} basis-full lg:min-w-[140px] lg:flex-1 lg:basis-auto`}
+                                value={col}
+                                onChange={(e) =>
+                                  setTableColumns((prev) => prev.map((c, i) => (i === index ? e.target.value : c)))
                                 }
-                                className={`rounded border px-1.5 py-1 text-[10.5px] font-semibold ${
-                                  (tableColumnWidths[index] ?? DEFAULT_TABLE_COLUMN_WIDTH_PX) === preset.px
-                                    ? "border-[var(--color-action-blue)] bg-blue-50 text-[var(--color-action-blue)]"
-                                    : "border-gray-200 text-gray-500 hover:border-gray-300"
-                                }`}
+                                placeholder={`Tên cột ${index + 1}`}
+                              />
+                              {/* Ô chọn kiểu có "Lọc nhanh" + chia nhóm (Sếp duyệt demo
+                                  07/10/2026) — thay <select> thường. Rộng cố định 210px (170px cũ cắt mất nhãn
+                                  "Danh sách (nhiều lựa chọn)"), vẫn cố định để không bóp ô tên cột. */}
+                              <ColumnTypePicker
+                                className="w-[210px] shrink-0"
+                                value={columnType}
+                                ariaLabel={`Kiểu dữ liệu cột ${index + 1}`}
+                                onChange={(nextType) => {
+                                  setTableColumnTypes((prev) => {
+                                    const next = [...prev];
+                                    next[index] = nextType;
+                                    return next;
+                                  });
+                                  // Đổi sang kiểu không phải số thì tự bỏ tick Tổng (chỉ cột số mới có tổng).
+                                  if (!isNumericColumnType(nextType)) {
+                                    setTableColumnSum((prev) => {
+                                      const next = [...prev];
+                                      next[index] = false;
+                                      return next;
+                                    });
+                                  }
+                                }}
+                              />
+                              <div className="flex w-[148px] shrink-0 items-center gap-1">
+                                {TABLE_COLUMN_WIDTH_PRESETS.map((preset) => (
+                                  <button
+                                    key={preset.label}
+                                    type="button"
+                                    title={`${preset.label} (${preset.px}px)`}
+                                    onClick={() =>
+                                      setTableColumnWidths((prev) => {
+                                        const next = [...prev];
+                                        next[index] = preset.px;
+                                        return next;
+                                      })
+                                    }
+                                    className={`rounded border px-1.5 py-1 text-[10.5px] font-semibold ${
+                                      (tableColumnWidths[index] ?? DEFAULT_TABLE_COLUMN_WIDTH_PX) === preset.px
+                                        ? "border-[var(--color-action-blue)] bg-blue-50 text-[var(--color-action-blue)]"
+                                        : "border-gray-200 text-gray-500 hover:border-gray-300"
+                                    }`}
+                                  >
+                                    {preset.label[0]}
+                                  </button>
+                                ))}
+                                <input
+                                  type="number"
+                                  min={1}
+                                  aria-label={`Độ rộng cột ${index + 1} (px)`}
+                                  className="h-[30px] w-[54px] rounded border border-gray-200 px-1.5 text-center text-[12px]"
+                                  value={tableColumnWidths[index] ?? DEFAULT_TABLE_COLUMN_WIDTH_PX}
+                                  onChange={(e) =>
+                                    setTableColumnWidths((prev) => {
+                                      const next = [...prev];
+                                      next[index] = Number(e.target.value) || DEFAULT_TABLE_COLUMN_WIDTH_PX;
+                                      return next;
+                                    })
+                                  }
+                                />
+                              </div>
+                              <label className="flex shrink-0 items-center gap-1 text-[12px] text-gray-600 has-[:disabled]:cursor-not-allowed has-[:disabled]:text-gray-400 lg:w-[60px] lg:justify-center">
+                                <input
+                                  type="checkbox"
+                                  className="h-4 w-4 disabled:opacity-60"
+                                  aria-label={`Cột ${index + 1} bắt buộc nhập`}
+                                  // "Tên hàng"/"Số lượng" luôn bắt buộc (Sếp chốt 05/10/2026) — khoá tick,
+                                  // máy chủ cũng ép lại ở resolveTableColumnRequired.
+                                  checked={isLockedRequiredTableColumn(col) || tableColumnRequired[index] === true}
+                                  disabled={isLockedRequiredTableColumn(col)}
+                                  title={
+                                    isLockedRequiredTableColumn(col)
+                                      ? "Luôn bắt buộc: thiếu cột này dòng vật tư sẽ không đồng bộ sang Thu mua/Kho"
+                                      : undefined
+                                  }
+                                  onChange={(e) =>
+                                    setTableColumnRequired((prev) => {
+                                      const next = [...prev];
+                                      next[index] = e.target.checked;
+                                      return next;
+                                    })
+                                  }
+                                />
+                                <span className="lg:hidden">Bắt buộc</span>
+                              </label>
+                              <label className="flex shrink-0 items-center gap-1 text-[12px] text-gray-600 has-[:disabled]:cursor-not-allowed has-[:disabled]:text-gray-400 lg:w-[44px] lg:justify-center">
+                                <input
+                                  type="checkbox"
+                                  className="h-4 w-4 disabled:cursor-not-allowed disabled:opacity-35"
+                                  aria-label={`Cột ${index + 1} có dòng tổng`}
+                                  title={
+                                    isNumericColumnType(columnType)
+                                      ? "Hiện dòng tổng cuối bảng"
+                                      : "Chỉ cột kiểu số mới có dòng tổng"
+                                  }
+                                  disabled={!isNumericColumnType(columnType)}
+                                  checked={
+                                    isNumericColumnType(columnType) && tableColumnSum[index] === true
+                                  }
+                                  onChange={(e) =>
+                                    setTableColumnSum((prev) => {
+                                      const next = [...prev];
+                                      next[index] = e.target.checked;
+                                      return next;
+                                    })
+                                  }
+                                />
+                                <span className="lg:hidden">Tổng</span>
+                              </label>
+                              <button
+                                type="button"
+                                aria-label="Xóa cột"
+                                onClick={() => {
+                                  setTableColumns((prev) => prev.filter((_, i) => i !== index));
+                                  setTableColumnTypes((prev) => prev.filter((_, i) => i !== index));
+                                  setTableColumnWidths((prev) => prev.filter((_, i) => i !== index));
+                                  setTableColumnRequired((prev) => prev.filter((_, i) => i !== index));
+                                  setTableColumnSum((prev) => prev.filter((_, i) => i !== index));
+                                  setTableColumnOptionsText((prev) => prev.filter((_, i) => i !== index));
+                                }}
+                                className="ml-auto shrink-0 p-1 text-gray-400 hover:text-[var(--color-danger-red)] lg:ml-0 lg:p-0"
                               >
-                                {preset.label[0]}
+                                <X size={14} />
                               </button>
-                            ))}
-                            <input
-                              type="number"
-                              min={1}
-                              aria-label={`Độ rộng cột ${index + 1} (px)`}
-                              className="h-[30px] w-[54px] rounded border border-gray-200 px-1.5 text-center text-[12px]"
-                              value={tableColumnWidths[index] ?? DEFAULT_TABLE_COLUMN_WIDTH_PX}
-                              onChange={(e) =>
-                                setTableColumnWidths((prev) => {
-                                  const next = [...prev];
-                                  next[index] = Number(e.target.value) || DEFAULT_TABLE_COLUMN_WIDTH_PX;
-                                  return next;
-                                })
-                              }
-                            />
+                            </div>
+                            {isChoiceColumnType(columnType) && (
+                              // Ô "Các phương án" ngay dưới cột kiểu Danh sách — gõ cách
+                              // nhau bằng dấu phẩy như Base. Sếp YÊU CẦU có dòng hướng
+                              // dẫn cách gõ ngay bên dưới (duyệt demo 07/10/2026).
+                              <div className="mt-2 flex flex-col gap-1 lg:mb-1 lg:mt-1.5">
+                                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
+                                  <label
+                                    htmlFor={`table-col-options-${index}`}
+                                    className="shrink-0 text-[12px] font-medium text-gray-600"
+                                  >
+                                    Các phương án<span className="text-[var(--color-danger-red)]"> *</span>
+                                  </label>
+                                  <input
+                                    id={`table-col-options-${index}`}
+                                    className={`${inputClass} sm:flex-1`}
+                                    value={tableColumnOptionsText[index] ?? ""}
+                                    placeholder="Ví dụ: Có,Không"
+                                    onChange={(e) =>
+                                      setTableColumnOptionsText((prev) => {
+                                        const next = [...prev];
+                                        next[index] = e.target.value;
+                                        return next;
+                                      })
+                                    }
+                                  />
+                                </div>
+                                <p className="text-[11.5px] leading-relaxed text-gray-500">
+                                  Gõ các phương án cách nhau bằng dấu phẩy, ví dụ: <b>Có,Không</b>. Khoảng trắng hai
+                                  đầu tự bỏ; phương án trùng tự gộp. Một phương án không được chứa dấu phẩy.
+                                </p>
+                                <p className="text-[11.5px] leading-relaxed text-amber-700">
+                                  Đổi/xoá phương án hoặc đổi kiểu của cột đã có dữ liệu: đề xuất đang nháp hoặc bị trả
+                                  về phải chọn lại ô đó trước khi gửi lại; đề xuất đã gửi giữ nguyên dữ liệu và cách hiển
+                                  thị cũ.
+                                </p>
+                                {parsedOptions.length > 0 && (
+                                  <div className="flex flex-wrap items-center gap-1 text-[11.5px] text-gray-500">
+                                    <span>{parsedOptions.length} phương án:</span>
+                                    {parsedOptions.map((o) => (
+                                      <span
+                                        key={o}
+                                        className="rounded-full bg-blue-50 px-2 py-0.5 text-[var(--color-action-blue)]"
+                                      >
+                                        {o}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
-                          <label className="flex shrink-0 items-center gap-1 text-[12px] text-gray-600 has-[:disabled]:cursor-not-allowed has-[:disabled]:text-gray-400 lg:w-[60px] lg:justify-center">
-                            <input
-                              type="checkbox"
-                              className="h-4 w-4 disabled:opacity-60"
-                              aria-label={`Cột ${index + 1} bắt buộc nhập`}
-                              // "Tên hàng"/"Số lượng" luôn bắt buộc (Sếp chốt 05/10/2026) — khoá tick,
-                              // máy chủ cũng ép lại ở resolveTableColumnRequired.
-                              checked={isLockedRequiredTableColumn(col) || tableColumnRequired[index] === true}
-                              disabled={isLockedRequiredTableColumn(col)}
-                              title={
-                                isLockedRequiredTableColumn(col)
-                                  ? "Luôn bắt buộc: thiếu cột này dòng vật tư sẽ không đồng bộ sang Thu mua/Kho"
-                                  : undefined
-                              }
-                              onChange={(e) =>
-                                setTableColumnRequired((prev) => {
-                                  const next = [...prev];
-                                  next[index] = e.target.checked;
-                                  return next;
-                                })
-                              }
-                            />
-                            <span className="lg:hidden">Bắt buộc</span>
-                          </label>
-                          <label className="flex shrink-0 items-center gap-1 text-[12px] text-gray-600 has-[:disabled]:cursor-not-allowed has-[:disabled]:text-gray-400 lg:w-[44px] lg:justify-center">
-                            <input
-                              type="checkbox"
-                              className="h-4 w-4 disabled:cursor-not-allowed disabled:opacity-35"
-                              aria-label={`Cột ${index + 1} có dòng tổng`}
-                              title={
-                                isNumericColumnType(tableColumnTypes[index] ?? "text")
-                                  ? "Hiện dòng tổng cuối bảng"
-                                  : "Chỉ cột kiểu số mới có dòng tổng"
-                              }
-                              disabled={!isNumericColumnType(tableColumnTypes[index] ?? "text")}
-                              checked={
-                                isNumericColumnType(tableColumnTypes[index] ?? "text") && tableColumnSum[index] === true
-                              }
-                              onChange={(e) =>
-                                setTableColumnSum((prev) => {
-                                  const next = [...prev];
-                                  next[index] = e.target.checked;
-                                  return next;
-                                })
-                              }
-                            />
-                            <span className="lg:hidden">Tổng</span>
-                          </label>
-                          <button
-                            type="button"
-                            aria-label="Xóa cột"
-                            onClick={() => {
-                              setTableColumns((prev) => prev.filter((_, i) => i !== index));
-                              setTableColumnTypes((prev) => prev.filter((_, i) => i !== index));
-                              setTableColumnWidths((prev) => prev.filter((_, i) => i !== index));
-                              setTableColumnRequired((prev) => prev.filter((_, i) => i !== index));
-                              setTableColumnSum((prev) => prev.filter((_, i) => i !== index));
-                            }}
-                            className="ml-auto shrink-0 p-1 text-gray-400 hover:text-[var(--color-danger-red)] lg:ml-0 lg:p-0"
-                          >
-                            <X size={14} />
-                          </button>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                   <p className="text-[11px] text-gray-400">
@@ -941,12 +1014,19 @@ export default function AddFieldModal() {
                       setTableColumnWidths((prev) => [...prev, DEFAULT_TABLE_COLUMN_WIDTH_PX]);
                       setTableColumnRequired((prev) => [...prev, false]);
                       setTableColumnSum((prev) => [...prev, false]);
+                      setTableColumnOptionsText((prev) => [...prev, ""]);
                     }}
                     className="flex items-center gap-1 self-start text-[12px] text-[var(--color-action-blue)]"
                   >
                     <Plus size={13} /> Thêm cột
                   </button>
+                  {errors.tableColumns && (
+                    <p data-field-error className="text-[12px] text-[var(--color-danger-red)]">
+                      {errors.tableColumns}
+                    </p>
+                  )}
                   <p className="text-[11.5px] leading-relaxed text-gray-500">
+                    Cột ngày hiện dạng dd/mm/yyyy; cột danh sách chỉ cho chọn đúng các phương án đã khai.
                     Cột số và tiền tệ: app tự chấm phẩy sau mỗi 3 chữ số khi hiển thị, tiền tệ thêm đuôi
                     &quot;VNĐ&quot;. Dữ liệu vẫn lưu số thô để cộng được và đồng bộ được sang app Thu mua.
                   </p>

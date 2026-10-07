@@ -15,7 +15,16 @@ import { canManageGroupsAtAppScope, canSupplementAfterApproval, type Role } from
 import { ATTACHMENT_SUPPLEMENT_HISTORY_PREFIX, TABLE_SUPPLEMENT_HISTORY_PREFIX } from "@/lib/request-history-labels";
 import { canView } from "@/lib/server/requests";
 import { deletedGuard, type GuardFailure } from "@/lib/server/request-write-guard";
-import { deserializeTableRows, normalizeColumnName, toWireTableRows } from "@/lib/table-field";
+import {
+  deserializeTableRows,
+  invalidCellReason,
+  isChoiceColumnType,
+  isDateColumnType,
+  normalizeColumnName,
+  resolveTableColumnOptions,
+  resolveTableColumnTypes,
+  toWireTableRows,
+} from "@/lib/table-field";
 import type { RequestAttachment, RequestHistoryEntry, RequestInstance } from "@/lib/types";
 
 /**
@@ -132,6 +141,28 @@ export function planTableSupplement(
 
   // Cột mới — dedupe theo tên chuẩn hoá, đúng logic parseTableImportFile().
   const existingColumns = field.tableColumns ?? [];
+
+  // Cột Ngày/Danh sách (07/10/2026): dòng nối thêm cũng phải đúng định dạng/
+  // đúng phương án như lúc gửi (findInvalidTableRows). Cố ý CHỈ kiểm 2 nhóm
+  // kiểu mới — cột số/chữ giữ nguyên hành vi cũ của route này.
+  const existingTypes = resolveTableColumnTypes(existingColumns, field.tableColumnTypes);
+  const existingOptions = resolveTableColumnOptions(existingColumns, existingTypes, field.tableColumnOptions);
+  for (let r = 0; r < newRows.length; r++) {
+    for (let c = 0; c < existingColumns.length; c++) {
+      const type = existingTypes[c];
+      if (!isDateColumnType(type) && !isChoiceColumnType(type)) continue;
+      const raw = (newRows[r][c] ?? "").trim();
+      if (!raw) continue;
+      const reason = invalidCellReason(raw, type, existingOptions[c]);
+      if (reason) {
+        return {
+          ok: false,
+          status: 400,
+          error: `Dòng ${r + 1}: "${existingColumns[c]}" ${reason} (đang nhập "${raw}").`,
+        };
+      }
+    }
+  }
   const existingByNormalized = new Set(existingColumns.map((c) => normalizeColumnName(c)));
   const rawNewColumns = Array.isArray(body.newColumns)
     ? body.newColumns.filter((c): c is string => typeof c === "string" && c.trim().length > 0)
