@@ -6,7 +6,7 @@ import PizZip from "pizzip";
 import { buildPrintTemplateData, isKnownSystemKey } from "@/lib/print-template";
 import {
   deserializeTableRows,
-  normalizeLineBreaks,
+  trimCellTextEnd,
   formatCellForDisplay,
   resolveTableColumnTypes,
 } from "@/lib/table-field";
@@ -306,7 +306,8 @@ function escapeXml(value: string): string {
  * định dạng chữ của mẫu.
  */
 export function cellTextToRunXml(text: string): string {
-  return normalizeLineBreaks(text)
+  // Bỏ dòng trắng thừa cuối ô (dữ liệu cũ lỡ Enter cuối ô) — 07/10/2026.
+  return trimCellTextEnd(text)
     .split("\n")
     .map(escapeXml)
     .join('</w:t><w:br/><w:t xml:space="preserve">');

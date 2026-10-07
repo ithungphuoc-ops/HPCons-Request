@@ -372,3 +372,9 @@ describe("xuống dòng trong ô bảng khi in mẫu .docx (07/10/2026)", () => 
     expect(outputXml).not.toContain("${");
   });
 });
+
+describe("in mẫu .docx — bỏ dòng trắng thừa cuối ô (07/10/2026)", () => {
+  it("cellTextToRunXml: \n cuối ô không sinh <w:br/> thừa, \n giữa vẫn giữ", () => {
+    expect(cellTextToRunXml("A\nB\n\n")).toBe('A</w:t><w:br/><w:t xml:space="preserve">B');
+  });
+});

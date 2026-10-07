@@ -277,3 +277,15 @@ describe("ô bảng xuống dòng trong ô (07/10/2026)", () => {
     expect(found!.height ?? 0).toBeGreaterThan(20);
   });
 });
+
+describe("xuất Word/Excel — bỏ dòng trắng thừa cuối ô (07/10/2026)", () => {
+  it("ô kết thúc bằng xuống dòng → bỏ phần thừa, giữ xuống dòng giữa", () => {
+    const model = buildRequestFormModel(
+      baseInput({
+        values: { ...sampleRequest().values, f8: [{ cells: ["Gạch\nBlock\n\n", "", "1", "Viên", "", ""] }] },
+      } as Partial<RequestInstance>),
+    );
+    const table = model.fields.find((f) => f.table)!.table!;
+    expect(table.rows[0][1].text).toBe("Gạch\nBlock");
+  });
+});

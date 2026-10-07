@@ -4,6 +4,7 @@ import {
   deserializeTableRows,
   formatCellForDisplay,
   numericTypeForFieldDataType,
+  trimCellTextEnd,
 } from "./table-field";
 import type {
   ApproverStepDef,
@@ -104,7 +105,8 @@ function formatFieldValueForPrint(field: ProposalField, value: unknown): string 
   if (value === undefined || value === null || value === "") return "";
   if (field.dataType === "table" || field.dataType === "base_table") {
     return deserializeTableRows(value)
-      .map((row) => row.filter(Boolean).join(" / "))
+      // Bỏ dòng trắng thừa cuối từng ô (07/10/2026) — docxtemplater đổi xuống dòng thành ngắt dòng.
+      .map((row) => row.map((cell) => trimCellTextEnd(cell)).filter(Boolean).join(" / "))
       .filter(Boolean)
       .join("; ");
   }

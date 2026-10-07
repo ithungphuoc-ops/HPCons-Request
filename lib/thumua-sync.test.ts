@@ -384,3 +384,26 @@ describe("layLoaiDeNghiGuiSangThuMua", () => {
     ).toBe("cong_trinh");
   });
 });
+
+describe("ô bảng xuống dòng — gửi sang Thu mua gộp thành 1 dấu cách (07/10/2026)", () => {
+  it("tenVatTu/quyCach/dvt/mucDichSuDung không còn ký tự xuống dòng, dữ liệu gốc giữ nguyên", async () => {
+    const cells = ["Thép D10\nHòa Phát\r\n", "  Cây 11.7m \n\n mác CB300 ", "cây\n", "120", "Đổ móng\nnhà xưởng"];
+    const req = baseRequest({
+      fieldsSnapshot: [deptField, detailField],
+      values: { f_bp: "Bộ phận Thi công", f_ct: [cells] },
+    });
+    const payload = await trichXuatPayloadThuMua(req);
+    expect(payload?.vatTu).toEqual([
+      { tenVatTu: "Thép D10 Hòa Phát", quyCach: "Cây 11.7m mác CB300", dvt: "cây", soLuong: 120, mucDichSuDung: "Đổ móng nhà xưởng" },
+    ]);
+    expect((req.values.f_ct as string[][])[0][0]).toBe("Thép D10\nHòa Phát\r\n");
+  });
+
+  it("ô chỉ có xuống dòng tính là trống → dòng bị loại như cũ", async () => {
+    const req = baseRequest({
+      fieldsSnapshot: [deptField, detailField],
+      values: { f_bp: "Bộ phận Thi công", f_ct: [["\n\n", "", "cái", "1", ""]] },
+    });
+    expect(await trichXuatPayloadThuMua(req)).toBeNull();
+  });
+});

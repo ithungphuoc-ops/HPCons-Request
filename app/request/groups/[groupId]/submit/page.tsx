@@ -29,6 +29,7 @@ import {
   resolveTableColumnWidths,
   sumColumn,
   toWireTableRows,
+  trimCellTextEnd,
   downloadTableTemplateFile,
   parseTableImportFile,
 } from "@/lib/table-field";
@@ -1717,7 +1718,14 @@ function TableCellInput({
           setDraft(e.target.value);
           onCommit(e.target.value);
         }}
-        onBlur={() => setDraft(null)}
+        onBlur={(e) => {
+          // Bỏ xuống dòng/khoảng trắng THỪA ở cuối ô khi rời ô (Enter lỡ tay
+          // cuối ô không sinh dòng trắng) — xuống dòng ở giữa giữ nguyên.
+          // Không cắt lúc đang gõ, nếu không Enter ở cuối sẽ bị nuốt ngay.
+          const trimmed = trimCellTextEnd(e.target.value);
+          if (trimmed !== e.target.value) onCommit(trimmed);
+          setDraft(null);
+        }}
         aria-label={columnName}
         className={`${boxClass} block py-[7px] leading-5 [overflow-wrap:anywhere] whitespace-pre-wrap`}
       />

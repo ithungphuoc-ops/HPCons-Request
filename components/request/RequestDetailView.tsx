@@ -93,6 +93,7 @@ import {
   resolveTableColumnSum,
   resolveTableColumnTypes,
   sumColumn,
+  trimCellTextEnd,
 } from "@/lib/table-field";
 import { formatFieldValue, formatValue } from "@/lib/request-field-format";
 import { loggedSupplementRows } from "@/lib/table-supplement-log";
@@ -2036,13 +2037,13 @@ function TableSupplementControl({
                   <td key={ci} className="min-w-[6rem] whitespace-pre-wrap px-2 py-1.5 align-top text-gray-700 [overflow-wrap:anywhere]">
                     {ci === entry.row.length - 1 ? (
                       <>
-                        <div>{cell || "—"}</div>
+                        <div>{trimCellTextEnd(cell) || "—"}</div>
                         <div className="text-[12px] font-medium text-amber-600">
                           🕘 Cập nhật lúc {new Date(entry.at).toLocaleString("vi-VN")}
                         </div>
                       </>
                     ) : (
-                      cell || "—"
+                      trimCellTextEnd(cell) || "—"
                     )}
                   </td>
                 ))}
@@ -2131,7 +2132,10 @@ function TableValueView({
                         "min-w-[6rem] whitespace-pre-wrap [overflow-wrap:anywhere]"
                   }`}
                 >
-                  {formatCellForDisplay(row[colIndex] ?? "", types[colIndex]) || "—"}
+                  {/* Cột văn bản: bỏ dòng trắng thừa cuối ô (07/10/2026). */}
+                  {(isNumericColumnType(types[colIndex])
+                    ? formatCellForDisplay(row[colIndex] ?? "", types[colIndex])
+                    : trimCellTextEnd(row[colIndex] ?? "")) || "—"}
                 </td>
               ))}
             </tr>
