@@ -168,15 +168,24 @@ export default function NoteWithAttachments({
   };
 
   // Kéo thả: chỉ nhận khi ô tệp bật — tắt tệp thì để trình duyệt xử lý như thường.
+  // Chỉ chặn khi kéo TỆP (kéo chữ vào ô vẫn chạy như textarea thường). Đang
+  // gửi (disabled) vẫn phải preventDefault — bỏ qua thì trình duyệt tự mở tệp
+  // vừa thả và rời khỏi trang giữa lúc đang tải lên (review PR #91).
+  const isFileDrag = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes("Files");
   const dropProps = showFile
     ? {
         onDragOver: (e: DragEvent) => {
-          if (disabled) return;
+          if (!isFileDrag(e)) return;
           e.preventDefault();
-          setDragging(true);
+          if (!disabled) setDragging(true);
         },
-        onDragLeave: () => setDragging(false),
+        // Di chuột giữa nút ghim và ô nội dung (con bên trong) không tính là rời khung.
+        onDragLeave: (e: DragEvent) => {
+          if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+          setDragging(false);
+        },
         onDrop: (e: DragEvent) => {
+          if (!isFileDrag(e)) return;
           e.preventDefault();
           setDragging(false);
           if (!disabled) addFiles(Array.from(e.dataTransfer.files ?? []));
@@ -249,7 +258,7 @@ export default function NoteWithAttachments({
               disabled={disabled}
               onClick={openPicker}
               title="Đính kèm tệp"
-              aria-label="Đính kèm tệp"
+              aria-label={files.length ? `Đính kèm tệp (đã chọn ${files.length})` : "Đính kèm tệp"}
               data-testid="decision-attachment-pick"
               className={`relative flex h-9 w-9 shrink-0 items-center justify-center rounded border hover:border-[var(--color-action-blue)] hover:text-[var(--color-action-blue)] disabled:opacity-50 ${
                 fileMissing
@@ -293,7 +302,7 @@ export default function NoteWithAttachments({
           type="button"
           disabled={disabled}
           onClick={openPicker}
-          aria-label="Đính kèm tệp"
+          aria-label={files.length ? `Đính kèm tệp (đã chọn ${files.length})` : "Đính kèm tệp"}
           data-testid="decision-attachment-pick"
           {...dropProps}
           className={`inline-flex h-8 items-center gap-1.5 rounded border px-2.5 text-[13px] hover:border-[var(--color-action-blue)] hover:text-[var(--color-action-blue)] disabled:opacity-50 ${

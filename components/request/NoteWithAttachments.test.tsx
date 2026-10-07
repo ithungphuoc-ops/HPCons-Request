@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { createEvent, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
 import NoteWithAttachments, { noteAttachmentPlaceholder } from "@/components/request/NoteWithAttachments";
 import { MAX_DIRECT_UPLOAD_FILE_SIZE } from "@/lib/constants";
@@ -95,8 +95,17 @@ describe("NoteWithAttachments — chọn tệp", () => {
 
   it("kéo thả tệp vào ô nội dung vẫn nhận", () => {
     render(<Harness noteMode="optional" fileMode="optional" />);
-    fireEvent.drop(screen.getByRole("textbox"), { dataTransfer: { files: [file("c.png")] } });
+    fireEvent.drop(screen.getByRole("textbox"), { dataTransfer: { files: [file("c.png")], types: ["Files"] } });
     expect(screen.getAllByTestId("decision-attachment-chip")).toHaveLength(1);
+  });
+
+  it("kéo CHỮ (không phải tệp) thả vào ô thì không thêm tệp, không chặn", () => {
+    render(<Harness noteMode="optional" fileMode="optional" />);
+    const box = screen.getByRole("textbox");
+    const ev = createEvent.drop(box, { dataTransfer: { files: [file("d.png")], types: ["text/plain"] } });
+    fireEvent(box, ev);
+    expect(ev.defaultPrevented).toBe(false);
+    expect(screen.queryAllByTestId("decision-attachment-chip")).toHaveLength(0);
   });
 
   it("giữ giới hạn dung lượng + số tệp như cũ", () => {
