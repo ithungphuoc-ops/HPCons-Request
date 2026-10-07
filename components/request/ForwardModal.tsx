@@ -9,8 +9,8 @@ import {
   confirmButtonClass,
 } from "@/components/shared/form-styles";
 import ApprovalTimeFieldControl, { isApprovalTimeValueMissing } from "@/components/request/ApprovalTimeFieldControl";
-import DecisionNoteInput from "@/components/request/DecisionNoteInput";
-import DecisionAttachmentInput, { useDecisionAttachmentUploader } from "@/components/request/DecisionAttachmentInput";
+import NoteWithAttachments from "@/components/request/NoteWithAttachments";
+import { useDecisionAttachmentUploader } from "@/components/request/DecisionAttachmentInput";
 import type { DecisionNoteMode } from "@/lib/decision-note";
 import type { ApprovalTimeField, RequestAttachment, TaggedUser } from "@/lib/types";
 
@@ -205,25 +205,24 @@ export default function ForwardModal({
           />
         </div>
         {extraField && <ApprovalTimeFieldControl field={extraField} value={fieldValue} onChange={setFieldValue} />}
-        <DecisionNoteInput
-          mode={noteMode}
-          label="Lý do/ghi chú"
-          value={note}
-          onChange={(v) => {
+        {/* Ô lý do + tệp gọn kiểu Thảo luận (demo dieu-chinh-o-gon-kieu-thao-luan-2026-10-07). */}
+        <NoteWithAttachments
+          noteMode={noteMode}
+          fileMode={attachmentMode}
+          noteLabel="Lý do/ghi chú"
+          note={note}
+          onNoteChange={(v) => {
             setNote(v);
             if (noteInvalid && v.trim()) setNoteInvalid(false);
           }}
-          invalid={noteInvalid}
+          noteInvalid={noteInvalid}
           placeholder=""
-        />
-        <DecisionAttachmentInput
-          mode={attachmentMode}
           files={files}
-          onChange={(next) => {
+          onFilesChange={(next) => {
             setFiles(next);
             if (next.length > 0) setFilesInvalid(false);
           }}
-          invalid={filesInvalid}
+          filesInvalid={filesInvalid}
           disabled={submitting}
         />
         {error && <p className="text-[12px] text-[var(--color-danger-red)]">{error}</p>}

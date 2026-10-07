@@ -4,8 +4,8 @@ import { useState } from "react";
 import Modal from "@/components/shared/Modal";
 import { cancelButtonClass, confirmButtonClass } from "@/components/shared/form-styles";
 import ApprovalTimeFieldControl, { isApprovalTimeValueMissing } from "@/components/request/ApprovalTimeFieldControl";
-import DecisionNoteInput from "@/components/request/DecisionNoteInput";
-import DecisionAttachmentInput, { useDecisionAttachmentUploader } from "@/components/request/DecisionAttachmentInput";
+import NoteWithAttachments from "@/components/request/NoteWithAttachments";
+import { useDecisionAttachmentUploader } from "@/components/request/DecisionAttachmentInput";
 import type { DecisionNoteMode } from "@/lib/decision-note";
 import type { ApprovalTimeField, RequestAttachment } from "@/lib/types";
 
@@ -97,27 +97,26 @@ export default function ReasonModal({
         {noteMode === "hidden" && !extraField && (
           <p className="text-[14px] text-gray-700">Xác nhận {confirmLabel.toLowerCase()} đề xuất này?</p>
         )}
-        <DecisionNoteInput
-          mode={noteMode}
-          label="Lý do"
-          value={note}
-          onChange={(v) => {
+        {/* Ô lý do + tệp gọn kiểu Thảo luận (demo dieu-chinh-o-gon-kieu-thao-luan-2026-10-07). */}
+        <NoteWithAttachments
+          noteMode={noteMode}
+          fileMode={attachmentMode}
+          noteLabel="Lý do"
+          note={note}
+          onNoteChange={(v) => {
             setNote(v);
             if (noteInvalid && v.trim()) setNoteInvalid(false);
           }}
-          invalid={noteInvalid}
+          noteInvalid={noteInvalid}
           rows={4}
           autoFocus
           placeholder="Nhập lý do..."
-        />
-        <DecisionAttachmentInput
-          mode={attachmentMode}
           files={files}
-          onChange={(next) => {
+          onFilesChange={(next) => {
             setFiles(next);
             if (next.length > 0) setFilesInvalid(false);
           }}
-          invalid={filesInvalid}
+          filesInvalid={filesInvalid}
           disabled={submitting}
         />
         {error && <p className="text-[12px] text-[var(--color-danger-red)]">{error}</p>}

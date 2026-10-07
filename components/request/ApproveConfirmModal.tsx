@@ -4,8 +4,8 @@ import { useState } from "react";
 import Modal from "@/components/shared/Modal";
 import { cancelButtonClass, confirmButtonClass } from "@/components/shared/form-styles";
 import ApprovalTimeFieldControl, { isApprovalTimeValueMissing } from "@/components/request/ApprovalTimeFieldControl";
-import DecisionNoteInput from "@/components/request/DecisionNoteInput";
-import DecisionAttachmentInput, { useDecisionAttachmentUploader } from "@/components/request/DecisionAttachmentInput";
+import NoteWithAttachments from "@/components/request/NoteWithAttachments";
+import { useDecisionAttachmentUploader } from "@/components/request/DecisionAttachmentInput";
 import type { DecisionNoteMode } from "@/lib/decision-note";
 import type { ApprovalTimeField, RequestAttachment } from "@/lib/types";
 
@@ -91,25 +91,24 @@ export default function ApproveConfirmModal({
     >
       <div className="flex flex-col gap-3">
         {field && <ApprovalTimeFieldControl field={field} value={value} onChange={setValue} />}
-        <DecisionNoteInput
-          mode={noteMode}
-          label="Ý kiến phê duyệt"
-          value={note}
-          onChange={(v) => {
+        {/* Ô ý kiến + tệp gọn kiểu Thảo luận (demo dieu-chinh-o-gon-kieu-thao-luan-2026-10-07). */}
+        <NoteWithAttachments
+          noteMode={noteMode}
+          fileMode={attachmentMode}
+          noteLabel="Ý kiến phê duyệt"
+          note={note}
+          onNoteChange={(v) => {
             setNote(v);
             if (noteInvalid && v.trim()) setNoteInvalid(false);
           }}
-          invalid={noteInvalid}
+          noteInvalid={noteInvalid}
           autoFocus={!field}
-        />
-        <DecisionAttachmentInput
-          mode={attachmentMode}
           files={files}
-          onChange={(next) => {
+          onFilesChange={(next) => {
             setFiles(next);
             if (next.length > 0) setFilesInvalid(false);
           }}
-          invalid={filesInvalid}
+          filesInvalid={filesInvalid}
           disabled={submitting}
         />
         {error && <p className="text-[12px] text-[var(--color-danger-red)]">{error}</p>}

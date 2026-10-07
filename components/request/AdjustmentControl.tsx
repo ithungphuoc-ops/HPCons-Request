@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { AlertTriangle, Pencil, Plus } from "lucide-react";
 import TagUserInput from "@/components/shared/TagUserInput";
-import DecisionAttachmentInput, { useDecisionAttachmentUploader } from "@/components/request/DecisionAttachmentInput";
+import NoteWithAttachments from "@/components/request/NoteWithAttachments";
+import { useDecisionAttachmentUploader } from "@/components/request/DecisionAttachmentInput";
 import {
   ADJUSTMENT_APPROVER_COUNT,
   adjustmentFieldMode,
@@ -55,6 +56,8 @@ export default function AdjustmentControl({
   const [approvers, setApprovers] = useState<TaggedUser[]>([]);
   const [dangGui, setDangGui] = useState(false);
   const [loi, setLoi] = useState<string | null>(null);
+  // Chỉ để tô đỏ nút ghim khi gửi thiếu tệp bắt buộc — luật vẫn ở checkAdjustmentContent.
+  const [filesInvalid, setFilesInvalid] = useState(false);
   const uploadFiles = useDecisionAttachmentUploader();
 
   const count = ctx?.approverCount ?? ADJUSTMENT_APPROVER_COUNT;
@@ -82,6 +85,7 @@ export default function AdjustmentControl({
     setFiles([]);
     setApprovers([]);
     setLoi(null);
+    setFilesInvalid(false);
   };
 
   const pickApprovers = (next: TaggedUser[]) => {
@@ -102,6 +106,7 @@ export default function AdjustmentControl({
     const content = checkAdjustmentContent(ctx.fieldRules, { noiDung, fileCount: files.length });
     if (!content.ok) {
       setLoi(content.error);
+      setFilesInvalid(ctx.fieldRules.attachment.required && files.length === 0);
       return;
     }
     if (approvers.length !== count) {
@@ -175,30 +180,29 @@ export default function AdjustmentControl({
             </div>
           )}
 
-          {noteMode !== "hidden" && (
-            <div>
-              <label className="mb-1 block text-[14px] font-medium text-gray-700" htmlFor={`adj-note-${requestId}`}>
-                Nội dung điều chỉnh{" "}
-                {noteMode === "required" ? (
-                  <span className="text-[var(--color-danger-red)]">*</span>
-                ) : (
-                  <span className="text-[12px] font-normal text-gray-400">(không bắt buộc nếu có tệp)</span>
-                )}
-              </label>
-              <textarea
-                id={`adj-note-${requestId}`}
-                value={noiDung}
-                maxLength={ADJUSTMENT_MAX_LENGTH}
-                onChange={(e) => setNoiDung(e.target.value)}
-                rows={3}
-                disabled={dangGui}
-                placeholder="Mô tả điều chỉnh — ví dụ: Thép hộp 40x80 đổi từ 120 cây xuống 90 cây"
-                className="w-full rounded border border-[var(--color-border)] px-3 py-2 text-[14px] text-gray-800 outline-none focus:border-[var(--color-action-blue)]"
-              />
-            </div>
-          )}
-
-          <DecisionAttachmentInput mode={fileMode} files={files} onChange={setFiles} disabled={dangGui} />
+          {/* Ô nội dung + tệp gọn kiểu Thảo luận — Sếp duyệt demo
+              dieu-chinh-o-gon-kieu-thao-luan-2026-10-07. Luật "ít nhất 1
+              trong 2" vẫn ở checkAdjustmentContent, ở đây chỉ hiện nhãn. */}
+          <NoteWithAttachments
+            noteMode={noteMode}
+            fileMode={fileMode}
+            noteLabel="Nội dung điều chỉnh"
+            noteShortLabel="Nội dung"
+            atLeastOne
+            note={noiDung}
+            onNoteChange={setNoiDung}
+            maxLength={ADJUSTMENT_MAX_LENGTH}
+            rows={2}
+            textareaId={`adj-note-${requestId}`}
+            placeholder="Mô tả điều chỉnh — ví dụ: Thép hộp 40x80 đổi từ 120 cây xuống 90 cây"
+            files={files}
+            onFilesChange={(next) => {
+              setFiles(next);
+              if (next.length > 0) setFilesInvalid(false);
+            }}
+            filesInvalid={filesInvalid}
+            disabled={dangGui}
+          />
 
           <div>
             <p className="mb-1 text-[14px] font-medium text-gray-700">
