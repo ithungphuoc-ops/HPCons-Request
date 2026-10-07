@@ -83,6 +83,17 @@ export interface ProposalField {
    * dài → `resolveTableColumnSum()` suy theo luật cũ (mọi cột tiền tệ).
    */
   tableColumnSum?: boolean[];
+  /**
+   * Phương án của cột kiểu Danh sách (một/nhiều lựa chọn), SONG SONG theo
+   * index với `tableColumns` — Sếp duyệt demo 07/10/2026. Mỗi phần tử là
+   * CHUỖI các phương án nối bằng dấu phẩy, đúng như admin gõ ("Có,Không");
+   * cột không phải danh sách để "". Cố ý KHÔNG dùng `string[][]`: Firestore
+   * không cho mảng lồng trực tiếp trong mảng (xem `WireTableRow` ở
+   * lib/table-field.ts). Vì tách bằng dấu phẩy nên 1 phương án không chứa
+   * được dấu phẩy (đã ghi rõ trong gợi ý ở hộp thoại sửa trường). Đọc ra
+   * LUÔN qua `resolveTableColumnOptions()`, đừng tự split ở nơi khác.
+   */
+  tableColumnOptions?: string[];
   formula?: string;
   /** Chỉ hiển thị field này trên form Gửi đề xuất khi nhóm điều kiện thoả mãn
    * (dựa trên giá trị (các) field khác của CÙNG đề xuất, kết hợp AND/OR) —
@@ -236,8 +247,29 @@ export interface ApprovalTimeField {
  * cách hiển thị. Lưu luôn chuỗi đã định dạng sẽ làm `Number(ô)` ở
  * lib/thumua-sync.ts / lib/qlkctr-sync.ts ra NaN, dòng bị loại và đề nghị
  * không sang được app Thu mua — đúng sự cố đề nghị 000000072/073/074.
+ *
+ * 4 kiểu thêm 07/10/2026 (Sếp duyệt demo "cot-bang-them-kieu-du-lieu"), ô
+ * vẫn LƯU CHUỖI như mọi kiểu khác để mọi nơi đọc cũ (in, xuất, đồng bộ Thu
+ * mua/Kho) không phải đổi gì:
+ *   - date            : ngày, lưu "YYYY-MM-DD", hiện dd/MM/yyyy.
+ *   - datetime        : ngày giờ, lưu "YYYY-MM-DDTHH:mm" (giờ VN như người
+ *                       gõ, KHÔNG đổi múi giờ), hiện dd/MM/yyyy HH:mm.
+ *   - single_choice   : danh sách một lựa chọn, lưu đúng chữ của phương án.
+ *   - multiple_choice : danh sách nhiều lựa chọn, lưu các phương án nối bằng
+ *                       ", " theo thứ tự admin khai — xem
+ *                       `joinMultiChoiceCell()` ở lib/table-field.ts.
+ * Phương án của 2 kiểu danh sách nằm ở `ProposalField.tableColumnOptions`.
  */
-export type TableColumnType = "text" | "int" | "decimal" | "money" | "percent";
+export type TableColumnType =
+  | "text"
+  | "int"
+  | "decimal"
+  | "money"
+  | "percent"
+  | "date"
+  | "datetime"
+  | "single_choice"
+  | "multiple_choice";
 
 export interface DateLeadTimeRule {
   enabled: boolean;

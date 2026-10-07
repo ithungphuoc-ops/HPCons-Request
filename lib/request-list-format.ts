@@ -1,6 +1,11 @@
 import type { ProposalField, RequestInstance } from "@/lib/types";
 import { TITLE_FIELD_CODES } from "@/lib/request-title";
-import { deserializeTableRows } from "@/lib/table-field";
+import {
+  deserializeTableRows,
+  formatCellForDisplay,
+  isDateColumnType,
+  resolveTableColumnTypes,
+} from "@/lib/table-field";
 
 /**
  * Tách ra từ app/request/list/page.tsx (14/09/2026, change
@@ -75,7 +80,14 @@ export function notableFieldParts(r: RequestInstance): string[] {
 export function tableFieldCellValues(r: RequestInstance): string[] {
   return r.fieldsSnapshot
     .filter((f) => f.dataType === "table" || f.dataType === "base_table")
-    .flatMap((f) => deserializeTableRows(r.values[f.id]).flat())
+    .flatMap((f) => {
+      // Ô ngày lưu "2026-10-07" → hiện/tìm theo "07/10/2026" như người dùng
+      // thấy (07/10/2026). Cột khác giữ nguyên chữ đã lưu như trước.
+      const types = resolveTableColumnTypes(f.tableColumns ?? [], f.tableColumnTypes);
+      return deserializeTableRows(r.values[f.id]).flatMap((row) =>
+        row.map((cell, i) => (isDateColumnType(types[i]) ? formatCellForDisplay(cell, types[i]) : cell)),
+      );
+    })
     .filter((cell) => cell.trim());
 }
 

@@ -4,6 +4,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FileDown, Loader2, Paperclip, Plus, Trash2, Upload, X } from "lucide-react";
 import AutoGrowTextarea from "@/components/request/AutoGrowTextarea";
+import MultiChoiceCellInput from "@/components/request/MultiChoiceCellInput";
 import { DateLeadTimeZonesNote } from "@/components/request/DateLeadTimeZonesNote";
 import { useRequestContext } from "@/context/RequestContext";
 import {
@@ -18,11 +19,14 @@ import {
   deserializeTableRows,
   filterNumericInput,
   formatCellForDisplay,
+  invalidCellReason,
+  isDateColumnType,
   isNumericColumnType,
   isValidCellValue,
   normalizeRawForStorage,
   numericTypeForFieldDataType,
   parseCellToRaw,
+  resolveTableColumnOptions,
   resolveTableColumnRequired,
   resolveTableColumnSum,
   resolveTableColumnTypes,
@@ -549,15 +553,18 @@ export default function SubmitRequestPage() {
           // Cột bắt buộc theo tick của Admin (05/10/2026) — trường cũ chưa
           // tick → luật cũ, cùng hàm resolve với máy chủ.
           const requiredFlags = resolveTableColumnRequired(columns, field.tableColumnRequired);
+          // Phương án cột Danh sách (07/10/2026) — ô chọn ngoài danh sách
+          // (vd nhập từ file) cũng bị chặn, cùng câu báo với máy chủ.
+          const cellOptions = resolveTableColumnOptions(columns, cellTypes, field.tableColumnOptions);
           for (const row of rows) {
             if (!row.some((cell) => cell?.trim())) continue;
             columns.forEach((col, ci) => {
               const cell = row[ci] ?? "";
+              const reason = cell.trim() ? invalidCellReason(cell, cellTypes[ci], cellOptions[ci]) : null;
               if (requiredFlags[ci] && !cell.trim()) {
                 nextErrors[field.id] = `Bảng "${field.name}" còn dòng thiếu "${col}".`;
-              } else if (cell.trim() && !isValidCellValue(cell, cellTypes[ci])) {
-                const wanted = cellTypes[ci] === "int" ? "số nguyên" : "số";
-                nextErrors[field.id] = `Bảng "${field.name}": "${col}" phải là ${wanted}.`;
+              } else if (reason) {
+                nextErrors[field.id] = `Bảng "${field.name}": "${col}" ${reason}.`;
               }
             });
           }
@@ -1412,7 +1419,7 @@ function FieldControl({
       // add-post-approval-supplement Decision 3).
       const importTableFile = async (file: File) => {
         setTableImportStatus("Đang đọc file...");
-        const result = await parseTableImportFile(file, columns, field.tableColumnTypes);
+        const result = await parseTableImportFile(file, columns, field.tableColumnTypes, field.tableColumnOptions);
         if (tableFileInputRef.current) tableFileInputRef.current.value = "";
         if (!result.ok) {
           // Giữ đúng hành vi gốc: cột mới phát hiện được vẫn thêm vào cấu
@@ -1432,10 +1439,18 @@ function FieldControl({
         // Dòng cũ cần bù thêm ô trống cho (các) cột mới vừa thêm để số cột khớp.
         const paddedOldRows = keptOldRows.map((r) => finalColumns.map((_, i) => r[i] ?? ""));
         onChange([...paddedOldRows, ...newRows]);
-        setTableImportStatus(
+        const doneMessage =
           newHeaders.length > 0
             ? `Đã thêm ${newHeaders.length} cột mới + ${newRows.length} dòng dữ liệu.`
-            : `Đã thêm ${newRows.length} dòng dữ liệu.`,
+            : `Đã thêm ${newRows.length} dòng dữ liệu.`;
+        // Ô Ngày/Danh sách không hiểu được (07/10/2026): vẫn nhập nguyên chữ
+        // (ô hiện đỏ, bị chặn lúc gửi) và báo rõ dòng/cột cần sửa.
+        setTableImportStatus(
+          result.invalidCellCount > 0
+            ? `${doneMessage} Có ${result.invalidCellCount} ô cần sửa: ${result.invalidCells.join(" ")}${
+                result.invalidCellCount > result.invalidCells.length ? " …" : ""
+              }`
+            : doneMessage,
         );
       };
 
@@ -1483,6 +1498,8 @@ function FieldControl({
       }
 
       const columnTypes = resolveTableColumnTypes(columns, field.tableColumnTypes);
+      // Phương án cột Danh sách (Sếp duyệt demo 07/10/2026).
+      const columnOptions = resolveTableColumnOptions(columns, columnTypes, field.tableColumnOptions);
       // Độ rộng TỪNG cột — Admin tự chọn (Sếp chốt 01/10/2026, thay khung
       // min-110/max-240 áp đều mọi cột trước đây, vd cột "Ghi chú" không đủ
       // chỗ trong khi cột "Số lượng" lại thừa).
@@ -1543,13 +1560,16 @@ function FieldControl({
                       {columns.map((colName, colIndex) => {
                         const columnType = columnTypes[colIndex];
                         const cellValue = row[colIndex] ?? "";
-                        const invalid = cellValue.trim() !== "" && !isValidCellValue(cellValue, columnType);
+                        const invalid =
+                          cellValue.trim() !== "" &&
+                          !isValidCellValue(cellValue, columnType, columnOptions[colIndex]);
                         return (
                           <td key={colIndex} className="border-l border-gray-100 px-1 py-1 align-top">
                             <TableCellInput
                               value={cellValue}
                               columnType={columnType}
                               columnName={colName}
+                              options={columnOptions[colIndex]}
                               invalid={invalid}
                               onCommit={(next) => updateCell(rowIndex, colIndex, next)}
                             />
@@ -1685,12 +1705,15 @@ function TableCellInput({
   value,
   columnType,
   columnName,
+  options = [],
   invalid,
   onCommit,
 }: {
   value: string;
   columnType: TableColumnType;
   columnName: string;
+  /** Phương án của cột Danh sách — cột khác để trống. */
+  options?: string[];
   invalid: boolean;
   onCommit: (next: string) => void;
 }) {
@@ -1703,6 +1726,67 @@ function TableCellInput({
       ? "border-[var(--color-danger-red)] bg-red-50"
       : "border-transparent hover:border-[var(--color-border)] hover:bg-white"
   }`;
+
+  // Cột NGÀY / NGÀY GIỜ (Sếp duyệt demo 07/10/2026): ô ngày gốc của trình
+  // duyệt — điện thoại bật lịch hệ thống, không bị khung cuộn của bảng cắt
+  // như ô lịch tự vẽ. Giá trị đúng chuẩn lưu "YYYY-MM-DD"/"YYYY-MM-DDTHH:mm"
+  // (giờ VN như người chọn). Dữ liệu sai định dạng (vd nhập file) thì ô gốc
+  // hiện trống → hiện thêm chữ cũ bên dưới để người dùng biết phải chọn lại.
+  if (isDateColumnType(columnType)) {
+    const looksValid = isValidCellValue(value, columnType);
+    return (
+      <div>
+        <input
+          type={columnType === "date" ? "date" : "datetime-local"}
+          value={looksValid ? value : ""}
+          onChange={(e) => onCommit(e.target.value.slice(0, columnType === "date" ? 10 : 16))}
+          aria-label={columnName}
+          title={invalid ? `"${columnName}" ${invalidCellReason(value, columnType) ?? ""}` : undefined}
+          className={`${boxClass} h-9 min-w-0`}
+        />
+        {!looksValid && value.trim() !== "" && (
+          <p className="px-2 pt-0.5 text-[11.5px] text-[var(--color-danger-red)]">Chưa hiểu &quot;{value}&quot; — chọn lại ngày.</p>
+        )}
+      </div>
+    );
+  }
+
+  // Cột DANH SÁCH MỘT LỰA CHỌN: <select> gốc ("— Chọn —" + phương án admin khai).
+  // Giá trị cũ không còn trong danh sách vẫn hiện (đánh dấu đỏ) để không mất chữ.
+  if (columnType === "single_choice") {
+    const unknown = value.trim() !== "" && !options.includes(value);
+    return (
+      <select
+        value={value}
+        onChange={(e) => onCommit(e.target.value)}
+        aria-label={columnName}
+        title={invalid ? `"${columnName}" phải là một phương án trong danh sách` : undefined}
+        className={`${boxClass} h-9 min-w-0`}
+      >
+        <option value="">— Chọn —</option>
+        {unknown && <option value={value}>{value} (không có trong danh sách)</option>}
+        {options.map((o) => (
+          <option key={o} value={o}>
+            {o}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
+  // Cột DANH SÁCH NHIỀU LỰA CHỌN: nút hiện các phương án đã chọn dạng thẻ,
+  // bấm mở khung tick nhiều phương án — xem MultiChoiceCellInput.
+  if (columnType === "multiple_choice") {
+    return (
+      <MultiChoiceCellInput
+        value={value}
+        options={options}
+        columnName={columnName}
+        invalid={invalid}
+        onCommit={onCommit}
+      />
+    );
+  }
 
   if (!numeric) {
     // Cột VĂN BẢN: ô tự giãn, tự xuống dòng theo độ rộng cột, Enter xuống

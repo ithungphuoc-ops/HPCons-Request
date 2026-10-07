@@ -15,6 +15,8 @@ import { DECISION_NOTE_ACTIONS, sanitizeDecisionNoteFlags } from "@/lib/decision
 import { sanitizeAdjustmentFieldRules, sanitizeAdjustmentGuide } from "@/lib/adjustment-settings";
 import { resolveDateLeadTimeNumbers, validateDateLeadTimeNumbers } from "@/lib/date-lead-time";
 import {
+  isChoiceColumnType,
+  normalizeTableColumnOptionsForStorage,
   resolveTableColumnRequired,
   resolveTableColumnSum,
   resolveTableColumnTypes,
@@ -146,7 +148,30 @@ export async function PATCH(
           f.dataType === "table" || f.dataType === "base_table"
             ? resolveTableColumnSum(f.tableColumns ?? [], f.tableColumnTypes, f.tableColumnSum)
             : undefined,
+        // Phương án cột Danh sách (Sếp duyệt demo 07/10/2026) — chuỗi "Có,Không"
+        // cho từng cột, đúng cặp tableColumns, cột không phải danh sách để "".
+        tableColumnOptions:
+          f.dataType === "table" || f.dataType === "base_table"
+            ? normalizeTableColumnOptionsForStorage(f.tableColumns ?? [], f.tableColumnTypes, f.tableColumnOptions)
+            : undefined,
       }));
+
+      // Cột Danh sách phải có ít nhất 1 phương án — hộp thoại sửa trường đã
+      // chặn, máy chủ kiểm lại phòng ai gọi thẳng API.
+      for (const f of normalized) {
+        if (!f.tableColumnTypes || !f.tableColumnOptions) continue;
+        const emptyIndex = f.tableColumnTypes.findIndex(
+          (t, i) => isChoiceColumnType(t) && !f.tableColumnOptions?.[i],
+        );
+        if (emptyIndex >= 0) {
+          return NextResponse.json(
+            {
+              error: `Trường "${f.name}" — cột "${(f.tableColumns ?? [])[emptyIndex]}" kiểu Danh sách cần ít nhất 1 phương án.`,
+            },
+            { status: 400 },
+          );
+        }
+      }
 
       // Máy chủ kiểm lại 2 mốc — dùng CHUNG hàm với hộp thoại sửa trường, phòng
       // người gọi thẳng API né qua giao diện.

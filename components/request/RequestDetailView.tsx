@@ -89,11 +89,11 @@ import type {
 import {
   deserializeTableRows,
   formatCellForDisplay,
+  formatCellForReading,
   isNumericColumnType,
   resolveTableColumnSum,
   resolveTableColumnTypes,
   sumColumn,
-  trimCellTextEnd,
 } from "@/lib/table-field";
 import { formatFieldValue, formatValue } from "@/lib/request-field-format";
 import { loggedSupplementRows } from "@/lib/table-supplement-log";
@@ -2007,6 +2007,11 @@ function TableSupplementControl({
   // Các dòng ĐÃ bổ sung sau duyệt + giờ từng lần, suy từ dữ liệu server — xem
   // lib/table-supplement-log.ts (dùng chung với file Word/Excel tải về).
   const loggedRows = loggedSupplementRows(field.name, columns.length, allRows, history);
+  // Ô ngày/nhiều lựa chọn hiện đúng kiểu như bảng chính (07/10/2026); cột số
+  // vẫn hiện nguyên chữ đã lưu như trước (khối này xưa nay không định dạng số).
+  const types = resolveTableColumnTypes(columns, field.tableColumnTypes).map((t) =>
+    isNumericColumnType(t) ? "text" : t,
+  );
 
   // Chưa từng bổ sung dòng nào (đề xuất mới, hoặc nhóm không dùng bảng) →
   // không vẽ gì. Trước đây luôn vẽ vì còn phải chứa ô nhập.
@@ -2037,13 +2042,13 @@ function TableSupplementControl({
                   <td key={ci} className="min-w-[6rem] whitespace-pre-wrap px-2 py-1.5 align-top text-gray-700 [overflow-wrap:anywhere]">
                     {ci === entry.row.length - 1 ? (
                       <>
-                        <div>{trimCellTextEnd(cell) || "—"}</div>
+                        <div>{formatCellForReading(cell, types[ci]) || "—"}</div>
                         <div className="text-[12px] font-medium text-amber-600">
                           🕘 Cập nhật lúc {new Date(entry.at).toLocaleString("vi-VN")}
                         </div>
                       </>
                     ) : (
-                      trimCellTextEnd(cell) || "—"
+                      formatCellForReading(cell, types[ci]) || "—"
                     )}
                   </td>
                 ))}
@@ -2132,10 +2137,10 @@ function TableValueView({
                         "min-w-[6rem] whitespace-pre-wrap [overflow-wrap:anywhere]"
                   }`}
                 >
-                  {/* Cột văn bản: bỏ dòng trắng thừa cuối ô (07/10/2026). */}
-                  {(isNumericColumnType(types[colIndex])
-                    ? formatCellForDisplay(row[colIndex] ?? "", types[colIndex])
-                    : trimCellTextEnd(row[colIndex] ?? "")) || "—"}
+                  {/* Cột văn bản: bỏ dòng trắng thừa cuối ô (07/10/2026). Cột
+                      ngày hiện dd/MM/yyyy, nhiều lựa chọn nối "A, B" — xem
+                      formatCellForReading. */}
+                  {formatCellForReading(row[colIndex] ?? "", types[colIndex]) || "—"}
                 </td>
               ))}
             </tr>

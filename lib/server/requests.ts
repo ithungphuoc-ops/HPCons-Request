@@ -31,8 +31,11 @@ import { canManageGroupsAtAppScope, type Role } from "@/lib/permissions";
 import { isAdjustmentReviewer, pendingAdjustmentFiles } from "@/lib/adjustment-settings";
 import {
   deserializeTableRows,
+  invalidCellReason,
+  isChoiceColumnType,
+  isDateColumnType,
   isNumericColumnType,
-  isValidCellValue,
+  resolveTableColumnOptions,
   resolveTableColumnRequired,
   resolveTableColumnTypes,
 } from "@/lib/table-field";
@@ -181,15 +184,27 @@ export function findInvalidTableRows(
     // tên "Số lượng". Nhóm cũ chưa khai kiểu → resolveTableColumnTypes trả về
     // đúng 1 cột số là "Số lượng", y hệt hành vi trước đây.
     const columnTypes = resolveTableColumnTypes(columns, field.tableColumnTypes);
+    // Cột Ngày/Danh sách (07/10/2026) cũng được kiểm định dạng như cột số:
+    // ngày phải đúng "YYYY-MM-DD"/"YYYY-MM-DDTHH:mm", danh sách phải nằm
+    // trong phương án admin khai.
+    const columnOptions = resolveTableColumnOptions(columns, columnTypes, field.tableColumnOptions);
     const checkedColumns = columns
-      .map((name, index) => ({ name, index, type: columnTypes[index], required: requiredFlags[index] }))
-      .filter((c) => c.required || isNumericColumnType(c.type));
+      .map((name, index) => ({
+        name,
+        index,
+        type: columnTypes[index],
+        options: columnOptions[index],
+        required: requiredFlags[index],
+      }))
+      .filter(
+        (c) => c.required || isNumericColumnType(c.type) || isDateColumnType(c.type) || isChoiceColumnType(c.type),
+      );
     if (checkedColumns.length === 0) continue;
 
     const rows = deserializeTableRows(values?.[field.id]);
     rows.forEach((row, rowIndex) => {
       if (!row.some((cell) => cell?.trim())) return;
-      for (const { name, index, type, required } of checkedColumns) {
+      for (const { name, index, type, options, required } of checkedColumns) {
         const raw = row[index]?.trim() ?? "";
         // Ô trống: chỉ lỗi khi cột được tick bắt buộc; cột số không bắt buộc
         // (đơn giá, thành tiền...) bỏ trống vẫn được.
@@ -199,12 +214,14 @@ export function findInvalidTableRows(
           }
           continue;
         }
-        if (isNumericColumnType(type) && !isValidCellValue(raw, type)) {
-          const wanted = type === "int" ? "số nguyên" : "số";
+        // Câu báo lỗi dùng chung với trang gửi (invalidCellReason) — cột số
+        // giữ nguyên câu cũ "phải là số nguyên"/"phải là số".
+        const reason = invalidCellReason(raw, type, options);
+        if (reason) {
           issues.push({
             field,
             rowIndex,
-            message: `Dòng ${rowIndex + 1} của "${field.name}": "${name}" phải là ${wanted} (đang nhập "${raw}").`,
+            message: `Dòng ${rowIndex + 1} của "${field.name}": "${name}" ${reason} (đang nhập "${raw}").`,
           });
         }
       }
