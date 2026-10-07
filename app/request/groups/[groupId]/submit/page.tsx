@@ -20,8 +20,10 @@ import {
   filterNumericInput,
   formatCellForDisplay,
   invalidCellReason,
+  isDateCellShape,
   isDateColumnType,
   isNumericColumnType,
+  isTableCellEmpty,
   isValidCellValue,
   normalizeRawForStorage,
   numericTypeForFieldDataType,
@@ -560,8 +562,9 @@ export default function SubmitRequestPage() {
             if (!row.some((cell) => cell?.trim())) continue;
             columns.forEach((col, ci) => {
               const cell = row[ci] ?? "";
-              const reason = cell.trim() ? invalidCellReason(cell, cellTypes[ci], cellOptions[ci]) : null;
-              if (requiredFlags[ci] && !cell.trim()) {
+              const empty = isTableCellEmpty(cell, cellTypes[ci]);
+              const reason = empty ? null : invalidCellReason(cell, cellTypes[ci], cellOptions[ci]);
+              if (requiredFlags[ci] && empty) {
                 nextErrors[field.id] = `Bảng "${field.name}" còn dòng thiếu "${col}".`;
               } else if (reason) {
                 nextErrors[field.id] = `Bảng "${field.name}": "${col}" ${reason}.`;
@@ -1733,7 +1736,11 @@ function TableCellInput({
   // (giờ VN như người chọn). Dữ liệu sai định dạng (vd nhập file) thì ô gốc
   // hiện trống → hiện thêm chữ cũ bên dưới để người dùng biết phải chọn lại.
   if (isDateColumnType(columnType)) {
-    const looksValid = isValidCellValue(value, columnType);
+    // Chỉ cần ĐÚNG HÌNH DẠNG ("dddd-dd-dd[Tdd:dd]") để giữ giá trị trong ô —
+    // không đòi ngày có thật/năm ≥1000: lúc gõ năm bằng bàn phím, Chrome bắn
+    // onChange "0002-10-07", đòi năm hợp lệ ở đây sẽ xoá trắng ô giữa chừng
+    // (review PR #90). Ngày có thật hay không do kiểm tra lúc gửi lo.
+    const looksValid = isDateCellShape(value, columnType);
     return (
       <div>
         <input

@@ -35,6 +35,7 @@ import {
   isChoiceColumnType,
   isDateColumnType,
   isNumericColumnType,
+  isTableCellEmpty,
   resolveTableColumnOptions,
   resolveTableColumnRequired,
   resolveTableColumnTypes,
@@ -208,7 +209,8 @@ export function findInvalidTableRows(
         const raw = row[index]?.trim() ?? "";
         // Ô trống: chỉ lỗi khi cột được tick bắt buộc; cột số không bắt buộc
         // (đơn giá, thành tiền...) bỏ trống vẫn được.
-        if (!raw) {
+        // Ô nhiều lựa chọn chỉ có "," cũng là trống (isTableCellEmpty).
+        if (isTableCellEmpty(raw, type)) {
           if (required) {
             issues.push({ field, rowIndex, message: `Dòng ${rowIndex + 1} của "${field.name}": "${name}" chưa nhập.` });
           }

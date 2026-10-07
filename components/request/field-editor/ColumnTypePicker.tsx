@@ -48,7 +48,7 @@ export default function ColumnTypePicker({
         ref={buttonRef}
         type="button"
         aria-label={ariaLabel}
-        aria-haspopup="listbox"
+        aria-haspopup="dialog"
         aria-expanded={open}
         title={TABLE_COLUMN_TYPE_LABELS[value]}
         onClick={() => (open ? close() : setOpen(true))}
@@ -57,7 +57,13 @@ export default function ColumnTypePicker({
         <span className="min-w-0 truncate">{TABLE_COLUMN_TYPE_LABELS[value]}</span>
         <ChevronDown size={14} className="shrink-0 text-gray-400" />
       </button>
-      <AnchoredPopover anchorRef={buttonRef} open={open} onClose={close} minWidth={250} ariaLabel={ariaLabel}>
+      <AnchoredPopover
+        anchorRef={buttonRef}
+        open={open}
+        onClose={close}
+        minWidth={250}
+        ariaLabel={`Chọn ${ariaLabel.charAt(0).toLowerCase()}${ariaLabel.slice(1)}`}
+      >
         <div className="relative mb-1 shrink-0">
           <Search size={13} className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
@@ -76,7 +82,7 @@ export default function ColumnTypePicker({
             className="h-8 w-full rounded border border-[var(--color-border)] pl-7 pr-2 text-[13px] focus:border-[var(--color-action-blue)] focus:outline-none"
           />
         </div>
-        <div role="listbox" aria-label={ariaLabel} className="min-h-0 flex-1 overflow-y-auto">
+        <div role="listbox" aria-label="Các kiểu dữ liệu" className="min-h-0 flex-1 overflow-y-auto">
           {groups.length === 0 && <p className="px-2 py-2 text-[12.5px] text-gray-400">Không có kiểu nào khớp.</p>}
           {groups.map((g) => (
             <div key={g.label}>

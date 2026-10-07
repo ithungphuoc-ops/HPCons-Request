@@ -972,6 +972,11 @@ export default function AddFieldModal() {
                                   Gõ các phương án cách nhau bằng dấu phẩy, ví dụ: <b>Có,Không</b>. Khoảng trắng hai
                                   đầu tự bỏ; phương án trùng tự gộp. Một phương án không được chứa dấu phẩy.
                                 </p>
+                                <p className="text-[11.5px] leading-relaxed text-amber-700">
+                                  Đổi/xoá phương án hoặc đổi kiểu của cột đã có dữ liệu: đề xuất đang nháp hoặc bị trả
+                                  về phải chọn lại ô đó trước khi gửi lại; đề xuất đã gửi giữ nguyên dữ liệu và cách hiển
+                                  thị cũ.
+                                </p>
                                 {parsedOptions.length > 0 && (
                                   <div className="flex flex-wrap items-center gap-1 text-[11.5px] text-gray-500">
                                     <span>{parsedOptions.length} phương án:</span>

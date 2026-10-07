@@ -81,6 +81,17 @@ describe("findInvalidTableRows — cột Ngày/Danh sách", () => {
     expect(issues.map((i) => i.message)).toEqual(['Dòng 1 của "Danh sách nhân sự": "Có dùng NAS không?" chưa nhập.']);
   });
 
+  it('ô nhiều lựa chọn chỉ có "," ở cột bắt buộc → coi là chưa nhập', () => {
+    const field: ProposalField = {
+      ...staffField,
+      tableColumnRequired: [true, true, false, true, true],
+    };
+    const issues = findInvalidTableRows([field], {
+      f1: rows([["Nguyễn Văn A", "1995-04-12", "", "Có", " , "]]),
+    });
+    expect(issues.map((i) => i.message)).toEqual(['Dòng 1 của "Danh sách nhân sự": "Phần mềm cần cấp" chưa nhập.']);
+  });
+
   it("nhóm cũ (không có cột kiểu mới) → câu lỗi số y như trước", () => {
     const oldField: ProposalField = {
       id: "f2",

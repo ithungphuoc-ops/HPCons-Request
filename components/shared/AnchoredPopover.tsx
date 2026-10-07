@@ -115,9 +115,22 @@ export default function AnchoredPopover({
       if (popoverRef.current?.contains(target) || anchorRef.current?.contains(target)) return;
       onCloseRef.current();
     };
+    // Tab từ chính nút mở sang ô khác (focus chưa từng vào khung) cũng đóng.
+    const anchor = anchorRef.current;
+    const onAnchorFocusOut = (event: FocusEvent) => {
+      const next = event.relatedTarget as Node | null;
+      if (!next) return;
+      // closest(): lúc khung vừa mount, ô tự focus có thể chạy trước khi ref
+      // kịp gắn — dò theo thuộc tính để không tự đóng ngay khi vừa mở.
+      if (popoverRef.current?.contains(next) || anchor?.contains(next)) return;
+      if (next instanceof Element && next.closest("[data-anchored-popover]")) return;
+      onCloseRef.current();
+    };
+    anchor?.addEventListener("focusout", onAnchorFocusOut);
     window.addEventListener("keydown", onKeyDown, true);
     window.addEventListener("pointerdown", onPointerDown, true);
     return () => {
+      anchor?.removeEventListener("focusout", onAnchorFocusOut);
       window.removeEventListener("keydown", onKeyDown, true);
       window.removeEventListener("pointerdown", onPointerDown, true);
     };
@@ -128,8 +141,18 @@ export default function AnchoredPopover({
   return createPortal(
     <div
       ref={popoverRef}
+      data-anchored-popover=""
       role="dialog"
       aria-label={ariaLabel}
+      // Tab ra khỏi khung (sang ô khác) thì đóng — relatedTarget null (bấm vào
+      // chỗ không nhận focus trong khung) thì KHÔNG đóng, bấm ra ngoài đã có
+      // pointerdown lo.
+      onBlur={(event) => {
+        const next = event.relatedTarget as Node | null;
+        if (!next) return;
+        if (popoverRef.current?.contains(next) || anchorRef.current?.contains(next)) return;
+        onCloseRef.current();
+      }}
       style={style}
       // z-[60]: trên Modal (z-50).
       className="z-[60] flex flex-col overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-card-bg,#fff)] p-1.5 text-[13px] text-gray-800 shadow-xl"

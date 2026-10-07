@@ -8,6 +8,8 @@ import {
   formatCellForReading,
   invalidCellReason,
   isNumericColumnType,
+  isDateCellShape,
+  isTableCellEmpty,
   isValidCellValue,
   joinMultiChoiceCell,
   normalizeChoiceCell,
@@ -135,7 +137,10 @@ describe("phương án cột Danh sách", () => {
     expect(normalizeChoiceCell("  có ", "single_choice", opts)).toBe("Có");
     expect(normalizeChoiceCell("Lạ", "single_choice", opts)).toBe("Lạ");
     const sw = ["Base", "Email công ty", "NAS"];
-    expect(normalizeChoiceCell("nas; base", "multiple_choice", sw)).toBe("Base, NAS");
+    expect(normalizeChoiceCell("nas, base", "multiple_choice", sw)).toBe("Base, NAS");
+    // Phương án được chứa ";" (chỉ cấm dấu phẩy) — không tách theo ";".
+    expect(normalizeChoiceCell("ca 1; ca 2, nas", "multiple_choice", ["Ca 1; ca 2", "NAS"])).toBe("Ca 1; ca 2, NAS");
+    expect(parseChoiceOptionsText("Sáng; chiều,Tối")).toEqual(["Sáng; chiều", "Tối"]);
     expect(normalizeChoiceCell("NAS\nEMAIL CÔNG TY", "multiple_choice", sw)).toBe("Email công ty, NAS");
     expect(normalizeChoiceCell("NAS, Lạ", "multiple_choice", sw)).toBe("NAS, Lạ");
   });
@@ -260,5 +265,58 @@ describe("nhập file Excel vào bảng có cột kiểu mới", () => {
     expect(result.newRows[0]).toEqual(["Nguyễn Văn A", "2026-10-07", "Có", "Base, NAS"]);
     expect(result.newRows[1]).toEqual(["Trần Thị B", "hôm qua", "Không", "Lạ"]);
     expect(result.invalidCellCount).toBe(2);
+  });
+});
+
+describe("sửa theo review PR #90", () => {
+  it("resolveTableColumnTypes không nhận thuộc tính kế thừa ('constructor', 'toString')", () => {
+    expect(
+      resolveTableColumnTypes(["A", "Số lượng"], ["constructor", "toString"] as unknown as TableColumnType[]),
+    ).toEqual(["text", "decimal"]);
+  });
+
+  it("isDateCellShape: chỉ kiểm hình dạng — '0002-10-07' (đang gõ năm) vẫn giữ trong ô", () => {
+    expect(isDateCellShape("0002-10-07", "date")).toBe(true);
+    expect(isValidCellValue("0002-10-07", "date")).toBe(false);
+    expect(isDateCellShape("0020-10-07T08:30", "datetime")).toBe(true);
+    expect(isDateCellShape("07/10/2026", "date")).toBe(false);
+    expect(isDateCellShape("", "date")).toBe(false);
+  });
+
+  it("isTableCellEmpty: ô nhiều lựa chọn chỉ có dấu phẩy là trống", () => {
+    expect(isTableCellEmpty(",", "multiple_choice")).toBe(true);
+    expect(isTableCellEmpty(" , ", "multiple_choice")).toBe(true);
+    expect(isTableCellEmpty("NAS", "multiple_choice")).toBe(false);
+    expect(isTableCellEmpty(",", "text")).toBe(false);
+    expect(isTableCellEmpty("  ", "text")).toBe(true);
+  });
+
+  it("số seri Excel: chỉ khi ô nguồn là ô số và ≥ 3000", () => {
+    expect(parseImportedCell("2026", "date", [], false)).toBe("2026");
+    expect(parseImportedCell("2026", "date", [], true)).toBe("2026");
+    expect(parseImportedCell("46302", "date", [], false)).toBe("46302");
+    expect(parseImportedCell("46302", "date", [], true)).toBe("2026-10-07");
+  });
+
+  async function importCsv(text: string, cols: string[], types: TableColumnType[]) {
+    const bytes = new TextEncoder().encode(text);
+    const file = { arrayBuffer: async () => bytes.buffer } as unknown as File;
+    return parseTableImportFile(file, cols, types);
+  }
+
+  it("CSV: '07/10/2026' là 7 tháng 10 (không đảo ngày-tháng kiểu Mỹ), cột số vẫn bóc '1,234'", async () => {
+    const result = await importCsv(
+      // Tiêu đề không dấu: test này chỉ nhắm cách đọc NGÀY trong CSV.
+      'Ten,Ngay,Thanh tien\nA,07/10/2026,"1,234"\nB,25/10/2026,5\nC,2026,7\n',
+      ["Ten", "Ngay", "Thanh tien"],
+      ["text", "date", "money"],
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.newRows[0]).toEqual(["A", "2026-10-07", "1234"]);
+    expect(result.newRows[1]).toEqual(["B", "2026-10-25", "5"]);
+    // "2026" không bị hiểu thành 18/07/1905 — giữ nguyên để báo đỏ.
+    expect(result.newRows[2][1]).toBe("2026");
+    expect(result.invalidCellCount).toBe(1);
   });
 });

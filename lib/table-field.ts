@@ -206,7 +206,11 @@ export function resolveTableColumnTypes(
 ): TableColumnType[] {
   return columns.map((name, i) => {
     const declared = types?.[i];
-    if (declared && declared in TABLE_COLUMN_TYPE_LABELS) return declared;
+    // hasOwnProperty, KHÔNG dùng `in`: "constructor"/"toString" đi qua `in`
+    // (thuộc tính kế thừa của Object) — dữ liệu rác lọt thành "kiểu cột".
+    if (typeof declared === "string" && Object.prototype.hasOwnProperty.call(TABLE_COLUMN_TYPE_LABELS, declared)) {
+      return declared;
+    }
     return isQuantityColumn(name) ? "decimal" : "text";
   });
 }
@@ -270,6 +274,16 @@ export function normalizeTableColumnOptionsForStorage(
   return resolveTableColumnOptions(columns, types, saved).map((options) => options.join(","));
 }
 
+/**
+ * Ô coi như TRỐNG chưa — dùng cho luật "bắt buộc". Ô nhiều lựa chọn chỉ có
+ * dấu phẩy/khoảng trắng ("," hay " , ", gọi thẳng API) tách ra không còn
+ * phương án nào → trống, không được lách qua cột bắt buộc.
+ */
+export function isTableCellEmpty(raw: string | undefined | null, type: TableColumnType | undefined): boolean {
+  if (type === "multiple_choice") return splitMultiChoiceCell(raw).length === 0;
+  return String(raw ?? "").trim() === "";
+}
+
 /** Tách ô "nhiều lựa chọn" đã lưu ("Base, NAS") thành từng phương án. */
 export function splitMultiChoiceCell(raw: string | undefined | null): string[] {
   return String(raw ?? "")
@@ -311,9 +325,12 @@ export function normalizeChoiceCell(input: string, type: TableColumnType, option
   const text = String(input ?? "").trim();
   if (!text || options.length === 0) return text;
   if (type === "single_choice") return matchChoiceOption(text, options) ?? text;
-  // Nhiều lựa chọn trong file Excel hay được ngăn bằng phẩy, chấm phẩy hoặc xuống dòng.
+  // Nhiều lựa chọn ngăn bằng dấu phẩy (đúng quy ước lưu/khai phương án),
+  // chấp nhận thêm xuống dòng (Alt+Enter trong ô Excel). KHÔNG tách theo ";"
+  // — phương án được phép chứa ";" (chỉ cấm dấu phẩy), tách theo ";" sẽ
+  // làm phương án đó không bao giờ nhập được.
   const parts = text
-    .split(/[,;\n]/)
+    .split(/[,\n]/)
     .map((s) => s.trim())
     .filter(Boolean);
   const matched = parts.map((p) => matchChoiceOption(p, options));
@@ -349,6 +366,12 @@ function isoTime(h: number, min: number): string | null {
   return h >= 0 && h <= 23 && min >= 0 && min <= 59 ? `${pad2(h)}:${pad2(min)}` : null;
 }
 
+/** Chỉ kiểm HÌNH DẠNG (chưa kiểm ngày có thật) — để ô ngày đang gõ dở
+ * ("0002-10-07" khi gõ năm) không bị xoá trắng. */
+export function isDateCellShape(raw: string, type: "date" | "datetime"): boolean {
+  return (type === "date" ? ISO_DATE_RE : ISO_DATETIME_RE).test(String(raw ?? "").trim());
+}
+
 /** Ô ngày / ngày giờ đã lưu có đúng định dạng + là ngày có thật không. */
 export function isValidDateCellValue(raw: string, type: "date" | "datetime"): boolean {
   const value = String(raw ?? "").trim();
@@ -365,8 +388,12 @@ export function isValidDateCellValue(raw: string, type: "date" | "datetime"): bo
  * đã tính sẵn lỗi năm nhuận 1900 của Excel. Tính bằng UTC thuần để không
  * dính múi giờ máy chạy.
  */
+/** Số seri nhỏ hơn mốc này (≈ năm 1908) không coi là ngày — "2026" gõ trong
+ * ô ngày là năm chứ không phải 18/07/1905. */
+const MIN_EXCEL_DATE_SERIAL = 3000;
+
 function excelSerialToParts(serial: number): { y: number; m: number; d: number; h: number; min: number } | null {
-  if (!Number.isFinite(serial) || serial < 1 || serial > 2958465) return null;
+  if (!Number.isFinite(serial) || serial < MIN_EXCEL_DATE_SERIAL || serial > 2958465) return null;
   const totalMinutes = Math.round(serial * 24 * 60);
   const dt = new Date(Date.UTC(1899, 11, 30) + totalMinutes * 60 * 1000);
   return {
@@ -383,7 +410,8 @@ function excelSerialToParts(serial: number): { y: number; m: number; d: number; 
  *   - đã đúng chuẩn lưu ("2026-10-07", "2026-10-07T08:30"; có giây thì bỏ giây),
  *   - kiểu Việt "07/10/2026", "7/10/2026", "07-10-2026", "07.10.2026"
  *     (ngày giờ thêm " 08:30"),
- *   - số ngày kiểu Excel (chỉ khi `allowExcelSerial` — lúc nhập file).
+ *   - số ngày kiểu Excel (chỉ khi `allowExcelSerial` — lúc nhập file VÀ ô
+ *     trong file là ô SỐ, xem `parseImportedCell`; tối thiểu 3000).
  * Không hiểu được → trả nguyên chữ đã trim (để ô hiện đỏ + bị chặn lúc gửi,
  * không lặng lẽ xoá chữ người dùng gõ).
  */
@@ -746,9 +774,13 @@ export async function parseTableImportFile(
   try {
     const XLSX = await import("xlsx");
     const buffer = await file.arrayBuffer();
-    const wb = XLSX.read(buffer, { type: "array" });
+    // dateNF "dd/mm/yyyy": file CSV gõ "07/10/2026" được SheetJS tự hiểu là
+    // ngày — mặc định theo kiểu Mỹ (tháng/ngày) nên thành 10/07/2026, lặng lẽ
+    // đảo ngày-tháng (review PR #90). Báo đúng định dạng Việt để ra 07/10.
+    // KHÔNG dùng raw:true (làm hỏng bóc số "1,234" ở cột số).
+    const wb = XLSX.read(buffer, { type: "array", dateNF: "dd/mm/yyyy" });
     const sheet = wb.Sheets[wb.SheetNames[0]];
-    const rowsFromFile = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1, defval: "" });
+    const rowsFromFile = XLSX.utils.sheet_to_json<(string | number)[]>(sheet, { header: 1, defval: "" });
     const [headerRow, ...dataRows] = rowsFromFile;
     if (!headerRow || headerRow.every((h) => !String(h).trim())) {
       return { ok: false, error: "File không có dòng tiêu đề hợp lệ." };
@@ -772,8 +804,13 @@ export async function parseTableImportFile(
     const newRows = filledDataRows.map((r) =>
       finalColumns.map((col, colIndex) => {
         const fileColIndex = fileHeaders.findIndex((h) => normalizeColumnName(h) === normalizeColumnName(col));
-        const cell = fileColIndex >= 0 ? String(r[fileColIndex] ?? "") : "";
-        return parseImportedCell(cell, finalTypes[colIndex], finalOptions[colIndex]);
+        const source = fileColIndex >= 0 ? r[fileColIndex] : "";
+        return parseImportedCell(
+          String(source ?? ""),
+          finalTypes[colIndex],
+          finalOptions[colIndex],
+          typeof source === "number",
+        );
       }),
     );
     const { messages: invalidCells, count: invalidCellCount } = describeInvalidImportedCells(
@@ -794,8 +831,15 @@ export async function parseTableImportFile(
  * Excel (ô định dạng ngày trong .xlsx đọc ra là số); cột danh sách khớp
  * phương án không phân biệt hoa thường (07/10/2026). Cột số/chữ: y như cũ.
  */
-export function parseImportedCell(cell: string, type: TableColumnType, options: string[] = []): string {
-  if (isDateColumnType(type)) return parseDateCellInput(cell, type, true);
+export function parseImportedCell(
+  cell: string,
+  type: TableColumnType,
+  options: string[] = [],
+  /** Ô trong file là ô SỐ (ô ngày Excel / CSV ngày đã được SheetJS hiểu) —
+   * chỉ khi đó mới đọc số như số seri ngày; "2026" gõ dạng chữ thì không. */
+  sourceIsNumber = false,
+): string {
+  if (isDateColumnType(type)) return parseDateCellInput(cell, type, sourceIsNumber);
   if (isChoiceColumnType(type)) return normalizeChoiceCell(cell, type, options);
   return parseCellToRaw(cell, type);
 }

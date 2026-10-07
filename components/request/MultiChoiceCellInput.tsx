@@ -45,7 +45,7 @@ export default function MultiChoiceCellInput({
         ref={buttonRef}
         type="button"
         aria-label={columnName}
-        aria-haspopup="listbox"
+        aria-haspopup="dialog"
         aria-expanded={open}
         title={invalid ? `"${columnName}" chỉ được chọn các phương án trong danh sách` : undefined}
         onClick={() => setOpen((v) => !v)}
@@ -83,7 +83,12 @@ export default function MultiChoiceCellInput({
         maxHeight={280}
         ariaLabel={`Chọn ${columnName}`}
       >
-        <div role="listbox" aria-multiselectable="true" className="min-h-0 flex-1 overflow-y-auto">
+        <div
+          role="listbox"
+          aria-multiselectable="true"
+          aria-label={`Phương án ${columnName}`}
+          className="min-h-0 flex-1 overflow-y-auto"
+        >
           {choices.length === 0 && (
             <p className="px-2 py-2 text-[12.5px] text-gray-400">Cột này chưa có phương án nào.</p>
           )}
