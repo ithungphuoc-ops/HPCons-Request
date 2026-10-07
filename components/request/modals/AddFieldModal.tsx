@@ -782,7 +782,7 @@ export default function AddFieldModal() {
                       {tableColumns.length > 0 && (
                         <div className="hidden items-center gap-2 text-[10.5px] font-semibold uppercase tracking-wide text-gray-400 lg:flex">
                           <span className="min-w-[140px] flex-1">Tên cột</span>
-                          <span className="w-[170px] shrink-0">Kiểu dữ liệu</span>
+                          <span className="w-[210px] shrink-0">Kiểu dữ liệu</span>
                           <span className="w-[148px] shrink-0">Độ rộng (px)</span>
                           <span
                             className="w-[60px] shrink-0 whitespace-nowrap text-center"
@@ -819,10 +819,10 @@ export default function AddFieldModal() {
                                 placeholder={`Tên cột ${index + 1}`}
                               />
                               {/* Ô chọn kiểu có "Lọc nhanh" + chia nhóm (Sếp duyệt demo
-                                  07/10/2026) — thay <select> thường. Rộng cố định 170px
+                                  07/10/2026) — thay <select> thường. Rộng cố định 210px
                                   như ô cũ để không bóp ô tên cột bên cạnh. */}
                               <ColumnTypePicker
-                                className="w-[170px] shrink-0"
+                                className="w-[210px] shrink-0"
                                 value={columnType}
                                 ariaLabel={`Kiểu dữ liệu cột ${index + 1}`}
                                 onChange={(nextType) => {
