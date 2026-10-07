@@ -1,6 +1,6 @@
 import { createSignedReadUrl } from "@/lib/r2";
 import { TITLE_FIELD_CODES } from "@/lib/request-title";
-import { deserializeTableRows } from "@/lib/table-field";
+import { deserializeTableRows, flattenLineBreaks } from "@/lib/table-field";
 import type { ProposalField, RequestAttachment, RequestInstance } from "@/lib/types";
 
 /**
@@ -293,11 +293,14 @@ export async function trichXuatPayloadThuMua(request: RequestInstance): Promise<
   const rows = deserializeTableRows(request.values[detailField.id]);
   const vatTu: ThuMuaVatTu[] = rows
     .map((r) => ({
-      tenVatTu: (r[idxTen] ?? "").trim(),
-      quyCach: idxQuyCach >= 0 ? r[idxQuyCach]?.trim() || undefined : undefined,
-      dvt: idxDvt >= 0 ? (r[idxDvt] ?? "").trim() : "",
+      // Ô bảng được xuống dòng trong ô (07/10/2026) — app nhận chỉ hiện 1
+      // dòng + so khớp tên vật tư theo chuỗi, nên gộp xuống dòng thành 1 dấu
+      // cách khi gửi đi (dữ liệu gốc trong Đề xuất giữ nguyên).
+      tenVatTu: flattenLineBreaks(r[idxTen] ?? ""),
+      quyCach: idxQuyCach >= 0 ? flattenLineBreaks(r[idxQuyCach] ?? "") || undefined : undefined,
+      dvt: idxDvt >= 0 ? flattenLineBreaks(r[idxDvt] ?? "") : "",
       soLuong: Number(r[idxSL]) || 0,
-      mucDichSuDung: idxMucDich >= 0 ? r[idxMucDich]?.trim() || undefined : undefined,
+      mucDichSuDung: idxMucDich >= 0 ? flattenLineBreaks(r[idxMucDich] ?? "") || undefined : undefined,
     }))
     .filter((v) => v.tenVatTu && v.soLuong > 0);
   if (vatTu.length === 0) return null;

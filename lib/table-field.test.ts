@@ -1,15 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
   filterNumericInput,
+  flattenLineBreaks,
   formatCellForDisplay,
   isNumericColumnType,
   isValidCellValue,
+  normalizeLineBreaks,
   parseCellToRaw,
   resolveTableColumnRequired,
   resolveTableColumnSum,
   resolveTableColumnTypes,
   resolveTableColumnWidths,
   sumColumn,
+  trimCellTextEnd,
 } from "./table-field";
 
 // Kiểu dữ liệu cột bảng — Sếp chốt 13/09/2026. Nguyên tắc xuyên suốt: ô LƯU SỐ
@@ -230,5 +233,35 @@ describe("resolveTableColumnSum", () => {
 
   it("lệch độ dài → cột thiếu tick suy theo luật cũ", () => {
     expect(resolveTableColumnSum(["Tiền", "Tiền 2"], ["money", "money"], [false])).toEqual([false, true]);
+  });
+});
+
+describe("normalizeLineBreaks — ô văn bản xuống dòng trong ô (07/10/2026)", () => {
+  it("đưa \r\n và \r lẻ về \n, giữ nguyên \n", () => {
+    expect(normalizeLineBreaks("A\r\nB\rC\nD")).toBe("A\nB\nC\nD");
+  });
+  it("null/undefined → chuỗi rỗng, số cũ → chuỗi", () => {
+    expect(normalizeLineBreaks(undefined as unknown as string)).toBe("");
+    expect(normalizeLineBreaks(null as unknown as string)).toBe("");
+    expect(normalizeLineBreaks(12 as unknown as string)).toBe("12");
+  });
+  it("parseCellToRaw cột văn bản (nhập từ Excel Alt+Enter) giữ xuống dòng dạng \n", () => {
+    expect(parseCellToRaw("Thép D10\r\nloại 1", "text")).toBe("Thép D10\nloại 1");
+  });
+  it("cột số: xuống dòng lẫn vào bị bóc đi như khoảng trắng", () => {
+    expect(parseCellToRaw("1,234\n", "money")).toBe("1234");
+  });
+});
+
+describe("trimCellTextEnd / flattenLineBreaks (07/10/2026)", () => {
+  it("trimCellTextEnd: bỏ xuống dòng/khoảng trắng thừa CUỐI, giữ xuống dòng giữa + thụt đầu dòng", () => {
+    expect(trimCellTextEnd("Dòng 1\n  - ý con\n\n\n  ")).toBe("Dòng 1\n  - ý con");
+    expect(trimCellTextEnd("  Thụt đầu\r\n")).toBe("  Thụt đầu");
+    expect(trimCellTextEnd("\n\n")).toBe("");
+  });
+  it("flattenLineBreaks: gộp xuống dòng thành 1 dấu cách, bỏ khoảng trắng 2 đầu", () => {
+    expect(flattenLineBreaks(" Thép D10 \r\n\n Hòa Phát\n")).toBe("Thép D10 Hòa Phát");
+    expect(flattenLineBreaks("Không xuống dòng")).toBe("Không xuống dòng");
+    expect(flattenLineBreaks(undefined as unknown as string)).toBe("");
   });
 });

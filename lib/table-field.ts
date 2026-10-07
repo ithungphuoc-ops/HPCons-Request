@@ -227,6 +227,37 @@ export function filterNumericInput(input: string, type: TableColumnType): string
 }
 
 /**
+ * Đưa mọi kiểu xuống dòng về `\n`. Ô văn bản của bảng cho phép xuống dòng
+ * trong ô (Sếp duyệt demo 07/10/2026 "o-bang-tu-xuong-dong"); file Excel/CSV
+ * của Windows có thể mang `\r\n` hoặc `\r` lẻ — để nguyên thì bản xuất
+ * Word/Excel dính ký tự `\r` lạ.
+ */
+export function normalizeLineBreaks(text: string): string {
+  // Dữ liệu cũ có thể lưu số/null trong ô → đổi về chuỗi thay vì nuốt mất.
+  if (text === null || text === undefined) return "";
+  return String(text).replace(/\r\n?/g, "\n");
+}
+
+/**
+ * Bỏ khoảng trắng/xuống dòng THỪA ở CUỐI ô văn bản (Sếp duyệt 07/10/2026) —
+ * Enter lỡ tay ở cuối ô không sinh dòng trắng khi lưu/hiển thị/in/xuất.
+ * Giữ nguyên xuống dòng ở giữa và khoảng trắng đầu dòng (thụt lề người gõ).
+ */
+export function trimCellTextEnd(text: string): string {
+  return normalizeLineBreaks(text).trimEnd();
+}
+
+/**
+ * Gộp xuống dòng thành 1 dấu cách + bỏ khoảng trắng 2 đầu — dùng khi GỬI
+ * dữ liệu ô bảng sang app khác (Thu mua/Kho) vốn chỉ hiển thị 1 dòng và so
+ * khớp tên vật tư theo chuỗi (Sếp chốt 07/10/2026). Dữ liệu gốc trong app Đề
+ * xuất vẫn giữ nguyên xuống dòng.
+ */
+export function flattenLineBreaks(text: string): string {
+  return normalizeLineBreaks(text).replace(/\s*\n+\s*/g, " ").trim();
+}
+
+/**
  * Bóc mọi thứ người dùng gõ/dán về SỐ THÔ: bỏ khoảng trắng, bỏ đuôi VNĐ/₫/%,
  * bỏ dấu phẩy ngăn nghìn. Cột văn bản trả nguyên si.
  *
@@ -236,7 +267,9 @@ export function filterNumericInput(input: string, type: TableColumnType): string
  * hợp này là làm hỏng số liệu cũ (2,5 tấn thành 25 tấn).
  */
 export function parseCellToRaw(input: string, type: TableColumnType): string {
-  if (!isNumericColumnType(type)) return input;
+  // Cột văn bản: giữ nguyên chữ, chỉ đưa xuống dòng về "\n" (ô Excel gõ
+  // Alt+Enter / file CSV Windows có thể mang "\r\n") — 07/10/2026.
+  if (!isNumericColumnType(type)) return normalizeLineBreaks(input);
   const cleaned = String(input ?? "")
     .trim()
     .replace(/\s/g, "")

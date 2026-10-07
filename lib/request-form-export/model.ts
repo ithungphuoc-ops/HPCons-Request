@@ -8,6 +8,7 @@ import { pendingAdjustmentFiles } from "@/lib/adjustment-settings";
 import { resolveRequestTitle } from "@/lib/request-title";
 import {
   deserializeTableRows,
+  trimCellTextEnd,
   formatCellForDisplay,
   isNumericColumnType,
   numericTypeForFieldDataType,
@@ -167,7 +168,9 @@ export function buildFormTable(
     ...columns.map((_, c): FormCell => {
       const raw = row[c] ?? "";
       if (isNumericColumnType(types[c])) return numericCell(raw, types[c], true);
-      let text = raw || "—";
+      // Xuống dòng trong ô (Enter khi nhập, 07/10/2026) giữ nguyên ký tự xuống dòng (bỏ dòng trắng thừa cuối ô):
+      // Word tách thành ngắt dòng, Excel bật wrapText — xem docx.ts/xlsx.ts.
+      let text = trimCellTextEnd(raw) || "—";
       const note = c === columns.length - 1 ? lastColumnNote?.(r) : null;
       if (note) text = `${text}\n${note}`;
       return { text };

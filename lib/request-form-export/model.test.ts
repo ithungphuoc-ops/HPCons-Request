@@ -237,3 +237,55 @@ describe("sửa theo QA 05/10/2026", () => {
     expect(ws.getRow(titleRow).height).toBeGreaterThanOrEqual(15 * 1.3 * 2);
   });
 });
+
+describe("ô bảng xuống dòng trong ô (07/10/2026)", () => {
+  const withMultiline = () =>
+    baseInput({
+      values: {
+        ...sampleRequest().values,
+        f8: [{ cells: ["Gạch Block\r\nloại A", "390×190×90", "1900", "Viên", "Dòng 1\nDòng 2", ""] }],
+      },
+    } as Partial<RequestInstance>);
+
+  it("model: \r\n đưa về \n, giữ nguyên xuống dòng của người gõ", () => {
+    const model = buildRequestFormModel(withMultiline());
+    const table = model.fields.find((f) => f.table)!.table!;
+    expect(table.rows[0][1].text).toBe("Gạch Block\nloại A");
+    expect(table.rows[0][5].text).toBe("Dòng 1\nDòng 2");
+  });
+
+  it("Word: xuống dòng thành <w:br/>, không dính chữ", async () => {
+    const model = buildRequestFormModel(withMultiline());
+    const zip = await JSZip.loadAsync(await Docx.Packer.toBuffer(buildRequestDocx(Docx, model, null)));
+    const body = await zip.file("word/document.xml")!.async("string");
+    expect(body).toMatch(/Gạch Block<\/w:t><\/w:r><w:r>(<w:rPr>.*?<\/w:rPr>)?<w:br\/><w:t[^>]*>loại A/);
+    expect(body).not.toContain("Gạch Blockloại A");
+  });
+
+  it("Excel: ô văn bản của bảng bật wrapText, giữ \n, hàng cao đủ 2 dòng", async () => {
+    const model = buildRequestFormModel(withMultiline());
+    const wb = await buildRequestXlsx(ExcelJS, model, null);
+    const ws = wb.worksheets[0];
+    let found: { wrap?: boolean; height?: number } | null = null;
+    ws.eachRow((row) =>
+      row.eachCell((cell) => {
+        if (cell.value === "Gạch Block\nloại A") found = { wrap: cell.alignment?.wrapText, height: row.height };
+      }),
+    );
+    expect(found).not.toBeNull();
+    expect(found!.wrap).toBe(true);
+    expect(found!.height ?? 0).toBeGreaterThan(20);
+  });
+});
+
+describe("xuất Word/Excel — bỏ dòng trắng thừa cuối ô (07/10/2026)", () => {
+  it("ô kết thúc bằng xuống dòng → bỏ phần thừa, giữ xuống dòng giữa", () => {
+    const model = buildRequestFormModel(
+      baseInput({
+        values: { ...sampleRequest().values, f8: [{ cells: ["Gạch\nBlock\n\n", "", "1", "Viên", "", ""] }] },
+      } as Partial<RequestInstance>),
+    );
+    const table = model.fields.find((f) => f.table)!.table!;
+    expect(table.rows[0][1].text).toBe("Gạch\nBlock");
+  });
+});

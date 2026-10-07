@@ -358,3 +358,27 @@ describe("phân biệt kho đã tạo đề nghị với kho bỏ qua", () => {
     expect(note).not.toContain("chờ xác nhận");
   });
 });
+
+describe("ô bảng xuống dòng — gửi sang Kho gộp thành 1 dấu cách (07/10/2026)", () => {
+  it("các trường chuỗi lấy từ ô bảng không còn xuống dòng", async () => {
+    const titleField = makeField({ id: "f1", name: "Tên đề xuất", code: "ten_de_xuat" });
+    const detailField = makeField({
+      id: "f2",
+      name: "Chi tiết",
+      dataType: "table",
+      code: "chi_tiet",
+      tableColumns: CHI_TIET_COLS_THUONG,
+    });
+    const request = makeRequest({
+      fieldsSnapshot: [titleField, detailField],
+      values: {
+        f1: "30/2025/HĐXD/UNICE-HPCS - UNICE QUẢNG NGÃI",
+        f2: serializeTableRows([["Xi măng\nNghi Sơn\n", "PCB40\r\nbao 50kg", "500", "bao\n", "Xây tô\n\nnhà ăn"]]),
+      },
+    });
+    const payload = await trichXuatPayload(request);
+    expect(payload?.vatTu).toEqual([
+      { tenVatTu: "Xi măng Nghi Sơn", quyCach: "PCB40 bao 50kg", dvt: "bao", soLuong: 500, mucDichSuDung: "Xây tô nhà ăn" },
+    ]);
+  });
+});
