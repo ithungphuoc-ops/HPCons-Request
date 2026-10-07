@@ -819,8 +819,8 @@ export default function AddFieldModal() {
                                 placeholder={`Tên cột ${index + 1}`}
                               />
                               {/* Ô chọn kiểu có "Lọc nhanh" + chia nhóm (Sếp duyệt demo
-                                  07/10/2026) — thay <select> thường. Rộng cố định 210px
-                                  như ô cũ để không bóp ô tên cột bên cạnh. */}
+                                  07/10/2026) — thay <select> thường. Rộng cố định 210px (170px cũ cắt mất nhãn
+                                  "Danh sách (nhiều lựa chọn)"), vẫn cố định để không bóp ô tên cột. */}
                               <ColumnTypePicker
                                 className="w-[210px] shrink-0"
                                 value={columnType}
