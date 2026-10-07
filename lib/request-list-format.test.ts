@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { matchedTableCell, tableFieldCellValues } from "./request-list-format";
+import { chuanHoaTimKiem, matchedTableCell, tableFieldCellValues } from "./request-list-format";
 import type { ProposalField, RequestInstance } from "@/lib/types";
 
 const tableField: ProposalField = {
@@ -76,5 +76,16 @@ describe("matchedTableCell", () => {
 
   it("từ khoá không khớp ô nào → null", () => {
     expect(matchedTableCell(r, "xi mang")).toBeNull();
+  });
+});
+
+describe("tìm kiếm ô bảng có xuống dòng (07/10/2026)", () => {
+  it("chuanHoaTimKiem gộp xuống dòng/khoảng trắng thừa thành 1 dấu cách", () => {
+    expect(chuanHoaTimKiem("  Sơn\nlót   chống\r\ngỉ ")).toBe("son lot chong gi");
+  });
+
+  it("matchedTableCell: gõ 'son lot' vẫn khớp ô 'Sơn⏎lót', trả nguyên văn ô", () => {
+    const r = requestWithTable([["Sơn\nlót chống gỉ", "", "2"]]);
+    expect(matchedTableCell(r, "son lot")).toBe("Sơn\nlót chống gỉ");
   });
 });

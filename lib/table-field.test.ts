@@ -4,6 +4,7 @@ import {
   formatCellForDisplay,
   isNumericColumnType,
   isValidCellValue,
+  normalizeLineBreaks,
   parseCellToRaw,
   resolveTableColumnRequired,
   resolveTableColumnSum,
@@ -230,5 +231,22 @@ describe("resolveTableColumnSum", () => {
 
   it("lệch độ dài → cột thiếu tick suy theo luật cũ", () => {
     expect(resolveTableColumnSum(["Tiền", "Tiền 2"], ["money", "money"], [false])).toEqual([false, true]);
+  });
+});
+
+describe("normalizeLineBreaks — ô văn bản xuống dòng trong ô (07/10/2026)", () => {
+  it("đưa \r\n và \r lẻ về \n, giữ nguyên \n", () => {
+    expect(normalizeLineBreaks("A\r\nB\rC\nD")).toBe("A\nB\nC\nD");
+  });
+  it("null/undefined → chuỗi rỗng, số cũ → chuỗi", () => {
+    expect(normalizeLineBreaks(undefined as unknown as string)).toBe("");
+    expect(normalizeLineBreaks(null as unknown as string)).toBe("");
+    expect(normalizeLineBreaks(12 as unknown as string)).toBe("12");
+  });
+  it("parseCellToRaw cột văn bản (nhập từ Excel Alt+Enter) giữ xuống dòng dạng \n", () => {
+    expect(parseCellToRaw("Thép D10\r\nloại 1", "text")).toBe("Thép D10\nloại 1");
+  });
+  it("cột số: xuống dòng lẫn vào bị bóc đi như khoảng trắng", () => {
+    expect(parseCellToRaw("1,234\n", "money")).toBe("1234");
   });
 });

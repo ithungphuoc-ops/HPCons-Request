@@ -104,5 +104,8 @@ export function chuanHoaTimKiem(s: string): string {
     .replace(/đ/g, "d")
     .replace(/Đ/g, "d")
     .toLowerCase()
+    // Ô bảng có thể xuống dòng trong ô (07/10/2026) — gộp mọi khoảng trắng
+    // (kể cả xuống dòng) thành 1 dấu cách để "son lot" vẫn khớp ô "Sơn⏎lót".
+    .replace(/\s+/g, " ")
     .trim();
 }

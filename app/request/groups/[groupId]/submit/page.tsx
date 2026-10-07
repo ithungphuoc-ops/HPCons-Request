@@ -3,6 +3,7 @@
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FileDown, Loader2, Paperclip, Plus, Trash2, Upload, X } from "lucide-react";
+import AutoGrowTextarea from "@/components/request/AutoGrowTextarea";
 import { DateLeadTimeZonesNote } from "@/components/request/DateLeadTimeZonesNote";
 import { useRequestContext } from "@/context/RequestContext";
 import {
@@ -1535,7 +1536,7 @@ function FieldControl({
                       key={rowIndex}
                       className="border-t border-[var(--color-border)] transition-colors hover:bg-blue-50/40"
                     >
-                      <td className="px-2 py-1.5 text-center text-[12px] tabular-nums text-gray-500">
+                      <td className="px-2 pb-1.5 pt-[13px] text-center align-top text-[12px] tabular-nums text-gray-500">
                         {rowIndex + 1}
                       </td>
                       {columns.map((colName, colIndex) => {
@@ -1543,7 +1544,7 @@ function FieldControl({
                         const cellValue = row[colIndex] ?? "";
                         const invalid = cellValue.trim() !== "" && !isValidCellValue(cellValue, columnType);
                         return (
-                          <td key={colIndex} className="border-l border-gray-100 px-1 py-1">
+                          <td key={colIndex} className="border-l border-gray-100 px-1 py-1 align-top">
                             <TableCellInput
                               value={cellValue}
                               columnType={columnType}
@@ -1554,7 +1555,7 @@ function FieldControl({
                           </td>
                         );
                       })}
-                      <td className="px-1 py-1 text-center">
+                      <td className="px-1 pb-1 pt-[13px] text-center align-top">
                         {rows.length > 1 && (
                           <button
                             type="button"
@@ -1696,30 +1697,47 @@ function TableCellInput({
   // null = không focus -> hiện bản đã định dạng.
   const [draft, setDraft] = useState<string | null>(null);
   const shown = draft ?? (numeric ? formatCellForDisplay(value, columnType) : value);
+  const boxClass = `w-full rounded border bg-transparent px-2 text-[14px] text-gray-900 outline-none placeholder:text-gray-400 focus:border-[var(--color-action-blue)] focus:bg-white ${
+    invalid
+      ? "border-[var(--color-danger-red)] bg-red-50"
+      : "border-transparent hover:border-[var(--color-border)] hover:bg-white"
+  }`;
 
+  if (!numeric) {
+    // Cột VĂN BẢN: ô tự giãn, tự xuống dòng theo độ rộng cột, Enter xuống
+    // dòng ngay trong ô, tối đa 6 dòng rồi cuộn trong ô (Sếp duyệt demo
+    // 07/10/2026 "o-bang-tu-xuong-dong"). Tab/bấm chuột để sang ô khác.
+    // 1 dòng = 20px chữ + 2×7px đệm + 2×1px viền = 36px, đúng cao ô cũ (h-9).
+    return (
+      <AutoGrowTextarea
+        value={shown}
+        maxRows={6}
+        onFocus={() => setDraft(value)}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          onCommit(e.target.value);
+        }}
+        onBlur={() => setDraft(null)}
+        aria-label={columnName}
+        className={`${boxClass} block py-[7px] leading-5 [overflow-wrap:anywhere] whitespace-pre-wrap`}
+      />
+    );
+  }
+
+  // Cột SỐ: giữ 1 dòng như cũ.
   return (
     <input
       value={shown}
       onFocus={() => setDraft(value)}
-      onChange={(e) => {
-        if (numeric) {
-          setDraft(filterNumericInput(e.target.value, columnType));
-        } else {
-          setDraft(e.target.value);
-          onCommit(e.target.value);
-        }
-      }}
+      onChange={(e) => setDraft(filterNumericInput(e.target.value, columnType))}
       onBlur={(e) => {
-        if (numeric) onCommit(normalizeRawForStorage(parseCellToRaw(e.target.value, columnType), columnType));
+        onCommit(normalizeRawForStorage(parseCellToRaw(e.target.value, columnType), columnType));
         setDraft(null);
       }}
-      inputMode={columnType === "int" ? "numeric" : numeric ? "decimal" : undefined}
+      inputMode={columnType === "int" ? "numeric" : "decimal"}
+      aria-label={columnName}
       title={invalid ? `"${columnName}" phải là ${columnType === "int" ? "số nguyên" : "số"}` : undefined}
-      className={`h-9 w-full rounded border bg-transparent px-2 text-[14px] text-gray-900 outline-none placeholder:text-gray-400 focus:border-[var(--color-action-blue)] focus:bg-white ${
-        invalid
-          ? "border-[var(--color-danger-red)] bg-red-50"
-          : "border-transparent hover:border-[var(--color-border)] hover:bg-white"
-      } ${numeric ? "text-right tabular-nums" : ""}`}
+      className={`${boxClass} h-9 text-right tabular-nums`}
     />
   );
 }

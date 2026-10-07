@@ -6,6 +6,7 @@ import PizZip from "pizzip";
 import { buildPrintTemplateData, isKnownSystemKey } from "@/lib/print-template";
 import {
   deserializeTableRows,
+  normalizeLineBreaks,
   formatCellForDisplay,
   resolveTableColumnTypes,
 } from "@/lib/table-field";
@@ -297,6 +298,21 @@ function escapeXml(value: string): string {
 }
 
 /**
+ * Giá trị 1 ô bảng → đoạn XML đặt THẲNG vào chỗ thẻ ${column.*} (đang nằm
+ * bên trong 1 <w:t> của mẫu). Ô văn bản cho phép xuống dòng trong ô (Sếp
+ * duyệt demo 07/10/2026) — ký tự xuống dòng để trần trong <w:t> thì Word
+ * coi như khoảng trắng, chữ 2 dòng dính thành 1. Đóng <w:t> hiện tại, chèn
+ * <w:br/>, mở <w:t> mới (giữ khoảng trắng) — vẫn cùng 1 <w:r> nên giữ nguyên
+ * định dạng chữ của mẫu.
+ */
+export function cellTextToRunXml(text: string): string {
+  return normalizeLineBreaks(text)
+    .split("\n")
+    .map(escapeXml)
+    .join('</w:t><w:br/><w:t xml:space="preserve">');
+}
+
+/**
  * Nhân dòng bảng THẬT trong XML — với mỗi field kiểu Bảng có thẻ
  * ${column.<code>.<n>} xuất hiện trong 1 dòng <w:tr>, nhân dòng đó đúng bằng
  * số bản ghi thật (tối thiểu 1, bảng rỗng vẫn giữ 1 dòng trống), cột 0 = STT
@@ -336,7 +352,7 @@ export function duplicateTableRows(
         const idx = Number(idxStr);
         if (idx === 0) return String(rowIndex + 1);
         const cellType = columnTypes[idx - 1] ?? "text";
-        return escapeXml(formatCellForDisplay(row[idx - 1] ?? "", cellType));
+        return cellTextToRunXml(formatCellForDisplay(row[idx - 1] ?? "", cellType));
       }),
     );
 

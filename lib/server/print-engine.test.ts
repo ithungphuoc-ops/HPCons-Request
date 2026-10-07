@@ -1,6 +1,6 @@
 import PizZip from "pizzip";
 import { describe, expect, it } from "vitest";
-import { duplicateTableRows, renderPrintTemplate, scanTemplateVariables } from "./print-engine";
+import { cellTextToRunXml, duplicateTableRows, renderPrintTemplate, scanTemplateVariables } from "./print-engine";
 import type { ProposalField, ProposalGroup, RequestInstance } from "@/lib/types";
 
 const CONTENT_TYPES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -332,6 +332,43 @@ describe("renderPrintTemplate (end-to-end với file .docx thật)", () => {
     expect(outputXml).toContain("Nguoi tao: Nguyễn Văn A");
     expect(outputXml).toContain("Thùng PC");
     expect(outputXml).toContain("Màn hình");
+    expect(outputXml).not.toContain("${");
+  });
+});
+
+describe("xuống dòng trong ô bảng khi in mẫu .docx (07/10/2026)", () => {
+  it("cellTextToRunXml: \n (kể cả \r\n) thành <w:br/> giữa 2 <w:t>, vẫn escape XML", () => {
+    expect(cellTextToRunXml("Dòng 1\r\nA & B")).toBe('Dòng 1</w:t><w:br/><w:t xml:space="preserve">A &amp; B');
+    expect(cellTextToRunXml("Một dòng")).toBe("Một dòng");
+  });
+
+  it("renderPrintTemplate: ô có xuống dòng → ngắt dòng thật trong Word, XML hợp lệ, không dính chữ", () => {
+    const tableField = makeField({
+      id: "f3",
+      name: "chi tiết",
+      code: "chi_tiet",
+      dataType: "table",
+      tableColumns: ["Tên", "SL"],
+    });
+    const group = makeGroup([tableField]);
+    const documentXml = `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+      <w:body>
+        <w:p><w:r><w:t>Ma: \${id}</w:t></w:r></w:p>
+        <w:tbl>
+          <w:tr><w:tc><w:p><w:r><w:t>\${column.chi_tiet.0}</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:rPr><w:b/></w:rPr><w:t>\${column.chi_tiet.1}</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>\${column.chi_tiet.2}</w:t></w:r></w:p></w:tc></w:tr>
+        </w:tbl>
+      </w:body>
+    </w:document>`;
+    const request = makeRequest({
+      code: "000789",
+      fieldsSnapshot: [tableField],
+      values: { f3: [{ cells: ["Thép D10\nloại 1", "5"] }] },
+    });
+    const outputXml = new PizZip(renderPrintTemplate(buildDocxBuffer(documentXml), group, request))
+      .file("word/document.xml")!
+      .asText();
+    expect(outputXml).toContain('Thép D10</w:t><w:br/><w:t xml:space="preserve">loại 1');
+    expect(outputXml).not.toContain("Thép D10\nloại 1");
     expect(outputXml).not.toContain("${");
   });
 });

@@ -2033,7 +2033,7 @@ function TableSupplementControl({
               <tr key={`logged-${li}`} className="border-t border-[var(--color-border)] bg-gray-50">
                 <td className="px-2 py-1 text-gray-400">{li + 1}</td>
                 {entry.row.map((cell, ci) => (
-                  <td key={ci} className="px-2 py-1.5 align-top text-gray-700">
+                  <td key={ci} className="min-w-[6rem] whitespace-pre-wrap px-2 py-1.5 align-top text-gray-700 [overflow-wrap:anywhere]">
                     {ci === entry.row.length - 1 ? (
                       <>
                         <div>{cell || "—"}</div>
@@ -2114,17 +2114,21 @@ function TableValueView({
         <tbody>
           {filledRows.map((row, rowIndex) => (
             <tr key={rowIndex} className="border-t border-gray-100">
-              <td className="px-2 py-1.5 text-gray-400">{rowIndex + 1}</td>
+              <td className="px-2 py-1.5 align-top text-gray-400">{rowIndex + 1}</td>
               {columns.map((_, colIndex) => (
                 <td
                   key={colIndex}
-                  className={`px-2 py-1.5 text-gray-800 ${
+                  className={`px-2 py-1.5 align-top text-gray-800 ${
                     // Chuẩn V1.1 (Phần D): "số liệu quan trọng đậm 600–700".
                     // Đây là thứ người duyệt nhìn đầu tiên; trước đây số tiền và
                     // tên hàng cùng một độ đậm nên mắt không biết bám vào đâu.
                     isNumericColumnType(types[colIndex])
-                      ? "text-right font-bold tabular-nums"
-                      : ""
+                      ? "whitespace-nowrap text-right font-bold tabular-nums"
+                      : // Cột văn bản: giữ xuống dòng người gõ (Enter trong ô) +
+                        // ngắt cả chuỗi dài liền mạch (số TK, mã) — hiện ĐỦ,
+                        // không giới hạn 6 dòng như lúc nhập (Sếp duyệt demo
+                        // 07/10/2026). min-w giữ cột chữ không bị bóp còn 1 ký tự.
+                        "min-w-[6rem] whitespace-pre-wrap [overflow-wrap:anywhere]"
                   }`}
                 >
                   {formatCellForDisplay(row[colIndex] ?? "", types[colIndex]) || "—"}
