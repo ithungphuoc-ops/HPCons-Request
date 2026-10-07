@@ -3,10 +3,15 @@ import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase/admin";
 import { apiErrorResponse } from "@/lib/http";
 import { expandMentionsToUids } from "@/lib/server/mentions";
+import { hpcoreCommentOnMine, hpcoreMentioned } from "@/lib/server/hpcore-notifications";
 import { bumpNotificationSignal } from "@/lib/server/notification-signal";
 import { canView, loadRequest } from "@/lib/server/requests";
 import { requireSession } from "@/lib/session";
 import type { RequestAttachment, RequestComment } from "@/lib/types";
+
+// Ghi thông báo sang chuông chung HPcore chạy trong after() — cho đủ thời
+// gian, xem lib/server/hpcore-notifications.ts.
+export const maxDuration = 60;
 
 interface CommentBody {
   text: string;
@@ -76,13 +81,28 @@ export async function POST(
       updatedAt: nowIso,
       [`viewedAt.${session.uid}`]: nowIso,
     };
+    let expandedMentionUids: string[] = [];
     if (mentionIds.length > 0) {
-      const expanded = await expandMentionsToUids(mentionIds, session.uid);
-      if (expanded.length > 0) patch.mentionedUids = FieldValue.arrayUnion(...expanded);
+      expandedMentionUids = await expandMentionsToUids(mentionIds, session.uid);
+      if (expandedMentionUids.length > 0) patch.mentionedUids = FieldValue.arrayUnion(...expandedMentionUids);
     }
 
     await adminDb.collection("requests").doc(id).update(patch);
     after(() => bumpNotificationSignal());
+    // Chuông chung HPcore (Sếp chốt 07/10/2026) — trước đây route này không
+    // gửi thông báo rời nào cả (chỉ có chuông riêng của Request-app tự tính
+    // lại khi tải trang). Báo người tạo đề xuất (nếu không phải chính họ bình
+    // luận) + những người bị nhắc tên trực tiếp trong bình luận này.
+    after(async () => {
+      try {
+        await Promise.all([
+          hpcoreCommentOnMine(found, session.uid, session.name),
+          hpcoreMentioned(found, expandedMentionUids, session.name),
+        ]);
+      } catch (hpcoreError) {
+        console.error("Ghi thông báo sang HPcore lúc bình luận thất bại (không ảnh hưởng thao tác chính):", hpcoreError);
+      }
+    });
 
     return NextResponse.json({ comments }, { status: 201 });
   } catch (error) {

@@ -1,0 +1,217 @@
+import { describe, expect, it, vi, beforeEach } from "vitest";
+
+vi.mock("server-only", () => ({}));
+
+vi.mock("@/lib/server/mailer", () => ({
+  requestDetailUrl: (id: string) => `https://request.hpcons.example/request/requests/${id}`,
+}));
+
+const { mockSet, mockCommit, mockBatch, mockCollection } = vi.hoisted(() => {
+  const mockSet = vi.fn();
+  const mockCommit = vi.fn().mockResolvedValue(undefined);
+  const mockBatch = vi.fn(() => ({ set: mockSet, commit: mockCommit }));
+  const mockDoc = vi.fn(() => ({ id: "generated-id" }));
+  const mockCollection = vi.fn(() => ({ doc: mockDoc }));
+  return { mockSet, mockCommit, mockBatch, mockCollection };
+});
+
+vi.mock("@/lib/hpcore", () => ({
+  getHpcoreDb: () => ({ collection: mockCollection, batch: mockBatch }),
+}));
+
+const {
+  hpcorePendingApprovers,
+  hpcoreSubmitterResult,
+  hpcoreSubmitterReturned,
+  hpcoreFollowersSubmitted,
+  hpcoreFollowersFullyApproved,
+  hpcoreCommentOnMine,
+  hpcoreMentioned,
+  hpcoreAdjustmentPending,
+  hpcoreAdjustmentResult,
+} = await import("./hpcore-notifications");
+
+import type { RequestInstance, TaggedUser } from "@/lib/types";
+
+function user(id: string): TaggedUser {
+  return { id, name: id, username: id, avatarInitial: id[0].toUpperCase() };
+}
+
+function baseRequest(overrides: Partial<RequestInstance> = {}): RequestInstance {
+  return {
+    id: "r1",
+    code: "000000001",
+    groupId: "g1",
+    groupNameSnapshot: "Nhóm test",
+    fieldsSnapshot: [],
+    values: {},
+    submittedBy: { uid: "submitter", email: "submitter@hpcons.com.vn", name: "Người gửi" },
+    submittedAt: "2026-08-24T00:00:00.000Z",
+    updatedAt: "2026-08-24T00:00:00.000Z",
+    approvalFlow: "sequential",
+    approversSnapshot: [user("uA"), user("uB")],
+    approverStepMeta: undefined,
+    approvers: [
+      { id: "uA", decision: "pending" },
+      { id: "uB", decision: "pending" },
+    ],
+    followers: [],
+    status: "pending",
+    deadlineAt: null,
+    history: [],
+    comments: [],
+    deletedAt: null,
+    ...overrides,
+  } as RequestInstance;
+}
+
+beforeEach(() => {
+  mockSet.mockClear();
+  mockCommit.mockClear();
+  mockBatch.mockClear();
+  mockCollection.mockClear();
+});
+
+describe("hpcorePendingApprovers — đúng người đang tới lượt, không phụ thuộc công tắc nhóm", () => {
+  it("luồng sequential → chỉ người đầu tiên đang pending", async () => {
+    await hpcorePendingApprovers(baseRequest());
+    expect(mockCollection).toHaveBeenCalledWith("notifications");
+    expect(mockSet).toHaveBeenCalledTimes(1);
+    const payload = mockSet.mock.calls[0][1];
+    expect(payload).toMatchObject({
+      userId: "uA",
+      title: "Đang chờ bạn duyệt",
+      type: "de_xuat",
+      isRead: false,
+      link: "https://request.hpcons.example/request/requests/r1",
+    });
+    expect(payload.body).toContain("Nhóm test");
+    expect(payload.body).toContain("000000001");
+  });
+
+  it("không ai đang tới lượt → không ghi gì, không gọi batch/commit", async () => {
+    await hpcorePendingApprovers(
+      baseRequest({ approvers: [{ id: "uA", decision: "approved" }, { id: "uB", decision: "approved" }] }),
+    );
+    expect(mockBatch).not.toHaveBeenCalled();
+    expect(mockSet).not.toHaveBeenCalled();
+  });
+
+  it("luồng concurrent → báo TẤT CẢ người còn pending", async () => {
+    await hpcorePendingApprovers(baseRequest({ approvalFlow: "concurrent" }));
+    expect(mockSet).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("hpcoreSubmitterResult", () => {
+  it("còn pending → không ghi", async () => {
+    await hpcoreSubmitterResult(baseRequest({ status: "pending" }));
+    expect(mockSet).not.toHaveBeenCalled();
+  });
+
+  it("approved → báo đúng người tạo, tiêu đề đúng", async () => {
+    await hpcoreSubmitterResult(baseRequest({ status: "approved" }));
+    expect(mockSet).toHaveBeenCalledTimes(1);
+    expect(mockSet.mock.calls[0][1]).toMatchObject({ userId: "submitter", title: "Đã được chấp thuận" });
+  });
+
+  it("rejected → tiêu đề khác", async () => {
+    await hpcoreSubmitterResult(baseRequest({ status: "rejected" }));
+    expect(mockSet.mock.calls[0][1]).toMatchObject({ userId: "submitter", title: "Đã bị từ chối" });
+  });
+});
+
+describe("hpcoreSubmitterReturned", () => {
+  it("có lý do → lý do nằm trong nội dung", async () => {
+    await hpcoreSubmitterReturned(baseRequest(), "thiếu chứng từ");
+    expect(mockSet.mock.calls[0][1].body).toContain("thiếu chứng từ");
+  });
+
+  it("không có lý do → vẫn ghi, không crash", async () => {
+    await hpcoreSubmitterReturned(baseRequest(), undefined);
+    expect(mockSet).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("hpcoreFollowersSubmitted / hpcoreFollowersFullyApproved", () => {
+  it("danh sách theo dõi rỗng → không ghi", async () => {
+    await hpcoreFollowersSubmitted([], baseRequest());
+    expect(mockSet).not.toHaveBeenCalled();
+  });
+
+  it("có người theo dõi → ghi đủ từng người", async () => {
+    await hpcoreFollowersSubmitted([user("f1"), user("f2")], baseRequest());
+    expect(mockSet).toHaveBeenCalledTimes(2);
+  });
+
+  it("chưa approved → không báo người theo dõi", async () => {
+    await hpcoreFollowersFullyApproved(baseRequest({ status: "rejected", followers: [user("f1")] }));
+    expect(mockSet).not.toHaveBeenCalled();
+  });
+
+  it("approved hoàn toàn → báo đủ người theo dõi", async () => {
+    await hpcoreFollowersFullyApproved(baseRequest({ status: "approved", followers: [user("f1")] }));
+    expect(mockSet).toHaveBeenCalledTimes(1);
+    expect(mockSet.mock.calls[0][1]).toMatchObject({ userId: "f1", title: "Đề xuất bạn theo dõi đã duyệt xong" });
+  });
+});
+
+describe("hpcoreCommentOnMine — không tự báo cho chính người bình luận", () => {
+  it("người khác bình luận → báo người tạo", async () => {
+    await hpcoreCommentOnMine(baseRequest(), "uA", "Người A");
+    expect(mockSet).toHaveBeenCalledTimes(1);
+    expect(mockSet.mock.calls[0][1]).toMatchObject({ userId: "submitter", title: "Có bình luận mới" });
+    expect(mockSet.mock.calls[0][1].body).toContain("Người A");
+  });
+
+  it("chính người tạo tự bình luận → không báo", async () => {
+    await hpcoreCommentOnMine(baseRequest(), "submitter", "Người gửi");
+    expect(mockSet).not.toHaveBeenCalled();
+  });
+});
+
+describe("hpcoreMentioned", () => {
+  it("danh sách rỗng → không ghi", async () => {
+    await hpcoreMentioned(baseRequest(), [], "Người A");
+    expect(mockSet).not.toHaveBeenCalled();
+  });
+
+  it("có người bị nhắc → báo đủ từng người", async () => {
+    await hpcoreMentioned(baseRequest(), ["uA", "uC"], "Người A");
+    expect(mockSet).toHaveBeenCalledTimes(2);
+    expect(mockSet.mock.calls[0][1].title).toBe("Bạn được nhắc tên");
+  });
+});
+
+describe("hpcoreAdjustmentPending / hpcoreAdjustmentResult", () => {
+  it("danh sách rỗng → không ghi", async () => {
+    await hpcoreAdjustmentPending(baseRequest(), []);
+    expect(mockSet).not.toHaveBeenCalled();
+  });
+
+  it("có người cần duyệt → báo đủ", async () => {
+    await hpcoreAdjustmentPending(baseRequest(), ["uA", "uB"]);
+    expect(mockSet).toHaveBeenCalledTimes(2);
+    expect(mockSet.mock.calls[0][1].title).toBe("Điều chỉnh sau duyệt đang chờ bạn duyệt");
+  });
+
+  it("approved → báo đúng người đề nghị, tiêu đề đúng", async () => {
+    await hpcoreAdjustmentResult(baseRequest(), "nguoiDeNghi", "approved");
+    expect(mockSet.mock.calls[0][1]).toMatchObject({
+      userId: "nguoiDeNghi",
+      title: "Điều chỉnh sau duyệt đã được chấp thuận",
+    });
+  });
+
+  it("rejected → tiêu đề khác", async () => {
+    await hpcoreAdjustmentResult(baseRequest(), "nguoiDeNghi", "rejected");
+    expect(mockSet.mock.calls[0][1].title).toBe("Điều chỉnh sau duyệt đã bị từ chối");
+  });
+});
+
+describe("Ghi lỗi (mất mạng/thiếu quyền) — không được throw ra ngoài", () => {
+  it("batch.commit() lỗi → nuốt lỗi, không ảnh hưởng luồng gọi", async () => {
+    mockCommit.mockRejectedValueOnce(new Error("Firestore lỗi"));
+    await expect(hpcoreSubmitterResult(baseRequest({ status: "approved" }))).resolves.toBeUndefined();
+  });
+});

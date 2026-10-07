@@ -9,6 +9,7 @@ import { mergeFollowers } from "@/lib/server/conditions";
 import { resolveComputedValue } from "@/lib/server/computed-fields";
 import { dedupeApproversWithMeta } from "@/lib/approval-logic";
 import { notifyFollowersSubmitted, notifyPendingApprovers } from "@/lib/server/notification-emails";
+import { hpcoreFollowersSubmitted, hpcorePendingApprovers } from "@/lib/server/hpcore-notifications";
 import {
   buildInitialApprovers,
   canView,
@@ -516,6 +517,18 @@ export async function POST(request: Request) {
           ]);
         } catch (mailError) {
           console.error("Gửi email thông báo lúc gửi đề xuất thất bại (không ảnh hưởng thao tác chính):", mailError);
+        }
+      });
+      // Chuông chung HPcore (Sếp chốt 07/10/2026) — riêng, không phụ thuộc
+      // công tắc email của nhóm, xem lib/server/hpcore-notifications.ts.
+      after(async () => {
+        try {
+          await Promise.all([
+            hpcorePendingApprovers(created),
+            hpcoreFollowersSubmitted(created.followers, created),
+          ]);
+        } catch (hpcoreError) {
+          console.error("Ghi thông báo sang HPcore lúc gửi đề xuất thất bại (không ảnh hưởng thao tác chính):", hpcoreError);
         }
       });
     }

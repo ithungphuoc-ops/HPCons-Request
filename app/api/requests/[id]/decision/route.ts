@@ -10,6 +10,12 @@ import {
   notifySubmitterResult,
   notifySubmitterReturned,
 } from "@/lib/server/notification-emails";
+import {
+  hpcoreFollowersFullyApproved,
+  hpcorePendingApprovers,
+  hpcoreSubmitterResult,
+  hpcoreSubmitterReturned,
+} from "@/lib/server/hpcore-notifications";
 import { applyDecisionToRequest, type DecisionGroupSettings, type DecisionKind } from "@/lib/server/decision-apply";
 import { bumpNotificationSignal } from "@/lib/server/notification-signal";
 import { sanitizeDecisionAttachmentsInput } from "@/lib/server/decision-attachments";
@@ -246,6 +252,13 @@ export async function POST(
           console.error("Gửi email thông báo lúc chuyển tiếp thất bại (không ảnh hưởng thao tác chính):", mailError);
         }
       });
+      after(async () => {
+        try {
+          await hpcorePendingApprovers(updated);
+        } catch (hpcoreError) {
+          console.error("Ghi thông báo sang HPcore lúc chuyển tiếp thất bại (không ảnh hưởng thao tác chính):", hpcoreError);
+        }
+      });
     } else if (result.effect === "none") {
       // "Trả lại" (Đợt 3 Email, Sếp chốt 06/10/2026) — trước đây luồng này
       // không gửi email nào cả, chỉ có chuông trong app. Báo người tạo kèm
@@ -255,6 +268,13 @@ export async function POST(
           await notifySubmitterReturned(updated, notifyGroup, note);
         } catch (mailError) {
           console.error("Gửi email thông báo lúc trả lại đề xuất thất bại (không ảnh hưởng thao tác chính):", mailError);
+        }
+      });
+      after(async () => {
+        try {
+          await hpcoreSubmitterReturned(updated, note);
+        } catch (hpcoreError) {
+          console.error("Ghi thông báo sang HPcore lúc trả lại đề xuất thất bại (không ảnh hưởng thao tác chính):", hpcoreError);
         }
       });
     } else if (result.effect === "decision") {
@@ -271,6 +291,19 @@ export async function POST(
           }
         } catch (mailError) {
           console.error("Gửi email thông báo sau quyết định thất bại (không ảnh hưởng thao tác chính):", mailError);
+        }
+      });
+      // Chuông chung HPcore (Sếp chốt 07/10/2026).
+      after(async () => {
+        try {
+          if (status === "pending") {
+            await hpcorePendingApprovers(updated);
+          } else {
+            await hpcoreSubmitterResult(updated);
+            if (status === "approved") await hpcoreFollowersFullyApproved(updated);
+          }
+        } catch (hpcoreError) {
+          console.error("Ghi thông báo sang HPcore sau quyết định thất bại (không ảnh hưởng thao tác chính):", hpcoreError);
         }
       });
 

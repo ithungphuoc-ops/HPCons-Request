@@ -8,6 +8,7 @@ import { buildAdjustmentHistoryPatch } from "@/lib/server/adjustment";
 import { loadAdjustmentGroupSettings } from "@/lib/server/adjustment-approval-rules";
 import { loadActiveUsers } from "@/lib/server/adjustment-reviewers";
 import { notifyAdjustmentApprovers, notifyAdjustmentRequesterResult } from "@/lib/server/notification-emails";
+import { hpcoreAdjustmentPending, hpcoreAdjustmentResult } from "@/lib/server/hpcore-notifications";
 import { bumpNotificationSignal } from "@/lib/server/notification-signal";
 import { loadRequest } from "@/lib/server/requests";
 import { requireSession, ForbiddenError } from "@/lib/session";
@@ -175,6 +176,8 @@ export async function POST(
         const settings = await loadAdjustmentGroupSettings(saved.groupId);
         await notifyAdjustmentApprovers([targetId], saved, pending.requestedByName, settings);
       });
+      // Chuông chung HPcore (Sếp chốt 07/10/2026).
+      after(() => hpcoreAdjustmentPending(saved, [targetId]));
       return NextResponse.json({ request: saved });
     }
 
@@ -205,6 +208,14 @@ export async function POST(
           await notifyAdjustmentRequesterResult(ketQua.request, settings, "rejected", ketQua.pendingSnapshot.requestedByUid);
         } catch (mailError) {
           console.error("Gửi email thông báo từ chối điều chỉnh sau duyệt thất bại (không ảnh hưởng thao tác chính):", mailError);
+        }
+      });
+      // Chuông chung HPcore (Sếp chốt 07/10/2026).
+      after(async () => {
+        try {
+          await hpcoreAdjustmentResult(ketQua.request, ketQua.pendingSnapshot.requestedByUid, "rejected");
+        } catch (hpcoreError) {
+          console.error("Ghi thông báo sang HPcore khi từ chối điều chỉnh sau duyệt thất bại (không ảnh hưởng thao tác chính):", hpcoreError);
         }
       });
       return NextResponse.json({ request: ketQua.request });
@@ -259,6 +270,14 @@ export async function POST(
           await notifyAdjustmentRequesterResult(ketQua.request, settings, "approved", pendingSnapshot.requestedByUid);
         } catch (mailError) {
           console.error("Gửi email thông báo duyệt xong điều chỉnh sau duyệt thất bại (không ảnh hưởng thao tác chính):", mailError);
+        }
+      });
+      // Chuông chung HPcore (Sếp chốt 07/10/2026).
+      after(async () => {
+        try {
+          await hpcoreAdjustmentResult(ketQua.request, pendingSnapshot.requestedByUid, "approved");
+        } catch (hpcoreError) {
+          console.error("Ghi thông báo sang HPcore khi duyệt xong điều chỉnh sau duyệt thất bại (không ảnh hưởng thao tác chính):", hpcoreError);
         }
       });
       try {

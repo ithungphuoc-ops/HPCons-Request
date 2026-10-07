@@ -10,6 +10,7 @@ import {
   resolveAdjustmentSuggestions,
 } from "@/lib/server/adjustment-reviewers";
 import { notifyAdjustmentApprovers } from "@/lib/server/notification-emails";
+import { hpcoreAdjustmentPending } from "@/lib/server/hpcore-notifications";
 import { bumpNotificationSignal } from "@/lib/server/notification-signal";
 import { collectAttachmentPaths, loadRequest } from "@/lib/server/requests";
 import { requireSession, ForbiddenError } from "@/lib/session";
@@ -219,6 +220,8 @@ export async function POST(
         settings,
       ),
     );
+    // Chuông chung HPcore (Sếp chốt 07/10/2026).
+    after(() => hpcoreAdjustmentPending(saved, approvers.map((a) => a.uid)));
     return NextResponse.json({ request: saved });
   } catch (error) {
     return apiErrorResponse(error);

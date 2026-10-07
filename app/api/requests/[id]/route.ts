@@ -11,6 +11,7 @@ import { canManageGroupsAtAppScope } from "@/lib/permissions";
 import { canAdjustAfterApproval, loadAdjustmentGroupSettings } from "@/lib/server/adjustment-approval-rules";
 import { bumpNotificationSignal } from "@/lib/server/notification-signal";
 import { notifyFollowersSubmitted, notifyPendingApprovers } from "@/lib/server/notification-emails";
+import { hpcoreFollowersSubmitted, hpcorePendingApprovers } from "@/lib/server/hpcore-notifications";
 import {
   buildInitialApprovers,
   canView,
@@ -382,6 +383,16 @@ export async function PATCH(
           console.error("Gửi email thông báo lúc gửi đề xuất (từ nháp/gửi lại) thất bại (không ảnh hưởng thao tác chính):", mailError);
         }
       });
+      // Chuông chung HPcore (Sếp chốt 07/10/2026).
+      after(async () => {
+        try {
+          const tasks = [hpcorePendingApprovers(updated)];
+          if (found.status === "draft") tasks.push(hpcoreFollowersSubmitted(updated.followers, updated));
+          await Promise.all(tasks);
+        } catch (hpcoreError) {
+          console.error("Ghi thông báo sang HPcore lúc gửi đề xuất (từ nháp/gửi lại) thất bại (không ảnh hưởng thao tác chính):", hpcoreError);
+        }
+      });
       return NextResponse.json({ request: updated });
     }
 
@@ -427,6 +438,16 @@ export async function PATCH(
         await Promise.all(tasks);
       } catch (mailError) {
         console.error("Gửi email thông báo lúc gửi đề xuất trực tiếp (từ nháp/gửi lại) thất bại (không ảnh hưởng thao tác chính):", mailError);
+      }
+    });
+    // Chuông chung HPcore (Sếp chốt 07/10/2026).
+    after(async () => {
+      try {
+        const tasks = [hpcorePendingApprovers(updated)];
+        if (found.status === "draft") tasks.push(hpcoreFollowersSubmitted(updated.followers, updated));
+        await Promise.all(tasks);
+      } catch (hpcoreError) {
+        console.error("Ghi thông báo sang HPcore lúc gửi đề xuất trực tiếp (từ nháp/gửi lại) thất bại (không ảnh hưởng thao tác chính):", hpcoreError);
       }
     });
     return NextResponse.json({ request: updated });
