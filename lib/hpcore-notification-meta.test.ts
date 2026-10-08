@@ -214,13 +214,13 @@ describe("meta theo từng loại — câu chữ khớp chuông app Đề xuất
     expect(metaAdjustmentResult(req(), "rejected").headline).toBe("Điều chỉnh sau duyệt bạn đề nghị đã bị từ chối");
   });
 
-  it("groupName = tên chuông app này hiện ở dòng 2 (trường tên đề xuất nếu có), mã rỗng → id", () => {
+  it("groupName = tên chuông app này hiện ở dòng 2 (trường tên đề xuất nếu có), không có mã → chuỗi rỗng (không dùng id Firestore)", () => {
     const r = req({
       code: null as unknown as string,
       fieldsSnapshot: [{ id: "f1", code: "ten_de_xuat" } as unknown as RequestInstance["fieldsSnapshot"][number]],
       values: { f1: "Mua máy in" },
     });
-    expect(metaFollowSubmitted(r)).toMatchObject({ requestCode: "r1", groupName: "Mua máy in" });
+    expect(metaFollowSubmitted(r)).toMatchObject({ requestCode: "", groupName: "Mua máy in" });
   });
 });
 
@@ -245,5 +245,35 @@ describe("headline khớp ĐÚNG câu dòng chuông của app (cùng 1 dữ li�
 
     const feedA = buildNotificationFeed([req()], { uid: "uA", name: "Nguyễn Thị Cẩm Thu", settings: null, now: Date.parse("2026-10-08T05:00:00.000Z") });
     expect(feedA.entries[0].main.text).toBe(metaPendingApproval(req(), "uA").headline);
+  });
+});
+
+describe("tên người làm rỗng → câu dự phòng, không bắt đầu bằng dấu cách; không có undefined", () => {
+  const blank = req({ submittedBy: { uid: "sub", email: "", name: "  " }, history: [{ at: "2026-10-08T04:00:00.000Z", actor: "", action: "Đã chấp thuận" }] });
+  const all = [
+    metaPendingApproval(blank, "uA"),
+    metaSubmitterDecision(blank, "approved"),
+    metaComment(blank, "mentioned", "", "xin chào"),
+    metaComment(blank, "comment_on_mine", " ", ""),
+    metaFollowSubmitted(blank),
+    metaFollowApproved(blank),
+    metaAdjustmentPending(req({ pendingAdjustment: { noiDung: "", attachment: null, requestedByUid: "x", requestedByName: "", createdAt: "", approvers: [] } })),
+    metaAdjustmentResult(blank, "rejected", ""),
+  ];
+  it("headline không mở đầu bằng khoảng trắng, không có actorName", () => {
+    expect(all.map((m) => m.headline)).toEqual([
+      "Có đề xuất đang chờ bạn duyệt",
+      "Đề xuất của bạn đã được chấp thuận",
+      "Bạn được nhắc tên trong bình luận: “xin chào”",
+      "Có bình luận mới",
+      "Đề xuất bạn theo dõi vừa được gửi",
+      "Đề xuất bạn theo dõi đã được chấp thuận",
+      "Điều chỉnh sau duyệt đang chờ bạn duyệt",
+      "Điều chỉnh sau duyệt bạn đề nghị đã bị từ chối",
+    ]);
+    for (const m of all) {
+      expect("actorName" in m).toBe(false);
+      expect(Object.values(m).some((v) => v === undefined || v === null)).toBe(false);
+    }
   });
 });

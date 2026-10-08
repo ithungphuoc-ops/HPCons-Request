@@ -276,6 +276,7 @@ export default function NotificationBell({ uid }: { uid?: string | null }) {
   const dayGroups = groupByVnDay(
     shown.filter((e) => !e.must).sort((a, b) => b.at.localeCompare(a.at)),
     (e) => e.at,
+    now,
   );
   const hasUnreadOther = feed.entries.some((e) => !e.must && e.unread);
 

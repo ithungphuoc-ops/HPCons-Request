@@ -31,3 +31,11 @@ describe("chia ngày theo giờ VN (UTC+7)", () => {
     expect(vnGroupDate("x")).toBe("");
   });
 });
+
+describe("mốc tương lai (đồng hồ lệch) → kẹp về hiện tại", () => {
+  it("tiêu đề nhóm và nhãn cùng là hôm nay", () => {
+    const [g] = groupByVnDay(["2026-10-08T20:00:00.000Z"], (s) => s, NOW);
+    expect(vnGroupDate(g.iso)).toBe("8/10/2026");
+    expect(vnRelativeDayLabel(g.iso, NOW)).toBe("Hôm nay");
+  });
+});

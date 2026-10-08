@@ -43,7 +43,20 @@ interface HpcoreNotificationEntry {
   link: string;
   /** Dữ liệu có cấu trúc cho App Tổng hiện dòng y chuông app này (08/10/2026) —
    * `title`/`body` vẫn giữ nguyên câu cũ cho bản App Tổng chưa đọc `meta`. */
-  meta: HpcoreNotificationMeta;
+  meta: HpcoreNotificationMeta | null;
+}
+
+/**
+ * Dựng `meta` an toàn: lỗi trong lúc dựng (dữ liệu đề xuất cũ thiếu trường lạ…) KHÔNG được
+ * làm mất thông báo — trả null để vẫn ghi thông báo bằng title/body như trước 08/10/2026.
+ */
+function safeMeta(build: () => HpcoreNotificationMeta): HpcoreNotificationMeta | null {
+  try {
+    return build();
+  } catch (error) {
+    console.error("Dựng meta thông báo HPcore lỗi — ghi thông báo không kèm meta:", error);
+    return null;
+  }
 }
 
 async function pushToHpcore(entries: HpcoreNotificationEntry[]): Promise<void> {
@@ -58,7 +71,7 @@ async function pushToHpcore(entries: HpcoreNotificationEntry[]): Promise<void> {
         title: e.title,
         body: e.body,
         link: e.link,
-        meta: e.meta,
+        ...(e.meta ? { meta: e.meta } : {}),
         type: HPCORE_NOTIFICATION_TYPE,
         isRead: false,
         createdAt: Timestamp.now(),
@@ -95,7 +108,7 @@ export async function hpcorePendingApprovers(
       title: "Đang chờ bạn duyệt",
       body: `Đề xuất ${label(request)} đang chờ bạn xét duyệt.`,
       link,
-      meta: metaPendingApproval(request, userId),
+      meta: safeMeta(() => metaPendingApproval(request, userId)),
     })),
   );
 }
@@ -111,7 +124,7 @@ export async function hpcoreSubmitterResult(
       title: approved ? "Đã được chấp thuận" : "Đã bị từ chối",
       body: `Đề xuất ${label(request)} bạn đã gửi ${approved ? "đã được chấp thuận." : "đã bị từ chối."}`,
       link: requestDetailUrl(request.id),
-      meta: metaSubmitterDecision(request, approved ? "approved" : "rejected"),
+      meta: safeMeta(() => metaSubmitterDecision(request, approved ? "approved" : "rejected")),
     },
   ]);
 }
@@ -126,7 +139,7 @@ export async function hpcoreSubmitterReturned(
       title: "Đã bị trả lại",
       body: `Đề xuất ${label(request)} bạn đã gửi đã bị trả lại${reason ? ` — lý do: ${reason}` : "."}`,
       link: requestDetailUrl(request.id),
-      meta: metaSubmitterDecision(request, "returned", reason),
+      meta: safeMeta(() => metaSubmitterDecision(request, "returned", reason)),
     },
   ]);
 }
@@ -137,7 +150,7 @@ export async function hpcoreFollowersSubmitted(
 ): Promise<void> {
   if (followers.length === 0) return;
   const link = requestDetailUrl(request.id);
-  const meta = metaFollowSubmitted(request);
+  const meta = safeMeta(() => metaFollowSubmitted(request));
   await pushToHpcore(
     followers.map((f) => ({
       userId: f.id,
@@ -154,7 +167,7 @@ export async function hpcoreFollowersFullyApproved(
 ): Promise<void> {
   if (request.status !== "approved" || request.followers.length === 0) return;
   const link = requestDetailUrl(request.id);
-  const meta = metaFollowApproved(request);
+  const meta = safeMeta(() => metaFollowApproved(request));
   await pushToHpcore(
     request.followers.map((f) => ({
       userId: f.id,
@@ -180,7 +193,7 @@ export async function hpcoreCommentOnMine(
       title: "Có bình luận mới",
       body: `${commenterName} bình luận trên đề xuất bạn đã gửi ${label(request)}.`,
       link: requestDetailUrl(request.id),
-      meta: metaComment(request, "comment_on_mine", commenterName, commentText),
+      meta: safeMeta(() => metaComment(request, "comment_on_mine", commenterName, commentText)),
     },
   ]);
 }
@@ -193,7 +206,7 @@ export async function hpcoreMentioned(
 ): Promise<void> {
   if (mentionedUids.length === 0) return;
   const link = requestDetailUrl(request.id);
-  const meta = metaComment(request, "mentioned", commenterName, commentText);
+  const meta = safeMeta(() => metaComment(request, "mentioned", commenterName, commentText));
   await pushToHpcore(
     mentionedUids.map((userId) => ({
       userId,
@@ -211,7 +224,7 @@ export async function hpcoreAdjustmentPending(
 ): Promise<void> {
   if (uids.length === 0) return;
   const link = requestDetailUrl(request.id);
-  const meta = metaAdjustmentPending(request);
+  const meta = safeMeta(() => metaAdjustmentPending(request));
   await pushToHpcore(
     uids.map((userId) => ({
       userId,
@@ -239,7 +252,7 @@ export async function hpcoreAdjustmentResult(
           ? `Điều chỉnh sau duyệt bạn đã đề nghị cho đề xuất ${label(request)} đã được chấp thuận và áp dụng.`
           : `Điều chỉnh sau duyệt bạn đã đề nghị cho đề xuất ${label(request)} đã bị từ chối.`,
       link: requestDetailUrl(request.id),
-      meta: metaAdjustmentResult(request, outcome, actorName),
+      meta: safeMeta(() => metaAdjustmentResult(request, outcome, actorName)),
     },
   ]);
 }

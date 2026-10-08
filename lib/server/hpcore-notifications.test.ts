@@ -260,3 +260,17 @@ describe("meta (08/10/2026) — gắn kèm mọi thông báo, title/body giữ n
     for (const m of kinds) expect(Object.values(m).includes(undefined)).toBe(false);
   });
 });
+
+describe("meta lỗi → vẫn ghi thông báo, chỉ bỏ meta", () => {
+  it("dựng meta ném lỗi (dữ liệu lạ) → thông báo vẫn ghi với title/body, không có khoá meta", async () => {
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    // fieldsSnapshot không lặp được → resolveRequestTitle ném lỗi trong lúc dựng meta.
+    await hpcorePendingApprovers(baseRequest({ fieldsSnapshot: {} as unknown as RequestInstance["fieldsSnapshot"] }));
+    expect(mockSet).toHaveBeenCalledTimes(1);
+    const payload = mockSet.mock.calls[0][1];
+    expect(payload.title).toBe("Đang chờ bạn duyệt");
+    expect("meta" in payload).toBe(false);
+    expect(mockCommit).toHaveBeenCalled();
+    errSpy.mockRestore();
+  });
+});

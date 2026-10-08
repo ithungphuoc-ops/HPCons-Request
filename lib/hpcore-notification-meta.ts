@@ -3,6 +3,7 @@ import {
   FORWARD_ACTIONS,
   isQuietHistoryEntry,
   NOTIFICATION_TEXT,
+  quoted,
   SUBMIT_ACTIONS,
 } from "@/lib/notification-feed";
 import { resolveRequestTitle } from "@/lib/request-title";
@@ -38,8 +39,11 @@ export interface HpcoreNotificationMeta {
   actorName?: string;
   /** Đoạn bình luận / lý do — 1 dòng, tối đa EXCERPT_MAX ký tự + "…". */
   excerpt?: string;
+  /** Mã đề xuất; đề xuất chưa có mã → "" (KHÔNG dùng id Firestore 20 ký tự — chuông app
+   * này khi không có mã chỉ hiện tên, dòng 2 App Tổng phải y vậy). */
   requestCode: string;
-  /** Dòng 2 "mã · tên" — đúng tên chuông app này hiện (resolveRequestTitle). */
+  /** TÊN ĐỀ XUẤT đúng như dòng 2 chuông app này hiện (resolveRequestTitle: trường tên đề
+   * xuất nếu có, không thì tên nhóm). Tên khoá giữ `groupName` vì là hợp đồng với App Tổng. */
   groupName: string;
 }
 
@@ -53,11 +57,23 @@ export function excerptOf(text: string | null | undefined): string | undefined {
   return t.length > EXCERPT_MAX ? `${t.slice(0, EXCERPT_MAX)}…` : t;
 }
 
-/** Firestore Admin báo lỗi khi gặp giá trị `undefined` — bỏ khoá rỗng trước khi ghi. */
+/** Firestore App Tổng (lib/hpcore.ts) KHÔNG bật ignoreUndefinedProperties — 1 giá trị
+ * `undefined` bất kỳ trong meta làm hỏng CẢ lượt ghi thông báo. Nên: bỏ mọi khoá
+ * undefined/null; actorName/excerpt rỗng cũng bỏ; requestCode/groupName luôn là chuỗi. */
 function withoutEmpty(meta: HpcoreNotificationMeta): HpcoreNotificationMeta {
-  const out = { ...meta } as Record<string, unknown>;
-  for (const k of ["actorName", "excerpt"]) if (out[k] === undefined || out[k] === "") delete out[k];
+  const out = { ...meta, requestCode: meta.requestCode ?? "", groupName: meta.groupName ?? "" } as Record<string, unknown>;
+  for (const k of Object.keys(out)) {
+    if (out[k] === undefined || out[k] === null) delete out[k];
+    else if ((k === "actorName" || k === "excerpt") && out[k] === "") delete out[k];
+  }
   return out as unknown as HpcoreNotificationMeta;
+}
+
+/** Tên người làm: rỗng/toàn khoảng trắng → undefined, để dùng câu dự phòng không tên
+ * (tránh câu bắt đầu bằng dấu cách " gửi đề xuất…"). */
+function nameOf(name: string | null | undefined): string | undefined {
+  const t = (name ?? "").trim();
+  return t || undefined;
 }
 
 export type MetaRequest = Pick<RequestInstance, "id" | "code" | "groupNameSnapshot"> &
@@ -66,7 +82,7 @@ export type MetaRequest = Pick<RequestInstance, "id" | "code" | "groupNameSnapsh
 function base(request: MetaRequest) {
   return {
     v: 1 as const,
-    requestCode: request.code ?? request.id,
+    requestCode: request.code ?? "",
     // Cùng nhãn dòng 2 của chuông app này (NotificationEntry.title = resolveRequestTitle).
     groupName: resolveRequestTitle({
       fieldsSnapshot: request.fieldsSnapshot ?? [],
@@ -102,11 +118,15 @@ export function metaPendingApproval(
     (a) => SUBMIT_ACTIONS.includes(a) || FORWARD_ACTIONS.includes(a) || a === DECISION_ACTIONS.approved,
   );
   const forwardedToMe = !!lastTurn && FORWARD_ACTIONS.includes(lastTurn.action) && !!recipientName && lastTurn.target === recipientName;
-  const actorName = forwardedToMe ? lastTurn!.actor : request.submittedBy.name;
+  const actorName = nameOf(forwardedToMe ? lastTurn!.actor : request.submittedBy?.name);
   return withoutEmpty({
     ...base(request),
     kind: "pending_approval",
-    headline: forwardedToMe ? NOTIFICATION_TEXT.forwardedToMe(actorName) : NOTIFICATION_TEXT.approverPending(actorName),
+    headline: !actorName
+      ? "Có đề xuất đang chờ bạn duyệt"
+      : forwardedToMe
+        ? NOTIFICATION_TEXT.forwardedToMe(actorName)
+        : NOTIFICATION_TEXT.approverPending(actorName),
     actorName,
   });
 }
@@ -119,6 +139,7 @@ export function metaSubmitterDecision(
   note?: string,
 ): HpcoreNotificationMeta {
   const h = lastHistory(request, (a) => a === DECISION_ACTIONS[type]);
+  const actorName = nameOf(h?.actor);
   const reason = type === "approved" ? undefined : (note ?? h?.note);
   const fallback =
     type === "approved"
@@ -129,8 +150,8 @@ export function metaSubmitterDecision(
   return withoutEmpty({
     ...base(request),
     kind: type,
-    headline: h?.actor ? NOTIFICATION_TEXT.ownDecided(h.actor, type, reason) : fallback,
-    actorName: h?.actor,
+    headline: actorName ? NOTIFICATION_TEXT.ownDecided(actorName, type, reason) : fallback,
+    actorName,
     excerpt: excerptOf(reason),
   });
 }
@@ -140,26 +161,37 @@ export function metaSubmitterDecision(
 export function metaComment(
   request: MetaRequest,
   kind: "comment_on_mine" | "mentioned",
-  actorName: string,
+  actor: string,
   text?: string,
 ): HpcoreNotificationMeta {
+  const actorName = nameOf(actor);
+  const headline = actorName
+    ? kind === "mentioned"
+      ? NOTIFICATION_TEXT.mentioned(actorName, text)
+      : NOTIFICATION_TEXT.commented(actorName, text)
+    : `${kind === "mentioned" ? "Bạn được nhắc tên trong bình luận" : "Có bình luận mới"}${quoted(text)}`;
   return withoutEmpty({
     ...base(request),
     kind,
-    headline: kind === "mentioned" ? NOTIFICATION_TEXT.mentioned(actorName, text) : NOTIFICATION_TEXT.commented(actorName, text),
+    headline,
     actorName,
     excerpt: excerptOf(text),
   });
 }
 
 export function metaFollowSubmitted(request: MetaRequest & Pick<RequestInstance, "submittedBy">): HpcoreNotificationMeta {
-  const actorName = request.submittedBy.name;
-  return withoutEmpty({ ...base(request), kind: "follow_submitted", headline: NOTIFICATION_TEXT.followSubmitted(actorName), actorName });
+  const actorName = nameOf(request.submittedBy?.name);
+  return withoutEmpty({
+    ...base(request),
+    kind: "follow_submitted",
+    headline: actorName ? NOTIFICATION_TEXT.followSubmitted(actorName) : "Đề xuất bạn theo dõi vừa được gửi",
+    actorName,
+  });
 }
 
 /** Người theo dõi: chỉ báo lần chấp thuận CUỐI — người chấp thuận = dòng "Đã chấp thuận" cuối. */
 export function metaFollowApproved(request: MetaRequest & Partial<Pick<RequestInstance, "history">>): HpcoreNotificationMeta {
-  const actorName = lastHistory(request, (a) => a === DECISION_ACTIONS.approved)?.actor;
+  const actorName = nameOf(lastHistory(request, (a) => a === DECISION_ACTIONS.approved)?.actor);
   return withoutEmpty({
     ...base(request),
     kind: "follow_approved",
@@ -176,7 +208,7 @@ export function metaFollowApproved(request: MetaRequest & Partial<Pick<RequestIn
 export function metaAdjustmentPending(
   request: MetaRequest & Partial<Pick<RequestInstance, "pendingAdjustment">>,
 ): HpcoreNotificationMeta {
-  const actorName = request.pendingAdjustment?.requestedByName;
+  const actorName = nameOf(request.pendingAdjustment?.requestedByName);
   return withoutEmpty({
     ...base(request),
     kind: "adjustment_pending",
@@ -190,8 +222,9 @@ export function metaAdjustmentPending(
 export function metaAdjustmentResult(
   request: MetaRequest,
   outcome: "approved" | "rejected",
-  actorName?: string,
+  actor?: string,
 ): HpcoreNotificationMeta {
+  const actorName = nameOf(actor);
   if (outcome === "approved") {
     return withoutEmpty({ ...base(request), kind: "adjustment_approved", headline: "Điều chỉnh sau duyệt bạn đề nghị đã được chấp thuận" });
   }

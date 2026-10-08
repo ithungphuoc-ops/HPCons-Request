@@ -44,11 +44,15 @@ export function vnTime(iso: string): string {
   return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
 }
 
-/** Gom danh sách (đã xếp mới → cũ) thành từng nhóm ngày, giữ nguyên thứ tự. */
-export function groupByVnDay<T>(items: T[], at: (item: T) => string): { key: string; iso: string; items: T[] }[] {
+/** Gom danh sách (đã xếp mới → cũ) thành từng nhóm ngày, giữ nguyên thứ tự. Mốc ở
+ * TƯƠNG LAI (đồng hồ máy lệch) bị kẹp về `now` — nếu không, tiêu đề nhóm ghi ngày mai
+ * trong khi nhãn bên phải ghi "Hôm nay", 2 chữ cãi nhau. */
+export function groupByVnDay<T>(items: T[], at: (item: T) => string, now?: number): { key: string; iso: string; items: T[] }[] {
   const out: { key: string; iso: string; items: T[] }[] = [];
   for (const item of items) {
-    const iso = at(item);
+    const raw = at(item);
+    const t = Date.parse(raw);
+    const iso = now !== undefined && Number.isFinite(t) && t > now ? new Date(now).toISOString() : raw;
     const key = vnDayKey(iso);
     const last = out[out.length - 1];
     if (last && last.key === key) last.items.push(item);
