@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist_Mono, Inter } from "next/font/google";
 import "./globals.css";
 
@@ -24,7 +24,14 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Base Request",
   description: "Giao diện thiết lập Base Request",
-  icons: { icon: "/logo.png" },
+  icons: { icon: "/logo.png", apple: "/apple-touch-icon.png" },
+  // iPhone "Thêm vào Màn hình chính" → mở như app riêng (bắt buộc để nhận Web Push trên iOS).
+  appleWebApp: { capable: true, title: "HPCore Đề xuất", statusBarStyle: "default" },
+};
+
+// Màu thanh trạng thái khi mở như app cài đặt — màu chủ đạo hệ sinh thái (#096AA7).
+export const viewport: Viewport = {
+  themeColor: "#096AA7",
 };
 
 export default function RootLayout({

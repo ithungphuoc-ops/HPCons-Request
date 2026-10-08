@@ -32,6 +32,7 @@ import {
   type NotificationKind,
 } from "@/lib/notification-feed";
 import { groupByVnDay, vnGroupDate, vnRelativeDayLabel, vnTime } from "@/lib/notification-day-group";
+import WebPushBanner from "@/components/request/WebPushBanner";
 
 /** Gom nhiều yêu cầu tải sát nhau thành 1 lần (chỉ dùng ở chế độ dự phòng). */
 const DEBOUNCE_MS = 800;
@@ -377,6 +378,8 @@ export default function NotificationBell({ uid }: { uid?: string | null }) {
         </div>
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-3 py-4 sm:px-5">
+          {/* Web Push (cấp 3, 08/10/2026): nhắc bật thông báo ra màn hình — tự ẩn khi không cần. */}
+          <WebPushBanner onNavigate={() => setOpen(false)} />
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-page-bg)] p-1">
               {(

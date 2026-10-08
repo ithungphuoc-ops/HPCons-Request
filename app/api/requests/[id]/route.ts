@@ -391,7 +391,7 @@ export async function PATCH(
       // Chuông chung HPcore (Sếp chốt 07/10/2026).
       after(async () => {
         try {
-          const tasks = [hpcorePendingApprovers(updated)];
+          const tasks = [hpcorePendingApprovers(updated, { actorUid: session.uid })];
           if (found.status === "draft") tasks.push(hpcoreFollowersSubmitted(updated.followers, updated));
           await Promise.all(tasks);
         } catch (hpcoreError) {
@@ -448,7 +448,7 @@ export async function PATCH(
     // Chuông chung HPcore (Sếp chốt 07/10/2026).
     after(async () => {
       try {
-        const tasks = [hpcorePendingApprovers(updated)];
+        const tasks = [hpcorePendingApprovers(updated, { actorUid: session.uid })];
         if (found.status === "draft") tasks.push(hpcoreFollowersSubmitted(updated.followers, updated));
         await Promise.all(tasks);
       } catch (hpcoreError) {

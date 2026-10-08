@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Bell, Check, Mail } from "lucide-react";
+import WebPushSettings from "@/components/request/WebPushSettings";
 import type { EmailNotifyCategory, NotificationCategory, NotificationSettings } from "@/lib/types";
 
 const CATEGORY_LABELS: Record<NotificationCategory, { title: string; description: string }> = {
@@ -168,6 +169,9 @@ export default function NotificationSettingsPage() {
           })}
         </div>
       )}
+
+      {/* Web Push (cấp 3, Sếp duyệt 08/10/2026) — tự ẩn khi máy chủ chưa cấu hình khoá. */}
+      <WebPushSettings />
 
       <div className="mb-5 mt-9 flex items-center gap-2">
         <Mail size={20} className="text-[var(--color-action-blue)]" />
