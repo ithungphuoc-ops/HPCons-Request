@@ -5,6 +5,7 @@ import {
   normalizePushPreferences,
   PUSH_CATEGORIES,
   PUSH_CATEGORY_OF,
+  type PushCategory,
   type PushPayload,
   type PushPreferences,
 } from "@/lib/web-push-payload";
@@ -243,6 +244,9 @@ async function mapLimit<T>(items: T[], limit: number, fn: (item: T) => Promise<v
 export interface PushItem {
   uid: string;
   payload: PushPayload;
+  /** Chỉ gửi nếu người nhận ĐANG TẮT nhóm này — dùng cho "bình luận mới" khi người gửi đề xuất
+   * cũng bị nhắc tên: bật "Nhắc tên" thì đã có thư nhắc tên, tắt thì vẫn nhận thư bình luận. */
+  onlyIfDisabled?: PushCategory;
 }
 
 /**
@@ -257,13 +261,14 @@ export async function sendWebPushItems(items: PushItem[], opts: { actorUid?: str
   const config = getWebPushConfig();
   if (!config || items.length === 0) return;
   try {
-    const byUid = new Map<string, PushPayload>();
+    const byUid = new Map<string, PushItem>();
     for (const item of items) {
       if (!item.uid || item.uid === opts.actorUid || byUid.has(item.uid)) continue;
-      byUid.set(item.uid, item.payload);
+      byUid.set(item.uid, item);
     }
     const sentDevices = new Set<string>();
-    await mapLimit([...byUid.entries()], SEND_CONCURRENCY, async ([uid, payload]) => {
+    await mapLimit([...byUid.entries()], SEND_CONCURRENCY, async ([uid, item]) => {
+      const { payload } = item;
       try {
         // Đọc danh sách máy TRƯỚC: đa số người chưa bật → dừng ở 1 lượt đọc, khỏi đọc công tắc.
         const devices = await userDoc(uid).collection("devices").get();
@@ -275,6 +280,7 @@ export async function sendWebPushItems(items: PushItem[], opts: { actorUid?: str
         if (payload.kind !== "test") {
           const prefs = await getPushPreferences(uid);
           if (!prefs[PUSH_CATEGORY_OF[payload.kind]]) return;
+          if (item.onlyIfDisabled && prefs[item.onlyIfDisabled]) return;
         }
         await Promise.all(
           ownDocs.map(async (d) => {

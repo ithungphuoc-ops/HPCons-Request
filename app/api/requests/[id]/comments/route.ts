@@ -96,7 +96,7 @@ export async function POST(
     after(async () => {
       try {
         await Promise.all([
-          hpcoreCommentOnMine(found, session.uid, session.name, text),
+          hpcoreCommentOnMine(found, session.uid, session.name, text, { actorUid: session.uid, mentionedUids: expandedMentionUids }),
           hpcoreMentioned(found, expandedMentionUids, session.name, text, { actorUid: session.uid }),
         ]);
       } catch (hpcoreError) {

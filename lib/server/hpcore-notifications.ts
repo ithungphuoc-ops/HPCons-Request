@@ -12,7 +12,9 @@ import {
   metaSubmitterDecision,
   type HpcoreNotificationMeta,
 } from "@/lib/hpcore-notification-meta";
+import { pendingAdjustmentFiles } from "@/lib/adjustment-settings";
 import { NOTIFICATION_TEXT } from "@/lib/notification-feed";
+import { resolveRequestTitle } from "@/lib/request-title";
 import { requestDetailUrl } from "@/lib/server/mailer";
 import { sendWebPushItems, type PushItem } from "@/lib/server/web-push";
 import { buildPushPayload, type PushKind } from "@/lib/web-push-payload";
@@ -87,45 +89,75 @@ async function pushToHpcore(entries: HpcoreNotificationEntry[]): Promise<void> {
 }
 
 /**
- * Thông báo "ra màn hình" (Web Push — cấp 3, Sếp duyệt 08/10/2026) đi KÈM đúng các điểm
- * ghi chuông chung ở dưới: nơi này đã biết loại sự kiện + người nhận, khỏi tính lại lần 2.
- * Chỉ 3 nhóm được đẩy (chờ tôi duyệt / được nhắc tên / kết quả đề xuất của tôi) — người
- * theo dõi & bình luận thường KHÔNG đẩy ra màn hình (chỉ có trên chuông).
+ * Thông báo "ra màn hình" (Web Push — cấp 3) đi KÈM đúng các điểm ghi chuông chung ở dưới:
+ * nơi này đã biết loại sự kiện + người nhận, khỏi tính lại lần 2.
+ * 4 nhóm được đẩy: chờ tôi duyệt / được nhắc tên / bình luận trên đề xuất của tôi / kết quả
+ * đề xuất của tôi. Người theo dõi KHÔNG đẩy ra màn hình (chỉ có trên chuông); không báo tiến
+ * độ từng bước (Sếp chốt câu 4 demo "noi-dung-thong-bao-day-2026-10-08").
  * `actorUid` = người vừa thao tác → không bao giờ tự đẩy cho chính họ.
  */
 export interface PushOptions {
   actorUid?: string;
+  /** Bình luận: những người được nhắc trong CHÍNH bình luận này — người gửi đề xuất nếu cũng
+   * bị nhắc thì chỉ nhận thông báo "nhắc tên" (nhắc tên thắng), không nhận 2 cái. */
+  mentionedUids?: string[];
+  /** Điều chỉnh được chấp thuận: số người đã duyệt ("Đủ k/k người duyệt"). */
+  approverCount?: number;
+  /** Kết quả cuối: người vừa quyết định + ghi chú/lý do — truyền THẲNG từ route (như "trả lại"),
+   * không suy ra từ meta/nhật ký. */
+  actorName?: string;
+  note?: string;
 }
 
-type PushRequest = Pick<RequestInstance, "id" | "groupId" | "code" | "groupNameSnapshot">;
+type PushRequest = Pick<RequestInstance, "id" | "groupId" | "code" | "groupNameSnapshot"> &
+  Partial<Pick<RequestInstance, "fieldsSnapshot" | "values">>;
 
 /** Đề xuất TRỰC TIẾP (groupId null) lưu TÊN NGƯỜI DÙNG TỰ GÕ vào groupNameSnapshot
- * (app/api/requests/route.ts) — có thể chứa số tiền → KHÔNG đưa lên màn hình khoá,
- * thay bằng chữ cố định. Chỉ đề xuất thuộc nhóm (tên nhóm do Admin đặt) mới dùng snapshot. */
+ * (app/api/requests/route.ts) — dòng "nhóm" dùng chữ cố định; tên tự gõ vẫn hiện ở dòng
+ * "tên đề xuất" (Sếp cho phép hiện tên đề xuất từ 08/10/2026). */
 export const DIRECT_REQUEST_PUSH_LABEL = "Đề xuất trực tiếp";
 
 export function pushGroupLabel(request: Pick<RequestInstance, "groupId" | "groupNameSnapshot">): string {
   return typeof request.groupId === "string" && request.groupId ? request.groupNameSnapshot : DIRECT_REQUEST_PUSH_LABEL;
 }
 
-function pushItem(
-  userId: string,
-  kind: PushKind,
-  request: PushRequest,
-  actorName: string | undefined,
-  extra: { forwarded?: boolean } = {},
-): PushItem {
+/** Link nút "Sửa và gửi lại" — y editLinkFor ở RequestDetailView / draftLinkFor danh sách. */
+function returnEditUrl(request: Pick<RequestInstance, "id" | "groupId">): string {
+  const id = encodeURIComponent(request.id);
+  return request.groupId
+    ? `/request/groups/${encodeURIComponent(request.groupId)}/submit?draftId=${id}`
+    : `/request/direct/new?draftId=${id}`;
+}
+
+/** Tên đề xuất y như chuông hiện; dữ liệu cũ lạ làm hàm ném lỗi → rơi về tên nhóm/snapshot. */
+function pushRequestTitle(request: PushRequest): string {
+  try {
+    return resolveRequestTitle({
+      fieldsSnapshot: request.fieldsSnapshot ?? [],
+      values: request.values ?? {},
+      groupNameSnapshot: request.groupNameSnapshot,
+    });
+  } catch {
+    return request.groupNameSnapshot;
+  }
+}
+
+type PushExtra = Omit<Parameters<typeof buildPushPayload>[0], "kind" | "requestId" | "code" | "groupName" | "requestTitle" | "hasCustomTitle">;
+
+function pushItem(userId: string, kind: PushKind, request: PushRequest, extra: PushExtra = {}): PushItem {
+  const title = pushRequestTitle(request);
+  const isGroup = typeof request.groupId === "string" && !!request.groupId;
   return {
     uid: userId,
     payload: buildPushPayload({
       kind,
       requestId: request.id,
       code: request.code,
-      // CỐ Ý dùng tên NHÓM, không dùng meta.groupName (= tên đề xuất người dùng gõ, có thể
-      // chứa số tiền) — quyết định số 4: màn hình khoá chỉ ghi ngắn.
       groupName: pushGroupLabel(request),
-      actorName,
-      forwarded: extra.forwarded,
+      requestTitle: title,
+      // Không có trường "tên đề xuất" → title = tên nhóm, khỏi lặp lại ở 2 dòng.
+      hasCustomTitle: !isGroup || title !== request.groupNameSnapshot,
+      ...extra,
     }),
   };
 }
@@ -164,7 +196,8 @@ export async function hpcorePendingApprovers(
   }));
   const pushItems = entries.map((e) => {
     const actorName = e.meta?.actorName ?? request.submittedBy?.name;
-    return pushItem(e.userId, "pending_approval", request, actorName, {
+    return pushItem(e.userId, "pending_approval", request, {
+      actorName,
       // Lượt tới tay người này do được chuyển tiếp → "X chuyển tiếp" thay vì "X gửi".
       forwarded: !!e.meta?.actorName && e.meta.headline === NOTIFICATION_TEXT.forwardedToMe(e.meta.actorName),
     });
@@ -173,7 +206,9 @@ export async function hpcorePendingApprovers(
 }
 
 export async function hpcoreSubmitterResult(
-  request: Pick<RequestInstance, "id" | "groupId" | "groupNameSnapshot" | "code" | "status" | "submittedBy"> & MetaExtras,
+  request: Pick<RequestInstance, "id" | "groupId" | "groupNameSnapshot" | "code" | "status" | "submittedBy"> &
+    MetaExtras &
+    Partial<Pick<RequestInstance, "approvers" | "approvalFlow">>,
   opts?: PushOptions,
 ): Promise<void> {
   if (request.status !== "approved" && request.status !== "rejected") return;
@@ -185,7 +220,15 @@ export async function hpcoreSubmitterResult(
     link: requestDetailUrl(request.id),
     meta: safeMeta(() => metaSubmitterDecision(request, approved ? "approved" : "rejected")),
   };
-  await deliverAll([entry], [pushItem(entry.userId, approved ? "approved" : "rejected", request, entry.meta?.actorName)], opts);
+  const actorName = opts?.actorName ?? entry.meta?.actorName;
+  const item = approved
+    ? pushItem(entry.userId, "approved", request, {
+        actorName,
+        approverTotal: request.approvers?.length,
+        approvalFlow: request.approvalFlow,
+      })
+    : pushItem(entry.userId, "rejected", request, { actorName, excerpt: opts?.note ?? entry.meta?.excerpt });
+  await deliverAll([entry], [item], opts);
 }
 
 export async function hpcoreSubmitterReturned(
@@ -200,8 +243,17 @@ export async function hpcoreSubmitterReturned(
     link: requestDetailUrl(request.id),
     meta: safeMeta(() => metaSubmitterDecision(request, "returned", reason)),
   };
-  // Lý do trả lại KHÔNG lên màn hình khoá — chỉ lấy tên người làm.
-  await deliverAll([entry], [pushItem(entry.userId, "returned", request, entry.meta?.actorName)], opts);
+  await deliverAll(
+    [entry],
+    [
+      pushItem(entry.userId, "returned", request, {
+        actorName: opts?.actorName ?? entry.meta?.actorName,
+        excerpt: reason ?? entry.meta?.excerpt,
+        editUrl: returnEditUrl(request),
+      }),
+    ],
+    opts,
+  );
 }
 
 export async function hpcoreFollowersSubmitted(
@@ -245,17 +297,23 @@ export async function hpcoreCommentOnMine(
   commenterName: string,
   /** Nội dung bình luận — chỉ dùng cho `meta` (headline/excerpt), `body` giữ câu cũ. */
   commentText?: string,
+  opts?: PushOptions,
 ): Promise<void> {
   if (request.submittedBy.uid === commenterUid) return;
-  await pushToHpcore([
-    {
-      userId: request.submittedBy.uid,
-      title: "Có bình luận mới",
-      body: `${commenterName} bình luận trên đề xuất bạn đã gửi ${label(request)}.`,
-      link: requestDetailUrl(request.id),
-      meta: safeMeta(() => metaComment(request, "comment_on_mine", commenterName, commentText)),
-    },
-  ]);
+  const entry = {
+    userId: request.submittedBy.uid,
+    title: "Có bình luận mới",
+    body: `${commenterName} bình luận trên đề xuất bạn đã gửi ${label(request)}.`,
+    link: requestDetailUrl(request.id),
+    meta: safeMeta(() => metaComment(request, "comment_on_mine", commenterName, commentText)),
+  };
+  // Người gửi cũng bị nhắc tên trong CHÍNH bình luận này → ưu tiên thông báo "nhắc tên"; thư
+  // "bình luận mới" chỉ đi khi người đó ĐANG TẮT "Nhắc tên" (xét lúc gửi, theo công tắc thật —
+  // review PR #96: trước đây tắt "Nhắc tên" + bật "Bình luận" thì không nhận gì). Chuông vẫn ghi như cũ.
+  const mentionedToo = opts?.mentionedUids?.includes(entry.userId) ?? false;
+  const item = pushItem(entry.userId, "comment_on_mine", request, { actorName: commenterName, excerpt: commentText });
+  const items = [mentionedToo ? { ...item, onlyIfDisabled: "mention" as const } : item];
+  await deliverAll([entry], items, { ...opts, actorUid: opts?.actorUid ?? commenterUid });
 }
 
 export async function hpcoreMentioned(
@@ -275,8 +333,11 @@ export async function hpcoreMentioned(
     link,
     meta,
   }));
-  // Nội dung bình luận KHÔNG lên màn hình khoá — chỉ tên người nhắc + mã + tên nhóm.
-  await deliverAll(entries, mentionedUids.map((uid) => pushItem(uid, "mentioned", request, commenterName)), opts);
+  await deliverAll(
+    entries,
+    mentionedUids.map((uid) => pushItem(uid, "mentioned", request, { actorName: commenterName, excerpt: commentText })),
+    opts,
+  );
 }
 
 export async function hpcoreAdjustmentPending(
@@ -294,9 +355,12 @@ export async function hpcoreAdjustmentPending(
     link,
     meta,
   }));
-  // Nội dung điều chỉnh (thường là số tiền/khối lượng) KHÔNG lên màn hình khoá.
-  const actorName = request.pendingAdjustment?.requestedByName;
-  await deliverAll(entries, uids.map((uid) => pushItem(uid, "adjustment_pending", request, actorName)), opts);
+  const extra: PushExtra = {
+    actorName: request.pendingAdjustment?.requestedByName,
+    excerpt: request.pendingAdjustment?.noiDung,
+    fileCount: pendingAdjustmentFiles(request.pendingAdjustment).length,
+  };
+  await deliverAll(entries, uids.map((uid) => pushItem(uid, "adjustment_pending", request, extra)), opts);
 }
 
 export async function hpcoreAdjustmentResult(
@@ -318,5 +382,5 @@ export async function hpcoreAdjustmentResult(
     meta: safeMeta(() => metaAdjustmentResult(request, outcome, actorName)),
   };
   const kind = outcome === "approved" ? "adjustment_approved" : "adjustment_rejected";
-  await deliverAll([entry], [pushItem(requesterUid, kind, request, actorName)], opts);
+  await deliverAll([entry], [pushItem(requesterUid, kind, request, { actorName, approverTotal: opts?.approverCount })], opts);
 }

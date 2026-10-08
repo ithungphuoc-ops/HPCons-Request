@@ -166,6 +166,17 @@ describe("lọc người nhận", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("công tắc 'bình luận trên đề xuất của tôi' riêng; thiếu khoá = bật", async () => {
+    addDevice("uA", FCM("a"));
+    await sendWebPushItems([{ uid: "uA", payload: payload("comment_on_mine") }]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    store.set("push-subscriptions/uA", { prefs: { comment: false } });
+    await sendWebPushItems([{ uid: "uA", payload: payload("comment_on_mine") }]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await sendWebPushItems([{ uid: "uA", payload: payload("mentioned") }]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("1 người lặp 2 lần trong 1 sự kiện → chỉ 1 thư mỗi máy", async () => {
     addDevice("uA", FCM("a1"));
     addDevice("uA", FCM("a2"));
@@ -270,5 +281,32 @@ describe("vá sau review bảo mật (PR #95)", () => {
     expect(allowTestPush("rl-1", 5_000)).toBe(false);
     expect(allowTestPush("rl-2", 5_000)).toBe(true);
     expect(allowTestPush("rl-1", 11_000)).toBe(true);
+  });
+});
+
+describe("nhắc tên thắng nhưng theo công tắc thật (review PR #96)", () => {
+  const items = () => [
+    { uid: "uA", payload: payload("mentioned") },
+  ];
+  const commentFallback = () => [{ uid: "uA", payload: payload("comment_on_mine"), onlyIfDisabled: "mention" as const }];
+
+  it("bật 'Nhắc tên' → chỉ 1 thư nhắc tên", async () => {
+    addDevice("uA", FCM("a"));
+    await Promise.all([sendWebPushItems(items()), sendWebPushItems(commentFallback())]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("tắt 'Nhắc tên', bật 'Bình luận' → vẫn nhận thư bình luận", async () => {
+    addDevice("uA", FCM("a"));
+    store.set("push-subscriptions/uA", { prefs: { mention: false, comment: true } });
+    await Promise.all([sendWebPushItems(items()), sendWebPushItems(commentFallback())]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("tắt cả 2 → không nhận gì", async () => {
+    addDevice("uA", FCM("a"));
+    store.set("push-subscriptions/uA", { prefs: { mention: false, comment: false } });
+    await Promise.all([sendWebPushItems(items()), sendWebPushItems(commentFallback())]);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

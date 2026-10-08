@@ -3,8 +3,8 @@
  * 08/10/2026). CỐ Ý không cache gì, không chặn fetch — app vẫn chạy y như trước, chỉ thêm
  * khả năng hiện thông báo khi tab đã đóng.
  *
- * Nội dung thư do máy chủ dựng sẵn (lib/web-push-payload.ts) — đã lọc: không số tiền,
- * không bình luận, không tên đề xuất người dùng gõ.
+ * Nội dung thư do máy chủ dựng sẵn (lib/web-push-payload.ts) — tiêu đề có biểu tượng,
+ * thân 2 dòng (trích bình luận/lý do/tên đề xuất + mã · nhóm), chữ trên nút theo từng loại.
  */
 
 self.addEventListener("install", () => {
@@ -32,7 +32,8 @@ self.addEventListener("push", (event) => {
     tag: data.tag || "hpcore-de-xuat",
     renotify: !!data.tag,
     data: { url: data.url || "/request" },
-    actions: [{ action: "open", title: "Mở đề xuất" }],
+    // Chữ nút theo loại: "Mở để duyệt" / "Sửa và gửi lại" / "Mở đề xuất" (máy chủ chọn sẵn).
+    actions: [{ action: "open", title: typeof data.actionTitle === "string" && data.actionTitle ? data.actionTitle.slice(0, 40) : "Mở đề xuất" }],
   };
   // Sếp chốt (quyết định 3): LUÔN hiện, kể cả khi đang mở app.
   event.waitUntil(self.registration.showNotification(title, options));

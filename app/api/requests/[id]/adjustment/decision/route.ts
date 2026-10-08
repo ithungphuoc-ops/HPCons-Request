@@ -275,7 +275,10 @@ export async function POST(
       // Chuông chung HPcore (Sếp chốt 07/10/2026).
       after(async () => {
         try {
-          await hpcoreAdjustmentResult(ketQua.request, pendingSnapshot.requestedByUid, "approved", undefined, { actorUid: session.uid });
+          await hpcoreAdjustmentResult(ketQua.request, pendingSnapshot.requestedByUid, "approved", undefined, {
+            actorUid: session.uid,
+            approverCount: pendingSnapshot.approvers.length,
+          });
         } catch (hpcoreError) {
           console.error("Ghi thông báo sang HPcore khi duyệt xong điều chỉnh sau duyệt thất bại (không ảnh hưởng thao tác chính):", hpcoreError);
         }

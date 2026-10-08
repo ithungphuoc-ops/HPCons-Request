@@ -112,7 +112,7 @@ export default function GroupRow({
           } disabled:opacity-60`}
         >
           <span
-            className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${
+            className={`absolute left-0 top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${
               group.status === "active" ? "translate-x-4" : "translate-x-0.5"
             }`}
           />

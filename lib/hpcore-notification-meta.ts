@@ -7,6 +7,7 @@ import {
   SUBMIT_ACTIONS,
 } from "@/lib/notification-feed";
 import { resolveRequestTitle } from "@/lib/request-title";
+import { clipGraphemes } from "@/lib/text-clip";
 import type { RequestInstance } from "@/lib/types";
 
 /**
@@ -52,9 +53,8 @@ export const EXCERPT_MAX = 120;
 /** Gộp khoảng trắng/xuống dòng thành 1 dòng, cắt ở EXCERPT_MAX + "…". Rỗng → undefined
  * (Firestore không nhận `undefined` — nơi ghi bỏ hẳn khoá rỗng, xem withoutEmpty). */
 export function excerptOf(text: string | null | undefined): string | undefined {
-  const t = (text ?? "").replace(/\s+/g, " ").trim();
-  if (!t) return undefined;
-  return t.length > EXCERPT_MAX ? `${t.slice(0, EXCERPT_MAX)}…` : t;
+  // Cắt theo cụm ký tự (không vỡ emoji / dấu tổ hợp) + bỏ ký tự điều khiển — lib/text-clip.ts.
+  return clipGraphemes(text, EXCERPT_MAX) || undefined;
 }
 
 /** Firestore App Tổng (lib/hpcore.ts) KHÔNG bật ignoreUndefinedProperties — 1 giá trị
