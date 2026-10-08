@@ -40,14 +40,37 @@ import type {
 } from "@/lib/types";
 import { dateLeadTimeBlockedMessage, resolveDateLeadTimeNumbers } from "@/lib/date-lead-time";
 import { quetViecToiHan } from "@/lib/dong-bo/hang-cho";
+import { REQUEST_SUMMARY_FIELDS, toRequestSummary } from "@/lib/request-summary";
+import type { DocumentData, Query, QueryDocumentSnapshot } from "firebase-admin/firestore";
 
 // Hàng chờ đồng bộ chạy trong after() của GET — cho đủ thời gian gửi (gói miễn phí tối đa 60 giây).
 export const maxDuration = 60;
 
+/**
+ * Đề xuất CÒN HIỆU LỰC (`deletedAt == null`) — lọc ngay ở Firestore thay vì đọc cả kho rồi
+ * bỏ bản đã xoá bằng code. Đo 08/10/2026 trên dữ liệu thật: 248 bản ghi thì 204 đã xoá mềm;
+ * đọc cả kho ~1,3 MB / ~1,3 giây, chỉ đọc bản còn hiệu lực ~0,27 MB / ~0,4 giây. Cùng kết
+ * quả với `.filter((r) => !r.deletedAt)` cũ vì MỌI bản ghi đều có field `deletedAt` (null
+ * hoặc giờ xoá — tạo mới/nhân bản/khôi phục đều ghi `null`, đã đếm: 0 bản thiếu).
+ * Không cần index thêm (so bằng trên 1 field — index tự động).
+ */
+function liveRequestsQuery(): Query<DocumentData> {
+  return adminDb.collection("requests").where("deletedAt", "==", null);
+}
+
+/** `view=summary` (Trang chủ) → chỉ đọc các field danh sách cần (lib/request-summary.ts). */
+function withView(q: Query<DocumentData>, summary: boolean): Query<DocumentData> {
+  return summary ? q.select(...REQUEST_SUMMARY_FIELDS) : q;
+}
+const toRequest = (summary: boolean) => (doc: QueryDocumentSnapshot<DocumentData>): RequestInstance =>
+  summary ? toRequestSummary(doc.id, doc.data()) : ({ id: doc.id, ...doc.data() } as RequestInstance);
+
 export async function GET(request: Request) {
   try {
     const session = await requireSession();
-    const scope = new URL(request.url).searchParams.get("scope") ?? "mine";
+    const params = new URL(request.url).searchParams;
+    const scope = params.get("scope") ?? "mine";
+    const summary = params.get("view") === "summary";
     /* ★ 03/10/2026 — hàng chờ đồng bộ Kho / Thu mua: mọi lần mở danh sách (mọi tab) đều cho máy chủ
        tranh thủ gửi các việc đã tới hạn (tối đa 1 lần/phút). Gói Vercel miễn phí chỉ có cron 1 lần/ngày
        nên đây là đường gửi lại chính trong giờ làm việc. Xem lib/dong-bo/hang-cho.ts. */
@@ -65,6 +88,7 @@ export async function GET(request: Request) {
         .map((doc) => ({ id: doc.id, ...doc.data() }) as RequestInstance)
         .filter((r) => !r.deletedAt)
         .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt));
+      // (Không dùng bản gọn ở đây: tự thử lại đồng bộ bên dưới cần `history`/`values` đầy đủ.)
       // Bắn rồi quên cho từng đề xuất lỡ đồng bộ Thu mua thất bại lần trước — xem
       // lib/thumua-sync.ts. Đây là màn người gửi hay mở lại nhất, nên tự vá ở đây trước.
       for (const r of requests) void retryThuMuaSyncNeuLoi(r);
@@ -115,7 +139,7 @@ export async function GET(request: Request) {
       // xong, xem design.md của change fix-notification-bell-stale-gaps. Lấy
       // hết rồi lọc bằng code — cùng cách "sent-to-me"/"following"/"all" bên
       // dưới đang làm, chấp nhận được với quy mô công ty hiện tại.
-      const snap = await adminDb.collection("requests").get();
+      const snap = await liveRequestsQuery().get();
       const requests = snap.docs
         .map((doc) => ({ id: doc.id, ...doc.data() }) as RequestInstance)
         .filter((r) => {
@@ -135,7 +159,7 @@ export async function GET(request: Request) {
       // đơn vị chính → trưởng nhóm cha), quản lý đó CHÍNH LÀ session.uid,
       // và KHÔNG có mặt trong approversSnapshot (bị chọn người khác thay).
       // Tính lại lúc đọc (không lưu sẵn lúc gửi) — xem design.md.
-      const snap = await adminDb.collection("requests").get();
+      const snap = await liveRequestsQuery().get();
       const candidates = snap.docs
         .map((doc) => ({ id: doc.id, ...doc.data() }) as RequestInstance)
         .filter((r) => !r.deletedAt && r.groupId);
@@ -184,8 +208,8 @@ export async function GET(request: Request) {
       scope === "all" ||
       scope === "following-unseen"
     ) {
-      const snap = await adminDb.collection("requests").get();
-      const all = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }) as RequestInstance);
+      const snap = await withView(liveRequestsQuery(), summary).get();
+      const all = snap.docs.map(toRequest(summary));
 
       const isMine = (r: RequestInstance) => r.submittedBy.uid === session.uid;
       // Gồm cả đề xuất mình được giao duyệt "Điều chỉnh sau duyệt" (đang

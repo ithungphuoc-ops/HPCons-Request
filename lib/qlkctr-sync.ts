@@ -1,6 +1,7 @@
 import { createSignedReadUrl } from "@/lib/r2";
 import { TITLE_FIELD_CODES } from "@/lib/request-title";
 import { deserializeTableRows, flattenLineBreaks } from "@/lib/table-field";
+import { duocThuLai, giuChoThuLai, trungKetQuaLanTruoc } from "@/lib/sync-retry-guard";
 import type { ProposalField, RequestAttachment, RequestInstance } from "@/lib/types";
 
 /**
@@ -291,6 +292,10 @@ export async function retryQlkCtrSyncNeuLoi(request: RequestInstance): Promise<v
      từng thử — để nguyên, vì có thể đề xuất này không thuộc loại công trình. */
   if (request.status !== "approved") return;
   if (request.qlkCtrSyncStatus !== "failed" && request.qlkCtrSyncStatus !== "bo_qua") return;
+  /* ★ 08/10/2026 — tối đa 1 lần / 30 phút mỗi đề xuất (lib/sync-retry-guard.ts). Xét bản đọc
+     trước cho rẻ, rồi mới giữ chỗ bằng transaction (2 tab mở cùng lúc không cùng gửi). */
+  if (!duocThuLai(request.qlkCtrRetryAt, Date.now())) return;
+  if (!(await giuChoThuLai(request.id, "qlkCtrRetryAt"))) return;
 
   try {
     const payload = await trichXuatPayload(request);
@@ -309,13 +314,17 @@ export async function retryQlkCtrSyncNeuLoi(request: RequestInstance): Promise<v
       action: `${action} (tự thử lại)`,
       note,
     };
-    await adminDb.collection("requests").doc(request.id).update({
-      qlkCtrSyncStatus: trangThaiSauKhiGui(ketQua),
+    const trangThai = trangThaiSauKhiGui(ketQua);
+    const patch: Record<string, unknown> = {};
+    if (trangThai !== request.qlkCtrSyncStatus) patch.qlkCtrSyncStatus = trangThai;
+    // Kết quả y hệt dòng gần nhất của kênh QLK CTR → không nối thêm dòng trùng (08/10/2026).
+    if (!trungKetQuaLanTruoc(request.history, syncEntry, (a) => a.includes("QLK CTR"))) {
       // NỐI bằng arrayUnion (06/10/2026) — `request` là bản đọc TRƯỚC khi gọi
       // mạng (có thể vài giây), ghi đè cả mảng từ bản đó sẽ xoá mất dòng lịch
       // sử của thao tác khác (bổ sung tài liệu, hàng chờ…) ghi xen giữa.
-      history: FieldValue.arrayUnion(syncEntry),
-    });
+      patch.history = FieldValue.arrayUnion(syncEntry);
+    }
+    if (Object.keys(patch).length > 0) await adminDb.collection("requests").doc(request.id).update(patch);
   } catch (err) {
     console.error(`Tự thử lại đồng bộ QLK CTR cho đề xuất ${request.id} lỗi:`, err);
   }

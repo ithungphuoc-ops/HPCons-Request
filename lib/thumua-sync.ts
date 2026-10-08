@@ -1,6 +1,7 @@
 import { createSignedReadUrl } from "@/lib/r2";
 import { TITLE_FIELD_CODES } from "@/lib/request-title";
 import { deserializeTableRows, flattenLineBreaks } from "@/lib/table-field";
+import { duocThuLai, giuChoThuLai, trungKetQuaLanTruoc } from "@/lib/sync-retry-guard";
 import type { ProposalField, RequestAttachment, RequestInstance } from "@/lib/types";
 
 /**
@@ -388,6 +389,9 @@ export async function guiSangThuMua(payload: ThuMuaPayload): Promise<KetQuaGuiTh
  */
 export async function retryThuMuaSyncNeuLoi(request: RequestInstance): Promise<void> {
   if (request.status !== "approved" || request.thuMuaSyncStatus !== "failed") return;
+  /* ★ 08/10/2026 — tối đa 1 lần / 30 phút mỗi đề xuất (lib/sync-retry-guard.ts). */
+  if (!duocThuLai(request.thuMuaRetryAt, Date.now())) return;
+  if (!(await giuChoThuLai(request.id, "thuMuaRetryAt"))) return;
 
   try {
     const payload = await trichXuatPayloadThuMua(request);
@@ -402,13 +406,17 @@ export async function retryThuMuaSyncNeuLoi(request: RequestInstance): Promise<v
       action: ketQua.ok ? "Đã đồng bộ sang App Thu mua (tự thử lại)" : "Đồng bộ App Thu mua thất bại (tự thử lại)",
       note: ketQua.ok ? `Mã đề nghị: ${ketQua.maDeNghi ?? "—"}` : ketQua.error,
     };
-    await adminDb.collection("requests").doc(request.id).update({
-      thuMuaSyncStatus: ketQua.ok ? "synced" : "failed",
+    const trangThai = ketQua.ok ? "synced" : "failed";
+    const patch: Record<string, unknown> = {};
+    if (trangThai !== request.thuMuaSyncStatus) patch.thuMuaSyncStatus = trangThai;
+    // Kết quả y hệt dòng gần nhất của kênh Thu mua → không nối thêm dòng trùng (08/10/2026).
+    if (!trungKetQuaLanTruoc(request.history, syncEntry, (a) => a.includes("App Thu mua"))) {
       // NỐI bằng arrayUnion (06/10/2026) — `request` là bản đọc TRƯỚC khi gọi
       // mạng (có thể vài giây), ghi đè cả mảng từ bản đó sẽ xoá mất dòng lịch
       // sử của thao tác khác (bổ sung tài liệu, hàng chờ…) ghi xen giữa.
-      history: FieldValue.arrayUnion(syncEntry),
-    });
+      patch.history = FieldValue.arrayUnion(syncEntry);
+    }
+    if (Object.keys(patch).length > 0) await adminDb.collection("requests").doc(request.id).update(patch);
   } catch (err) {
     console.error(`Tự thử lại đồng bộ App Thu mua cho đề xuất ${request.id} lỗi:`, err);
   }
