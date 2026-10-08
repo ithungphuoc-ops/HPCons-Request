@@ -283,3 +283,30 @@ describe("vá sau review bảo mật (PR #95)", () => {
     expect(allowTestPush("rl-1", 11_000)).toBe(true);
   });
 });
+
+describe("nhắc tên thắng nhưng theo công tắc thật (review PR #96)", () => {
+  const items = () => [
+    { uid: "uA", payload: payload("mentioned") },
+  ];
+  const commentFallback = () => [{ uid: "uA", payload: payload("comment_on_mine"), onlyIfDisabled: "mention" as const }];
+
+  it("bật 'Nhắc tên' → chỉ 1 thư nhắc tên", async () => {
+    addDevice("uA", FCM("a"));
+    await Promise.all([sendWebPushItems(items()), sendWebPushItems(commentFallback())]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("tắt 'Nhắc tên', bật 'Bình luận' → vẫn nhận thư bình luận", async () => {
+    addDevice("uA", FCM("a"));
+    store.set("push-subscriptions/uA", { prefs: { mention: false, comment: true } });
+    await Promise.all([sendWebPushItems(items()), sendWebPushItems(commentFallback())]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("tắt cả 2 → không nhận gì", async () => {
+    addDevice("uA", FCM("a"));
+    store.set("push-subscriptions/uA", { prefs: { mention: false, comment: false } });
+    await Promise.all([sendWebPushItems(items()), sendWebPushItems(commentFallback())]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});

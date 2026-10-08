@@ -272,7 +272,7 @@ export async function POST(
       });
       after(async () => {
         try {
-          await hpcoreSubmitterReturned(updated, note, { actorUid: session.uid });
+          await hpcoreSubmitterReturned(updated, note, { actorUid: session.uid, actorName: session.name });
         } catch (hpcoreError) {
           console.error("Ghi thông báo sang HPcore lúc trả lại đề xuất thất bại (không ảnh hưởng thao tác chính):", hpcoreError);
         }
@@ -299,7 +299,7 @@ export async function POST(
           if (status === "pending") {
             await hpcorePendingApprovers(updated, { actorUid: session.uid });
           } else {
-            await hpcoreSubmitterResult(updated, { actorUid: session.uid });
+            await hpcoreSubmitterResult(updated, { actorUid: session.uid, actorName: session.name, note });
             if (status === "approved") await hpcoreFollowersFullyApproved(updated);
           }
         } catch (hpcoreError) {

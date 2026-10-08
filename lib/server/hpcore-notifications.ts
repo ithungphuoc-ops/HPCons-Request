@@ -103,6 +103,10 @@ export interface PushOptions {
   mentionedUids?: string[];
   /** Điều chỉnh được chấp thuận: số người đã duyệt ("Đủ k/k người duyệt"). */
   approverCount?: number;
+  /** Kết quả cuối: người vừa quyết định + ghi chú/lý do — truyền THẲNG từ route (như "trả lại"),
+   * không suy ra từ meta/nhật ký. */
+  actorName?: string;
+  note?: string;
 }
 
 type PushRequest = Pick<RequestInstance, "id" | "groupId" | "code" | "groupNameSnapshot"> &
@@ -115,6 +119,14 @@ export const DIRECT_REQUEST_PUSH_LABEL = "Đề xuất trực tiếp";
 
 export function pushGroupLabel(request: Pick<RequestInstance, "groupId" | "groupNameSnapshot">): string {
   return typeof request.groupId === "string" && request.groupId ? request.groupNameSnapshot : DIRECT_REQUEST_PUSH_LABEL;
+}
+
+/** Link nút "Sửa và gửi lại" — y editLinkFor ở RequestDetailView / draftLinkFor danh sách. */
+function returnEditUrl(request: Pick<RequestInstance, "id" | "groupId">): string {
+  const id = encodeURIComponent(request.id);
+  return request.groupId
+    ? `/request/groups/${encodeURIComponent(request.groupId)}/submit?draftId=${id}`
+    : `/request/direct/new?draftId=${id}`;
 }
 
 /** Tên đề xuất y như chuông hiện; dữ liệu cũ lạ làm hàm ném lỗi → rơi về tên nhóm/snapshot. */
@@ -208,13 +220,14 @@ export async function hpcoreSubmitterResult(
     link: requestDetailUrl(request.id),
     meta: safeMeta(() => metaSubmitterDecision(request, approved ? "approved" : "rejected")),
   };
+  const actorName = opts?.actorName ?? entry.meta?.actorName;
   const item = approved
     ? pushItem(entry.userId, "approved", request, {
-        actorName: entry.meta?.actorName,
+        actorName,
         approverTotal: request.approvers?.length,
-        singleApprover: request.approvalFlow === "single",
+        approvalFlow: request.approvalFlow,
       })
-    : pushItem(entry.userId, "rejected", request, { actorName: entry.meta?.actorName, excerpt: entry.meta?.excerpt });
+    : pushItem(entry.userId, "rejected", request, { actorName, excerpt: opts?.note ?? entry.meta?.excerpt });
   await deliverAll([entry], [item], opts);
 }
 
@@ -232,7 +245,13 @@ export async function hpcoreSubmitterReturned(
   };
   await deliverAll(
     [entry],
-    [pushItem(entry.userId, "returned", request, { actorName: entry.meta?.actorName, excerpt: reason ?? entry.meta?.excerpt })],
+    [
+      pushItem(entry.userId, "returned", request, {
+        actorName: opts?.actorName ?? entry.meta?.actorName,
+        excerpt: reason ?? entry.meta?.excerpt,
+        editUrl: returnEditUrl(request),
+      }),
+    ],
     opts,
   );
 }
@@ -288,10 +307,12 @@ export async function hpcoreCommentOnMine(
     link: requestDetailUrl(request.id),
     meta: safeMeta(() => metaComment(request, "comment_on_mine", commenterName, commentText)),
   };
-  // Người gửi cũng bị nhắc tên trong CHÍNH bình luận này → đã có thông báo "nhắc tên" (nhắc
-  // tên thắng), không đẩy thêm cái "bình luận mới" trùng nội dung. Chuông vẫn ghi như cũ.
+  // Người gửi cũng bị nhắc tên trong CHÍNH bình luận này → ưu tiên thông báo "nhắc tên"; thư
+  // "bình luận mới" chỉ đi khi người đó ĐANG TẮT "Nhắc tên" (xét lúc gửi, theo công tắc thật —
+  // review PR #96: trước đây tắt "Nhắc tên" + bật "Bình luận" thì không nhận gì). Chuông vẫn ghi như cũ.
   const mentionedToo = opts?.mentionedUids?.includes(entry.userId) ?? false;
-  const items = mentionedToo ? [] : [pushItem(entry.userId, "comment_on_mine", request, { actorName: commenterName, excerpt: commentText })];
+  const item = pushItem(entry.userId, "comment_on_mine", request, { actorName: commenterName, excerpt: commentText });
+  const items = [mentionedToo ? { ...item, onlyIfDisabled: "mention" as const } : item];
   await deliverAll([entry], items, { ...opts, actorUid: opts?.actorUid ?? commenterUid });
 }
 

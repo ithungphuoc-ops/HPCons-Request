@@ -24,7 +24,8 @@ const PUSH_LABELS: Record<PushCategory, { title: string; description: string }> 
   },
   comment: {
     title: "Bình luận mới trên đề xuất của tôi",
-    description: "Ai đó bình luận trên đề xuất bạn gửi (nếu bình luận có nhắc tên bạn thì chỉ báo 1 lần).",
+    description:
+      'Ai đó bình luận trên đề xuất bạn gửi. Bình luận có nhắc tên bạn thì chỉ báo 1 lần — dạng "nhắc tên", hoặc dạng này nếu bạn đã tắt "Được nhắc tên".',
   },
   result: {
     title: "Kết quả đề xuất của tôi",
@@ -156,6 +157,11 @@ export default function WebPushSettings() {
         Hiện thông báo ở góc màn hình máy tính hoặc màn hình khoá điện thoại, kể cả khi đã đóng tab app. Bật riêng
         cho từng máy/trình duyệt. Nội dung gồm người làm, tên đề xuất, mã, và trích
         bình luận/lý do (có thể hiện cả trên màn hình khoá).
+      </p>
+      {/* "Ẩn khi khoá máy" là cài đặt của điện thoại, không phải của app (review PR #96). */}
+      <p className="-mt-3 mb-5 text-[12px] text-[var(--color-text-secondary)]">
+        Muốn ẩn nội dung khi khoá máy: Android vào Cài đặt → Thông báo → Thông báo trên màn hình khoá → Ẩn nội dung
+        nhạy cảm; iPhone vào Cài đặt → Thông báo → Hiển thị bản xem trước → Khi được mở khoá (tên mục có thể khác tuỳ hãng máy).
       </p>
 
       <div className="rounded border border-[var(--color-border)] px-4 py-3">

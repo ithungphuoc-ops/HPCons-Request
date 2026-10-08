@@ -328,7 +328,7 @@ describe("Web Push (cấp 3) — 4 nhóm sự kiện, nội dung rõ theo demo 0
     });
     expect(items[1].payload.body).toBe("“Giá 500.000.000 nhé @uA”\n#000001 · 1.0. Phiếu đề nghị (HPCons)");
     expect(items[3].payload.body).toBe("Mua thép hộp 40×80 · #000001");
-    expect(items[4].payload).toMatchObject({ actionTitle: "Sửa và gửi lại" });
+    expect(items[4].payload).toMatchObject({ actionTitle: "Sửa và gửi lại", url: "/request/groups/g1/submit?draftId=r1" });
     expect(items[4].payload.body.split("\n")[0]).toContain("“Bổ sung hình ảnh”");
     expect(items[5].payload.body.split("\n")[0]).toBe("Người gửi: “Đổi 120 → 90 cây”");
     expect(items[6].payload.body.split("\n")[0]).toBe("Đủ 2/2 người duyệt");
@@ -356,8 +356,13 @@ describe("Web Push (cấp 3) — 4 nhóm sự kiện, nội dung rõ theo demo 0
       hpcoreCommentOnMine(coTen(), "uA", "Người A", "@submitter xem", { actorUid: "uA", mentionedUids: mentioned }),
       hpcoreMentioned(coTen(), mentioned, "Người A", "@submitter xem", { actorUid: "uA" }),
     ]);
-    const forSubmitter = allPushed().filter((i) => i.uid === "submitter");
-    expect(forSubmitter.map((i) => i.payload.kind)).toEqual(["mentioned"]);
+    // Cả 2 thư cùng được giao cho bộ gửi; thư "bình luận" gắn onlyIfDisabled: "mention" → chỉ đi
+    // khi người đó tắt "Nhắc tên" (bộ gửi xét theo công tắc thật — test ở web-push.test.ts).
+    const forSubmitter = (mockSendWebPush.mock.calls.flatMap((c) => c[0]) as { uid: string; payload: { kind: string }; onlyIfDisabled?: string }[])
+      .filter((i) => i.uid === "submitter")
+      .map((i) => `${i.payload.kind}:${i.onlyIfDisabled ?? "-"}`)
+      .sort();
+    expect(forSubmitter).toEqual(["comment_on_mine:mention", "mentioned:-"]);
     // Chuông vẫn ghi đủ như trước (không đổi hành vi chuông).
     expect(mockSet.mock.calls.some((c) => c[1].userId === "submitter" && c[1].meta?.kind === "comment_on_mine")).toBe(true);
   });
@@ -374,5 +379,28 @@ describe("Web Push (cấp 3) — 4 nhóm sự kiện, nội dung rõ theo demo 0
     await hpcoreSubmitterResult(baseRequest({ status: "rejected" }));
     expect(allPushed().map((i) => i.payload.kind)).toEqual(["rejected"]);
     errSpy.mockRestore();
+  });
+});
+
+describe("kết quả cuối: người quyết định + lý do lấy THẲNG từ route", () => {
+  it("từ chối: dùng actorName/note truyền vào, không suy từ nhật ký", async () => {
+    await hpcoreSubmitterResult(baseRequest({ status: "rejected" }), { actorUid: "uB", actorName: "Lê Văn C", note: "Thiếu báo giá" });
+    const p = (mockSendWebPush.mock.calls[0][0] as { payload: { body: string } }[])[0].payload;
+    expect(p.body.split("\n")[0]).toBe("Lê Văn C: “Thiếu báo giá”");
+  });
+
+  it("duyệt xong luồng đồng thời: 'duyệt cuối cùng (n/n)'", async () => {
+    await hpcoreSubmitterResult(
+      baseRequest({ status: "approved", approvalFlow: "concurrent", approvers: [{ id: "uA", decision: "approved" }, { id: "uB", decision: "approved" }] } as Partial<RequestInstance>),
+      { actorUid: "uB", actorName: "Người B" },
+    );
+    const p = (mockSendWebPush.mock.calls[0][0] as { payload: { body: string } }[])[0].payload;
+    expect(p.body.split("\n")[0]).toBe("Người B duyệt cuối cùng (2/2)");
+  });
+
+  it("trả lại đề xuất trực tiếp → link sửa /request/direct/new?draftId=", async () => {
+    await hpcoreSubmitterReturned(baseRequest({ groupId: null }), "bổ sung", { actorUid: "uA", actorName: "Người A" });
+    const p = (mockSendWebPush.mock.calls[0][0] as { payload: { url: string } }[])[0].payload;
+    expect(p.url).toBe("/request/direct/new?draftId=r1");
   });
 });

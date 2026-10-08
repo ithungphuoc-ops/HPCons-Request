@@ -49,7 +49,13 @@ describe("buildPushPayload — đúng câu chữ demo Sếp duyệt (noi-dung-th
     const p = buildPushPayload({ ...base, kind: "approved", code: "000198", requestTitle: "Mua máy in văn phòng tầng 3", actorName: "Nguyễn Thị Cẩm Thu", approverTotal: 2 });
     expect(p.title).toBe("✅ Đề xuất của bạn đã được duyệt xong");
     expect(p.body).toBe("Nguyễn Thị Cẩm Thu duyệt bước cuối (2/2)\nMua máy in văn phòng tầng 3 · #000198");
-    expect(buildPushPayload({ ...base, kind: "approved", approverTotal: 3, singleApprover: true }).body.split("\n")[0]).toBe("Trần Văn B đã duyệt");
+    expect(buildPushPayload({ ...base, kind: "approved", approverTotal: 3, approvalFlow: "single" }).body.split("\n")[0]).toBe("Trần Văn B đã duyệt");
+    expect(buildPushPayload({ ...base, kind: "approved", approverTotal: 3, approvalFlow: "concurrent" }).body.split("\n")[0]).toBe(
+      "Trần Văn B duyệt cuối cùng (3/3)",
+    );
+    expect(buildPushPayload({ ...base, kind: "approved", approverTotal: 3, approvalFlow: "sequential" }).body.split("\n")[0]).toBe(
+      "Trần Văn B duyệt bước cuối (3/3)",
+    );
   });
 
   it("từ chối / trả lại kèm lý do; trả lại có nút Sửa và gửi lại", () => {
@@ -60,6 +66,10 @@ describe("buildPushPayload — đúng câu chữ demo Sếp duyệt (noi-dung-th
     expect(t.title).toBe("↩️ Đề xuất bị trả lại để bổ sung");
     expect(t.body.split("\n")[0]).toBe("Lê Văn C: “Bổ sung hình ảnh hiện trạng”");
     expect(t.actionTitle).toBe("Sửa và gửi lại");
+    expect(t.url).toBe("/request/requests/r1");
+    expect(buildPushPayload({ ...base, kind: "returned", editUrl: "/request/groups/g1/submit?draftId=r1" }).url).toBe(
+      "/request/groups/g1/submit?draftId=r1",
+    );
     expect(buildPushPayload({ ...base, kind: "rejected", actorName: "Lê Văn C" }).body.split("\n")[0]).toBe("Lê Văn C đã từ chối");
   });
 
@@ -127,5 +137,35 @@ describe("normalizePushPreferences", () => {
     expect(normalizePushPreferences(undefined)).toEqual({ approval: true, mention: true, comment: true, result: true });
     expect(normalizePushPreferences({ mention: false, result: "x" })).toEqual({ approval: true, mention: false, comment: true, result: true });
     expect(normalizePushPreferences({ comment: false }).comment).toBe(false);
+  });
+});
+
+describe("cắt theo cụm ký tự + bỏ ký tự điều khiển (review PR #96)", () => {
+  it("emoji đúng ở vị trí ~90 không bị vỡ thành ký tự lỗi", () => {
+    const text = `${"a".repeat(89)}😀😀 đuôi`;
+    const c = clipLine(text);
+    expect(c).toBe(`${"a".repeat(89)}😀…`);
+    expect(c).not.toContain("\uFFFD");
+    expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(c)).toBe(false); // không còn nửa cặp surrogate
+  });
+
+  it("emoji gia đình (nối ZWJ) giữ nguyên 1 khối, không tách thành người rời", () => {
+    const family = "👨‍👩‍👧‍👦";
+    expect(clipLine(`${"b".repeat(88)}${family}${family}xyz`)).toBe(`${"b".repeat(88)}${family}${family}…`);
+    expect(clipLine(`Nhà ${family}`)).toBe(`Nhà ${family}`);
+  });
+
+  it("chữ tiếng Việt gõ dạng tổ hợp (NFD) chuẩn hoá NFC, cắt không rơi dấu", () => {
+    const nfd = "Đề nghị".normalize("NFD").repeat(20);
+    const c = clipLine(nfd, 10);
+    expect(c).toBe(c.normalize("NFC"));
+    expect(c).toBe(`${"Đề nghị".repeat(2).slice(0, 10).trimEnd()}…`);
+  });
+
+  it("bỏ ký tự đảo chiều / vô hình trong mọi trường chữ", () => {
+    const evil = "\u202Eabc\u2066d\u200Be\u200Ff\uFEFF";
+    const p = buildPushPayload({ ...base, kind: "rejected", actorName: `Lê${evil}`, excerpt: evil, requestTitle: evil, groupName: evil, code: `00\u202E1` });
+    expect(`${p.title}${p.body}`).not.toMatch(/[\u202A-\u202E\u2066-\u2069\u200B\u200E\u200F\uFEFF]/);
+    expect(p.body.split("\n")[0]).toBe("Lêabcdef: “abcdef”");
   });
 });

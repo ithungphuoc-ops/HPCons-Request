@@ -14,6 +14,8 @@
  *  - KHÔNG báo tiến độ từng bước — chỉ kết quả cuối (duyệt xong / từ chối / trả lại).
  */
 
+import { cleanOneLine, clipGraphemes } from "@/lib/text-clip";
+
 /** Loại sự kiện được đẩy — trùng tên `kind` của meta chuông App Tổng. */
 export type PushKind =
   | "pending_approval"
@@ -86,8 +88,11 @@ export interface PushPayloadInput {
   excerpt?: string | null;
   /** Số người duyệt (duyệt xong đề xuất / đủ người duyệt điều chỉnh). */
   approverTotal?: number;
-  /** Luồng "1 người duyệt là xong" — không ghi "bước cuối (n/n)". */
-  singleApprover?: boolean;
+  /** Kiểu luồng duyệt: lần lượt → "duyệt bước cuối"; đồng thời → "duyệt cuối cùng";
+   * 1 người là xong → "đã duyệt" (không đếm). */
+  approvalFlow?: "sequential" | "concurrent" | "single";
+  /** Trả lại: đường dẫn thẳng tới màn sửa & gửi lại (cùng link nút "Sửa và gửi lại" trên trang). */
+  editUrl?: string;
   /** Số tệp kèm điều chỉnh (khi không có chữ nội dung). */
   fileCount?: number;
 }
@@ -96,15 +101,15 @@ export const EXCERPT_PUSH_MAX = 90;
 const NAME_MAX = 60;
 const GROUP_MAX = 80;
 
-/** Gộp xuống dòng/khoảng trắng thành 1 dòng rồi cắt — thông báo hệ điều hành chỉ có vài dòng. */
+/** Gộp xuống dòng/khoảng trắng thành 1 dòng rồi cắt theo cụm ký tự (không vỡ emoji/dấu),
+ * bỏ ký tự điều khiển chiều chữ — xem lib/text-clip.ts. */
 export function clipLine(text: string | null | undefined, max: number = EXCERPT_PUSH_MAX): string {
-  const t = (text ?? "").replace(/\s+/g, " ").trim();
-  return t.length > max ? `${t.slice(0, max).trimEnd()}…` : t;
+  return clipGraphemes(text, max);
 }
 
 /** Mã "000000166" → "000166" (bỏ số 0 thừa, giữ tối thiểu 6 chữ số như demo). */
 export function shortCode(code: string | null | undefined): string {
-  const c = clipLine(code, 30);
+  const c = cleanOneLine(code).slice(0, 30);
   return c.replace(/^0+(?=\d{6,}$)/, "");
 }
 
@@ -185,7 +190,13 @@ export function buildPushPayload(input: PushPayloadInput): PushPayload {
         ...base,
         title: "✅ Đề xuất của bạn đã được duyệt xong",
         body: lines(
-          actor ? (input.singleApprover || n <= 0 ? `${actor} đã duyệt` : `${actor} duyệt bước cuối (${n}/${n})`) : "",
+          !actor
+            ? ""
+            : input.approvalFlow === "single" || n <= 0
+              ? `${actor} đã duyệt`
+              : input.approvalFlow === "concurrent"
+                ? `${actor} duyệt cuối cùng (${n}/${n})`
+                : `${actor} duyệt bước cuối (${n}/${n})`,
           titleCode,
         ),
         actionTitle: open,
@@ -200,6 +211,8 @@ export function buildPushPayload(input: PushPayloadInput): PushPayload {
     case "returned":
       return {
         ...base,
+        // Nút "Sửa và gửi lại" đưa THẲNG tới màn sửa (giống nút cùng tên trên trang đề xuất).
+        ...(input.editUrl ? { url: input.editUrl } : {}),
         title: "↩️ Đề xuất bị trả lại để bổ sung",
         body: lines(actorQuote("đã trả lại"), titleCode),
         actionTitle: "Sửa và gửi lại",
