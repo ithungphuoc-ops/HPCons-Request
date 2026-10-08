@@ -90,7 +90,7 @@ vi.mock("next/server", async (importOriginal) => {
 });
 
 const bump = vi.fn(async () => {});
-vi.mock("@/lib/server/notification-signal", () => ({ bumpNotificationSignal: bump }));
+vi.mock("@/lib/server/notification-feed", () => ({ refreshNotificationFeedsForRequest: bump }));
 
 const { POST: postAdjustment } = await import("@/app/api/requests/[id]/adjustment/route");
 const { POST: postDecision } = await import("@/app/api/requests/[id]/adjustment/decision/route");
@@ -325,7 +325,7 @@ describe("POST adjustment/cancel — huỷ điều chỉnh đang chờ", () => {
     expect(store.doc.attachments).toEqual([]);
     expect(taoViec).not.toHaveBeenCalled();
     expect(notify).not.toHaveBeenCalled();
-    expect(bump).toHaveBeenCalled();
+    expect(bump).toHaveBeenCalledWith("r1");
   });
 
   it("không có lý do vẫn huỷ được (note chỉ có tóm tắt)", async () => {

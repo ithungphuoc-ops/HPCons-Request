@@ -1,6 +1,7 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebase/admin";
 import { apiErrorResponse } from "@/lib/http";
+import { refreshNotificationFeedsForRequest } from "@/lib/server/notification-feed";
 import { canView, loadRequest } from "@/lib/server/requests";
 import { requireSession } from "@/lib/session";
 import type { TaggedUser } from "@/lib/types";
@@ -39,6 +40,8 @@ export async function POST(
       : [...found.followers, body.user];
 
     await adminDb.collection("requests").doc(id).update({ followers });
+    // Người mới theo dõi thấy đề xuất trên chuông ngay (trước đây nhờ chuông hỏi vòng 2 phút/lần).
+    after(() => refreshNotificationFeedsForRequest(id));
     return NextResponse.json({ followers });
   } catch (error) {
     return apiErrorResponse(error);

@@ -9,7 +9,7 @@ import { mergeFollowers } from "@/lib/server/conditions";
 import { resolveComputedValue } from "@/lib/server/computed-fields";
 import { canManageGroupsAtAppScope } from "@/lib/permissions";
 import { canAdjustAfterApproval, loadAdjustmentGroupSettings } from "@/lib/server/adjustment-approval-rules";
-import { bumpNotificationSignal } from "@/lib/server/notification-signal";
+import { refreshNotificationFeedsForRequest } from "@/lib/server/notification-feed";
 import { notifyFollowersSubmitted, notifyPendingApprovers } from "@/lib/server/notification-emails";
 import { hpcoreFollowersSubmitted, hpcorePendingApprovers } from "@/lib/server/hpcore-notifications";
 import {
@@ -214,6 +214,10 @@ export async function PATCH(
         followers,
         updatedAt,
       });
+      // Lưu (không gửi) khi đề xuất ĐÃ gửi (vd bị trả lại) vẫn đổi được người theo dõi /
+      // tên / người duyệt — những thứ chuông của người khác đang hiện. Nháp thật thì chưa
+      // ai thấy, khỏi tính.
+      if (found.status !== "draft") after(() => refreshNotificationFeedsForRequest(id));
       return NextResponse.json({ request: updated });
     }
 
@@ -367,8 +371,8 @@ export async function PATCH(
             : "Đã gửi đề xuất",
       };
       const updated = await commitEdit(id, found, expectedVersion, patch, historyEntry);
-      // Gửi chính thức (không phải lưu nháp) — báo chuông thông báo tự tải lại.
-      after(() => bumpNotificationSignal());
+      // Gửi chính thức (không phải lưu nháp) — tính lại chuông cho người liên quan.
+      after(() => refreshNotificationFeedsForRequest(id));
       // Email thông báo thật (Đợt 3, Sếp chốt 06/10/2026) — trước đây luồng
       // GỬI TỪ NHÁP / GỬI LẠI (sau sửa hoặc sau khi bị trả lại) không gửi
       // email nào cả, chỉ có luồng tạo mới (app/api/requests/route.ts) gửi.
@@ -427,7 +431,7 @@ export async function PATCH(
       action: found.status === "returned" ? "Đã gửi lại đề xuất" : "Đã gửi đề xuất",
     };
     const updated = await commitEdit(id, found, expectedVersion, patch, historyEntry);
-    after(() => bumpNotificationSignal());
+    after(() => refreshNotificationFeedsForRequest(id));
     // Email thông báo thật (Đợt 3, Sếp chốt 06/10/2026) — đề xuất trực tiếp
     // không có nhóm nên `group` truyền `null` (mặc định BẬT, xem
     // lib/server/notification-emails.ts). Cùng lý do chỉ báo người theo dõi
@@ -490,6 +494,8 @@ export async function DELETE(
     // NỐI dòng lịch sử bằng arrayUnion (06/10/2026) — không ghi đè cả mảng từ
     // bản đọc cũ, tránh xoá mất dòng của quyết định duyệt ghi xen giữa.
     await adminDb.collection("requests").doc(id).update({ deletedAt: nowIso, history: FieldValue.arrayUnion(entry) });
+    // Gỡ dòng của đề xuất này khỏi chuông những ai đang có nó.
+    after(() => refreshNotificationFeedsForRequest(id));
     /* ★ 03/10/2026 (đợt 1 "liên kết 4 app", L03/L04) — đề xuất ĐÃ DUYỆT bị xoá thì báo Kho + Thu mua.
        Chưa duyệt thì chưa từng sang app nào, không cần báo. Lỗi tạo việc không được làm hỏng thao tác xoá. */
     if (found.status === "approved") {
