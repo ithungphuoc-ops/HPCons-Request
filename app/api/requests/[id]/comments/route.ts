@@ -96,8 +96,8 @@ export async function POST(
     after(async () => {
       try {
         await Promise.all([
-          hpcoreCommentOnMine(found, session.uid, session.name),
-          hpcoreMentioned(found, expandedMentionUids, session.name),
+          hpcoreCommentOnMine(found, session.uid, session.name, text),
+          hpcoreMentioned(found, expandedMentionUids, session.name, text),
         ]);
       } catch (hpcoreError) {
         console.error("Ghi thông báo sang HPcore lúc bình luận thất bại (không ảnh hưởng thao tác chính):", hpcoreError);

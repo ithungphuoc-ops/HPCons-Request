@@ -213,7 +213,7 @@ export async function POST(
       // Chuông chung HPcore (Sếp chốt 07/10/2026).
       after(async () => {
         try {
-          await hpcoreAdjustmentResult(ketQua.request, ketQua.pendingSnapshot.requestedByUid, "rejected");
+          await hpcoreAdjustmentResult(ketQua.request, ketQua.pendingSnapshot.requestedByUid, "rejected", session.name);
         } catch (hpcoreError) {
           console.error("Ghi thông báo sang HPcore khi từ chối điều chỉnh sau duyệt thất bại (không ảnh hưởng thao tác chính):", hpcoreError);
         }

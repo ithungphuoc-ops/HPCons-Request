@@ -234,15 +234,15 @@ const KIND_CATEGORY: Record<NotificationKind, NotificationCategory> = {
   approver_followup: "approver_followup",
 };
 
-const DECISION_ACTIONS = {
+export const DECISION_ACTIONS = {
   approved: "Đã chấp thuận",
   rejected: "Đã từ chối",
   returned: "Đã trả lại",
   approveAndForward: "Đã chấp thuận và chuyển tiếp",
   forwardFirst: "Đã chuyển tiếp cho duyệt trước",
 } as const;
-const FORWARD_ACTIONS = [DECISION_ACTIONS.approveAndForward, DECISION_ACTIONS.forwardFirst, "Đã chuyển tiếp"];
-const SUBMIT_ACTIONS = ["Đã gửi đề xuất", "Đã gửi lại đề xuất", "Đã chỉnh sửa đề xuất — duyệt lại từ đầu"];
+export const FORWARD_ACTIONS = [DECISION_ACTIONS.approveAndForward, DECISION_ACTIONS.forwardFirst, "Đã chuyển tiếp"];
+export const SUBMIT_ACTIONS = ["Đã gửi đề xuất", "Đã gửi lại đề xuất", "Đã chỉnh sửa đề xuất — duyệt lại từ đầu"];
 
 /** Dòng nhật ký do HỆ THỐNG tự ghi hoặc không phải biến động đáng báo. */
 export function isQuietHistoryEntry(h: RequestHistoryEntry): boolean {
@@ -263,12 +263,31 @@ export function isQuietHistoryEntry(h: RequestHistoryEntry): boolean {
   );
 }
 
-const snippet = (text: string | undefined, max = 70) => {
+export const snippet = (text: string | undefined, max = 70) => {
   const t = (text ?? "").replace(/\s+/g, " ").trim();
   if (!t) return "";
   return t.length > max ? `${t.slice(0, max - 1)}…` : t;
 };
-const quoted = (text: string | undefined) => (snippet(text) ? `: “${snippet(text)}”` : "");
+export const quoted = (text: string | undefined) => (snippet(text) ? `: “${snippet(text)}”` : "");
+
+/**
+ * Câu chữ dòng chuông — dùng CHUNG cho chuông của app này (buildNotificationFeed) và
+ * thông báo gửi sang chuông App Tổng (`meta.headline`, lib/hpcore-notification-meta.ts),
+ * để 2 nơi đọc y hệt nhau (Sếp duyệt demo 08/10/2026). Sửa câu ở đây là đổi cả 2 nơi.
+ */
+export const NOTIFICATION_TEXT = {
+  approverPending: (submitter: string) => `${submitter} gửi đề xuất, chờ bạn duyệt`,
+  forwardedToMe: (actor: string) => `${actor} chuyển tiếp cho bạn duyệt`,
+  adjustmentPending: (by: string, noiDung?: string) => `${by} đề nghị điều chỉnh sau duyệt${quoted(noiDung)}, chờ bạn duyệt`,
+  ownDecided: (actor: string, type: "approved" | "rejected" | "returned", note?: string) =>
+    `${actor} ${type === "approved" ? "đã chấp thuận" : type === "rejected" ? "đã từ chối" : "đã trả lại"} đề xuất của bạn${
+      type === "approved" ? "" : quoted(note)
+    }`,
+  mentioned: (actor: string, note?: string) => `${actor} nhắc tới bạn${quoted(note)}`,
+  commented: (actor: string, note?: string) => `${actor} bình luận${quoted(note)}`,
+  followSubmitted: (actor: string) => `${actor} gửi đề xuất bạn đang theo dõi`,
+  followApproved: (actor: string) => `${actor} đã chấp thuận đề xuất bạn theo dõi`,
+} as const;
 
 interface Activity {
   key: string;
@@ -346,8 +365,8 @@ export function buildNotificationFeed(requests: RequestInstance[], ctx: Notifica
         {
           kind: "approver_pending",
           text: forwardedToMe
-            ? `${lastTurn!.actor} chuyển tiếp cho bạn duyệt`
-            : `${r.submittedBy.name} gửi đề xuất, chờ bạn duyệt`,
+            ? NOTIFICATION_TEXT.forwardedToMe(lastTurn!.actor)
+            : NOTIFICATION_TEXT.approverPending(r.submittedBy.name),
           at: lastTurn?.at ?? r.submittedAt,
         },
         true,
@@ -361,7 +380,7 @@ export function buildNotificationFeed(requests: RequestInstance[], ctx: Notifica
     if (pa && isAwaitingMyAdjustmentDecision(r, uid)) {
       add(
         "adjust-pending",
-        { kind: "adjustment_pending", text: `${pa.requestedByName} đề nghị điều chỉnh sau duyệt${quoted(pa.noiDung)}, chờ bạn duyệt`, at: pa.createdAt },
+        { kind: "adjustment_pending", text: NOTIFICATION_TEXT.adjustmentPending(pa.requestedByName, pa.noiDung), at: pa.createdAt },
         true,
       );
     }
@@ -372,8 +391,7 @@ export function buildNotificationFeed(requests: RequestInstance[], ctx: Notifica
       const decision = finalType ? [...others].reverse().find((a) => a.type === finalType) : null;
       if (decision) {
         const kind = finalType === "approved" ? "own_approved" : finalType === "rejected" ? "own_rejected" : "own_returned";
-        const verb = finalType === "approved" ? "đã chấp thuận" : finalType === "rejected" ? "đã từ chối" : "đã trả lại";
-        add(decision.key, { kind, text: `${decision.actor} ${verb} đề xuất của bạn${finalType === "approved" ? "" : quoted(decision.note)}`, at: decision.at });
+        add(decision.key, { kind, text: NOTIFICATION_TEXT.ownDecided(decision.actor, finalType!, decision.note), at: decision.at });
       }
     }
 
@@ -381,8 +399,8 @@ export function buildNotificationFeed(requests: RequestInstance[], ctx: Notifica
     for (const a of others) {
       if (a.type !== "comment") continue;
       const mentioned = (a.mentionIds ?? []).includes(uid) || (a.commentId ? ctx.groupMentionCommentIds?.has(a.commentId) : false);
-      if (mentioned) add(a.key, { kind: "mentioned", text: `${a.actor} nhắc tới bạn${quoted(a.note)}`, at: a.at });
-      else if (isSubmitter) add(a.key, { kind: "comment_on_mine", text: `${a.actor} bình luận${quoted(a.note)}`, at: a.at });
+      if (mentioned) add(a.key, { kind: "mentioned", text: NOTIFICATION_TEXT.mentioned(a.actor, a.note), at: a.at });
+      else if (isSubmitter) add(a.key, { kind: "comment_on_mine", text: NOTIFICATION_TEXT.commented(a.actor, a.note), at: a.at });
       else if (myApprover) add(a.key, { kind: "approver_followup", text: `${a.actor} bình luận${quoted(a.note)}`, at: a.at });
       else if (isFollower) add(a.key, { kind: "following", text: `${a.actor} bình luận${quoted(a.note)}`, at: a.at });
     }
@@ -402,9 +420,9 @@ export function buildNotificationFeed(requests: RequestInstance[], ctx: Notifica
       const finalApproval = r.status === "approved" ? [...others].reverse().find((x) => x.type === "approved") : undefined;
       for (const a of others) {
         const t = a.type;
-        if (t === "submit") add(a.key, { kind: "following", text: `${a.actor} gửi đề xuất bạn đang theo dõi`, at: a.at });
+        if (t === "submit") add(a.key, { kind: "following", text: NOTIFICATION_TEXT.followSubmitted(a.actor), at: a.at });
         else if (t === "approved" && a === finalApproval)
-          add(a.key, { kind: "following", text: `${a.actor} đã chấp thuận đề xuất bạn theo dõi`, at: a.at });
+          add(a.key, { kind: "following", text: NOTIFICATION_TEXT.followApproved(a.actor), at: a.at });
         else if (t === "rejected") add(a.key, { kind: "following", text: `${a.actor} đã từ chối đề xuất bạn theo dõi`, at: a.at });
         else if (t === "returned") add(a.key, { kind: "following", text: `${a.actor} đã trả lại đề xuất bạn theo dõi`, at: a.at });
         else if (t === "adjust") add(a.key, { kind: "following", text: `${a.actor} điều chỉnh sau duyệt${quoted(a.note)}`, at: a.at });

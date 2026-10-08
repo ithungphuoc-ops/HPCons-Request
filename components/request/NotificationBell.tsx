@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   AtSign,
   Bell,
+  CheckCheck,
   CheckCircle2,
   Eye,
   History,
@@ -15,6 +17,7 @@ import {
   SlidersHorizontal,
   Undo2,
   UserX,
+  X,
   XCircle,
   type LucideIcon,
 } from "lucide-react";
@@ -28,6 +31,7 @@ import {
   type NotificationFeed,
   type NotificationKind,
 } from "@/lib/notification-feed";
+import { groupByVnDay, vnGroupDate, vnRelativeDayLabel, vnTime } from "@/lib/notification-day-group";
 
 /** Gom nhiều yêu cầu tải sát nhau thành 1 lần (chỉ dùng ở chế độ dự phòng). */
 const DEBOUNCE_MS = 800;
@@ -52,16 +56,16 @@ function nhanThoiGian(iso: string, now: number): string {
 
 /** Mỗi loại một icon + một màu — liếc một cái là biết dòng nào cần làm gì. */
 const KIEU_THONG_BAO: Record<NotificationKind, { Icon: LucideIcon; nen: string; chu: string }> = {
-  approver_pending: { Icon: Inbox, nen: "bg-blue-50", chu: "text-[var(--color-action-blue)]" },
-  adjustment_pending: { Icon: SlidersHorizontal, nen: "bg-amber-50", chu: "text-amber-600" },
-  own_approved: { Icon: CheckCircle2, nen: "bg-green-50", chu: "text-[var(--color-confirm-green)]" },
-  own_rejected: { Icon: XCircle, nen: "bg-red-50", chu: "text-[var(--color-danger-red)]" },
-  own_returned: { Icon: Undo2, nen: "bg-orange-50", chu: "text-orange-600" },
-  comment_on_mine: { Icon: MessageSquare, nen: "bg-blue-50", chu: "text-[var(--color-action-blue)]" },
-  mentioned: { Icon: AtSign, nen: "bg-amber-50", chu: "text-amber-600" },
-  following: { Icon: Eye, nen: "bg-gray-100", chu: "text-gray-500" },
-  manager_bypassed: { Icon: UserX, nen: "bg-red-50", chu: "text-[var(--color-danger-red)]" },
-  approver_followup: { Icon: History, nen: "bg-gray-100", chu: "text-gray-500" },
+  approver_pending: { Icon: Inbox, nen: "bg-blue-50 dark:bg-blue-500/15", chu: "text-[var(--color-action-blue)]" },
+  adjustment_pending: { Icon: SlidersHorizontal, nen: "bg-amber-50 dark:bg-amber-500/15", chu: "text-amber-600" },
+  own_approved: { Icon: CheckCircle2, nen: "bg-green-50 dark:bg-green-500/15", chu: "text-[var(--color-confirm-green)]" },
+  own_rejected: { Icon: XCircle, nen: "bg-red-50 dark:bg-red-500/15", chu: "text-[var(--color-danger-red)]" },
+  own_returned: { Icon: Undo2, nen: "bg-orange-50 dark:bg-orange-500/15", chu: "text-orange-600" },
+  comment_on_mine: { Icon: MessageSquare, nen: "bg-blue-50 dark:bg-blue-500/15", chu: "text-[var(--color-action-blue)]" },
+  mentioned: { Icon: AtSign, nen: "bg-amber-50 dark:bg-amber-500/15", chu: "text-amber-600" },
+  following: { Icon: Eye, nen: "bg-gray-100 dark:bg-white/10", chu: "text-gray-500" },
+  manager_bypassed: { Icon: UserX, nen: "bg-red-50 dark:bg-red-500/15", chu: "text-[var(--color-danger-red)]" },
+  approver_followup: { Icon: History, nen: "bg-gray-100 dark:bg-white/10", chu: "text-gray-500" },
 };
 
 const EMPTY_FEED: NotificationFeed = { entries: [], badge: 0, mustCount: 0 };
@@ -84,7 +88,8 @@ export default function NotificationBell({ uid }: { uid?: string | null }) {
   const [feed, setFeed] = useState<NotificationFeed>(EMPTY_FEED);
   const [error, setError] = useState(false);
   const [tab, setTab] = useState<"all" | "unread">("all");
-  const containerRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
   const bellRef = useRef<HTMLButtonElement>(null);
   const loadingRef = useRef(false);
   const againRef = useRef(false);
@@ -95,6 +100,13 @@ export default function NotificationBell({ uid }: { uid?: string | null }) {
   // Mốc thời gian để tính "5 phút trước" — làm mới mỗi phút (gọi Date.now() thẳng lúc
   // render thì mỗi lần render một số khác, nhãn nhảy lung tung).
   const [now, setNow] = useState(() => Date.now());
+
+  /** Đóng bằng Esc / nút Đóng / bấm ra ngoài → trả focus về nút chuông (chuẩn a11y modal,
+   * y App Tổng). Bấm 1 dòng/⚙ thì chuyển trang luôn nên không trả focus. */
+  const close = useCallback(() => {
+    setOpen(false);
+    bellRef.current?.focus();
+  }, []);
 
   const applyFeed = useCallback((data: NotificationFeed) => {
     const t = Date.now();
@@ -203,23 +215,36 @@ export default function NotificationBell({ uid }: { uid?: string | null }) {
     return () => window.clearInterval(clock);
   }, []);
 
+  // Khung mở: Esc đóng, bẫy Tab trong khung, focus vào nút Đóng — y NotificationOverlayPanel
+  // của App Tổng. Bấm ra ngoài: xử lý ở onMouseDown của lớp phủ (chỉ khi bấm trúng nền).
   useEffect(() => {
     if (!open) return;
-    const onClickOutside = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) setOpen(false);
-    };
+    closeRef.current?.focus();
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
+      if (event.key === "Escape") {
+        close();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const panel = panelRef.current;
+      if (!panel) return;
+      const focusable = panel.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
-    document.addEventListener("mousedown", onClickOutside);
     document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onClickOutside);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
-  const toggle = () => setOpen((v) => !v);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, close]);
 
   /** Bấm 1 dòng: coi như đã đọc ngay (trang chi tiết sẽ ghi "đã xem" thật). */
   const markEntryRead = (entry: NotificationEntry) => {
@@ -246,8 +271,23 @@ export default function NotificationBell({ uid }: { uid?: string | null }) {
   const unreadCount = feed.entries.filter((e) => e.must || e.unread).length;
   const shown = tab === "unread" ? feed.entries.filter((e) => e.must || e.unread) : feed.entries;
   const mustEntries = shown.filter((e) => e.must);
-  const otherEntries = shown.filter((e) => !e.must);
+  // "Cập nhật khác" chia theo NGÀY như App Tổng. Danh sách gốc xếp: chưa đọc rồi mới tới đã
+  // đọc — chia ngày cần xếp lại theo giờ, nếu không cùng 1 ngày sẽ bị tách làm 2 nhóm.
+  const dayGroups = groupByVnDay(
+    shown.filter((e) => !e.must).sort((a, b) => b.at.localeCompare(a.at)),
+    (e) => e.at,
+    now,
+  );
   const hasUnreadOther = feed.entries.some((e) => !e.must && e.unread);
+
+  /** Dòng 3: trong nhóm ngày đã có ngày rồi nên chỉ ghi giờ (kèm "5 phút trước" nếu còn
+   * trong 24 giờ — như demo Sếp duyệt); mục "Cần bạn duyệt" không chia ngày nên ghi đủ. */
+  const timeLabel = (entry: NotificationEntry) => {
+    if (entry.must) return nhanThoiGian(entry.main.at, now);
+    const t = Date.parse(entry.main.at);
+    const recent = Number.isFinite(t) && now - t < 24 * 3_600_000;
+    return recent ? `${vnTime(entry.main.at)} · ${nhanThoiGian(entry.main.at, now).toLowerCase()}` : vnTime(entry.main.at);
+  };
 
   const renderRow = (entry: NotificationEntry) => {
     const kieu = KIEU_THONG_BAO[entry.main.kind];
@@ -257,163 +297,210 @@ export default function NotificationBell({ uid }: { uid?: string | null }) {
         href={`/request/requests/${entry.requestId}`}
         onClick={() => markEntryRead(entry)}
         title={new Date(entry.main.at).toLocaleString("vi-VN")}
-        className={`flex gap-3 border-b border-gray-50 px-4 py-3 last:border-0 ${
-          entry.must ? "bg-amber-50/60 hover:bg-amber-50" : "hover:bg-gray-50"
+        className={`flex items-start gap-3 border-b border-[var(--color-border)] px-4 py-3 text-left transition-colors last:border-0 ${
+          entry.must
+            ? "bg-amber-50/60 hover:bg-amber-50 dark:bg-amber-500/10 dark:hover:bg-amber-500/15"
+            : entry.unread
+              ? "bg-blue-50 hover:bg-blue-100/70 dark:bg-blue-500/10 dark:hover:bg-blue-500/15"
+              : "hover:bg-[var(--color-page-bg)]"
         }`}
       >
-        <span
-          className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${kieu.nen} ${kieu.chu}`}
-          aria-hidden
-        >
+        <span className={`flex h-9 w-9 flex-none items-center justify-center rounded-full ${kieu.nen} ${kieu.chu}`} aria-hidden>
           <kieu.Icon size={16} />
         </span>
         <span className="min-w-0 flex-1">
           <span
-            className={`block text-[14px] leading-snug ${
-              entry.unread || entry.must ? "font-medium text-gray-900" : "text-gray-600"
+            className={`block text-sm leading-snug ${
+              entry.unread || entry.must
+                ? "font-semibold text-[var(--color-text-primary)]"
+                : "text-[var(--color-text-primary)] opacity-80"
             }`}
           >
+            {entry.unread && <span className="sr-only">Chưa đọc: </span>}
             {entry.main.text}
           </span>
-          <span className="mt-0.5 block truncate text-[12px] text-gray-500">
+          <span className="mt-0.5 block truncate text-xs text-[var(--color-text-secondary)]">
             {entry.code ? `${entry.code} · ` : ""}
             {entry.title}
           </span>
-          <span className="mt-0.5 block text-[12px] text-gray-400">
-            {nhanThoiGian(entry.main.at, now)}
+          <span className="mt-1 block text-[11px] text-[var(--color-text-secondary)] opacity-80">
+            {timeLabel(entry)}
             {entry.extra > 0 && (
-              <span className="text-[var(--color-action-blue)]"> · và {entry.extra} cập nhật khác</span>
+              <span className="text-[var(--color-action-blue)] opacity-100"> · và {entry.extra} cập nhật khác</span>
             )}
           </span>
         </span>
-        <span
-          className={`mt-2 h-2 w-2 shrink-0 rounded-full ${entry.unread ? "bg-[var(--color-action-blue)]" : "bg-transparent"}`}
-          aria-label={entry.unread ? "Chưa đọc" : undefined}
-        />
+        {entry.unread && <span aria-hidden className="mt-1.5 h-2 w-2 flex-none rounded-full bg-[var(--color-action-blue)]" />}
       </Link>
     );
   };
 
-  return (
-    <div ref={containerRef} className="relative">
-      <button
-        ref={bellRef}
-        type="button"
-        onClick={toggle}
-        title="Thông báo"
-        aria-label={feed.badge > 0 ? `Thông báo, ${feed.badge} mục cần xem` : "Thông báo"}
-        aria-expanded={open}
-        className="relative flex h-12 w-12 items-center justify-center rounded-xl text-[var(--color-appbar-text)] hover:bg-white/10 hover:text-[var(--color-appbar-text-active)]"
+  const panel = (
+    <div
+      className="animate-overlay fixed inset-0 z-50 flex items-stretch justify-start bg-black/60 md:py-4 md:pl-24 md:pr-4"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) close();
+      }}
+    >
+      {/* Máy tính: khung nổi sát bên thanh ứng dụng (pl-24 né đúng rail w-20 = 80px, y App
+          Tổng), rộng tối đa 640px, cao hết trang. Điện thoại (<768px): phủ toàn màn hình. */}
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="request-notif-title"
+        className="animate-modal-pop flex h-full w-full flex-col overflow-hidden bg-[var(--color-card-bg)] md:max-w-[640px] md:rounded-2xl md:border md:border-[var(--color-border)] md:shadow-2xl"
       >
-        <Bell size={22} strokeWidth={1.75} />
-        {feed.badge > 0 && (
-          <span className="absolute right-0.5 top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-[var(--color-danger-red)] px-0.5 text-[9px] font-semibold text-white">
-            {feed.badge > 99 ? "99+" : feed.badge}
-          </span>
-        )}
-      </button>
+        <div className="flex shrink-0 items-center gap-1 border-b border-[var(--color-border)] px-4 py-3 md:px-5 md:py-3.5">
+          <h2 id="request-notif-title" className="mr-auto text-base font-bold text-[var(--color-text-primary)]">
+            Thông báo
+          </h2>
+          <Link
+            href="/request/settings/notifications"
+            onClick={() => setOpen(false)}
+            title="Cài đặt thông báo"
+            aria-label="Cài đặt thông báo"
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-page-bg)] hover:text-[var(--color-text-primary)]"
+          >
+            <Settings size={17} />
+          </Link>
+          <button
+            ref={closeRef}
+            type="button"
+            onClick={close}
+            aria-label="Đóng"
+            title="Đóng"
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-page-bg)] hover:text-[var(--color-text-primary)]"
+          >
+            <X size={18} />
+          </button>
+        </div>
 
-      {open && (
-        // z-50: FuncBar (sidebar nhóm đề xuất) dùng z-40 cho chính nó — z-20 cũ
-        // thấp hơn nên bị sidebar vẽ đè lên trên (góp ý Nhung 14/08/2026).
-        <div className="absolute left-full top-0 z-50 ml-2 flex max-h-[min(560px,calc(100vh-24px))] w-[400px] max-w-[calc(100vw-80px)] flex-col overflow-hidden rounded-lg border border-[var(--color-border)] bg-white shadow-[0_8px_28px_rgba(16,34,48,0.16)]">
-          <div className="flex items-center gap-2 border-b border-gray-100 px-4 py-3">
-            <span className="text-[15px] font-semibold text-gray-800">Thông báo</span>
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-3 py-4 sm:px-5">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-page-bg)] p-1">
+              {(
+                [
+                  ["all", "Tất cả"],
+                  ["unread", `Chưa đọc${unreadCount ? ` (${unreadCount})` : ""}`],
+                ] as const
+              ).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setTab(key)}
+                  aria-pressed={tab === key}
+                  className={`min-h-9 rounded-md px-3 text-sm font-medium transition-colors ${
+                    tab === key
+                      ? "bg-[var(--color-card-bg)] text-[var(--color-action-blue)] shadow-sm"
+                      : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
             {hasUnreadOther && (
               <button
                 type="button"
-                onClick={markAllRead}
-                className="ml-auto text-[12px] font-medium text-[var(--color-action-blue)] hover:underline"
+                onClick={() => void markAllRead()}
+                className="ml-auto flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm font-medium text-[var(--color-text-primary)] transition-colors hover:bg-[var(--color-page-bg)]"
               >
-                Đánh dấu đã đọc hết
+                <CheckCheck size={15} /> Đánh dấu tất cả đã đọc
               </button>
             )}
-            <Link
-              href="/request/settings/notifications"
-              onClick={() => setOpen(false)}
-              title="Cài đặt thông báo"
-              aria-label="Cài đặt thông báo"
-              className={`${hasUnreadOther ? "" : "ml-auto "}flex h-7 w-7 items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-700`}
-            >
-              <Settings size={15} />
-            </Link>
-          </div>
-
-          <div className="flex gap-1.5 border-b border-gray-100 px-4 py-2">
-            {(
-              [
-                ["all", "Tất cả"],
-                ["unread", `Chưa đọc${unreadCount ? ` (${unreadCount})` : ""}`],
-              ] as const
-            ).map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setTab(key)}
-                className={`rounded-full px-3 py-0.5 text-[12px] ${
-                  tab === key ? "bg-blue-50 font-semibold text-[var(--color-action-blue)]" : "text-gray-500 hover:bg-gray-100"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
           </div>
 
           {error && (
-            <div className="flex items-center gap-2 border-b border-red-100 bg-red-50 px-4 py-2 text-[12px] text-[var(--color-danger-red)]">
+            <div className="flex items-center gap-2 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-[12px] text-[var(--color-danger-red)] dark:border-red-500/20 dark:bg-red-500/10">
               Không tải được thông báo mới nhất.
-              <button
-                type="button"
-                onClick={() => void load()}
-                className="ml-auto flex items-center gap-1 font-medium hover:underline"
-              >
+              <button type="button" onClick={() => void load()} className="ml-auto flex items-center gap-1 font-medium hover:underline">
                 <RefreshCw size={12} /> Thử lại
               </button>
             </div>
           )}
 
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-card-bg)] shadow-sm">
             {shown.length === 0 ? (
-              <div className="px-4 py-10 text-center">
-                <span className="mx-auto mb-2 flex h-11 w-11 items-center justify-center rounded-full bg-gray-100 text-gray-300">
+              <div className="px-4 py-14 text-center">
+                <span className="mx-auto mb-2 flex h-11 w-11 items-center justify-center rounded-full bg-[var(--color-page-bg)] text-[var(--color-text-secondary)]">
                   <Bell size={20} />
                 </span>
-                <p className="text-[14px] font-medium text-gray-500">
+                <p className="text-sm font-medium text-[var(--color-text-secondary)]">
                   {tab === "unread" ? "Không có thông báo chưa đọc" : "Chưa có thông báo nào"}
                 </p>
-                <p className="mt-0.5 text-[12px] text-gray-400">Có việc cần bạn xử lý thì sẽ hiện ở đây.</p>
+                <p className="mt-0.5 text-[12px] text-[var(--color-text-secondary)] opacity-80">Có việc cần bạn xử lý thì sẽ hiện ở đây.</p>
               </div>
             ) : (
               <>
+                {/* "Cần bạn duyệt" luôn nằm trên cùng, KHÔNG chia ngày: đây là việc còn treo,
+                    không phải tin cũ/mới — chia ngày thì việc chờ từ tuần trước bị đẩy xuống
+                    đáy, dễ sót (giữ đúng quy tắc chuông Đợt 1). */}
                 {mustEntries.length > 0 && (
-                  <p className="flex justify-between px-4 pb-1 pt-2.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-danger-red)]">
-                    <span>Cần bạn duyệt</span>
-                    <span>{mustEntries.length}</span>
-                  </p>
+                  <div>
+                    <div className="flex items-center gap-3 bg-[var(--color-page-bg)] px-4 pb-2 pt-3">
+                      <span className="whitespace-nowrap text-xs font-semibold text-[var(--color-danger-red)]">Cần bạn duyệt</span>
+                      <div className="flex-1 border-t border-[var(--color-border)]" />
+                      <span className="whitespace-nowrap text-xs text-[var(--color-danger-red)]">{mustEntries.length}</span>
+                    </div>
+                    {mustEntries.map(renderRow)}
+                  </div>
                 )}
-                {mustEntries.map(renderRow)}
-                {otherEntries.length > 0 && (
-                  <p className="flex justify-between px-4 pb-1 pt-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
-                    <span>Cập nhật khác</span>
-                    <span>{otherEntries.length}</span>
-                  </p>
-                )}
-                {otherEntries.map(renderRow)}
+                {dayGroups.map((g) => (
+                  <div key={g.key}>
+                    <div className="flex items-center gap-3 bg-[var(--color-page-bg)] px-4 pb-2 pt-3">
+                      <span className="whitespace-nowrap text-xs font-semibold text-[var(--color-text-primary)] opacity-80">
+                        {vnGroupDate(g.iso)}
+                      </span>
+                      <div className="flex-1 border-t border-[var(--color-border)]" />
+                      <span className="whitespace-nowrap text-xs text-[var(--color-text-secondary)]">{vnRelativeDayLabel(g.iso, now)}</span>
+                    </div>
+                    {g.items.map(renderRow)}
+                  </div>
+                ))}
               </>
             )}
           </div>
-
-          {feed.mustCount > 0 && (
-            <Link
-              href="/request/list?scope=sent-to-me"
-              onClick={() => setOpen(false)}
-              className="block border-t border-gray-100 bg-gray-50 px-4 py-2.5 text-center text-[13px] font-medium text-[var(--color-action-blue)] hover:bg-gray-100"
-            >
-              Xem tất cả đề xuất chờ tôi duyệt
-            </Link>
-          )}
         </div>
-      )}
+
+        {feed.mustCount > 0 && (
+          <Link
+            href="/request/list?scope=sent-to-me"
+            onClick={() => setOpen(false)}
+            className="block shrink-0 border-t border-[var(--color-border)] bg-[var(--color-page-bg)] px-4 py-3 text-center text-[13px] font-medium text-[var(--color-action-blue)] hover:underline"
+          >
+            Xem tất cả đề xuất chờ tôi duyệt
+          </Link>
+        )}
+      </div>
     </div>
+  );
+
+  return (
+    <>
+      {/* Nút y App Tổng (components/layout/NotificationBell.tsx): 40×40, bo 12px, không viền,
+          số đỏ "9+" viền 2px cùng màu nền thanh — trên rail tối của app này nên chữ/nền hover
+          theo màu rail (appbar-*) thay cho hp-text-disabled/hp-surface của rail sáng App Tổng. */}
+      <button
+        ref={bellRef}
+        type="button"
+        onClick={() => setOpen(true)}
+        title="Thông báo"
+        aria-label={feed.badge > 0 ? `Thông báo, ${feed.badge} mục cần xem` : "Thông báo"}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        className="relative flex h-10 w-10 items-center justify-center rounded-xl text-[var(--color-appbar-text)] transition-colors hover:bg-white/10 hover:text-[var(--color-appbar-text-active)]"
+      >
+        <Bell size={19} />
+        {feed.badge > 0 && (
+          <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full border-2 border-[var(--color-appbar-bg)] bg-[var(--color-danger-red)] px-1 text-[10px] font-bold text-white">
+            {feed.badge > 9 ? "9+" : feed.badge}
+          </span>
+        )}
+      </button>
+      {/* Portal ra <body>: lớp phủ `fixed` không bị khung cha (rail, có thể có transform /
+          overflow sau này) cắt mất hay đè sai thứ tự lớp. */}
+      {open && typeof document !== "undefined" && createPortal(panel, document.body)}
+    </>
   );
 }
