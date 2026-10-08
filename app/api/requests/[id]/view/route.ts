@@ -1,6 +1,7 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebase/admin";
 import { apiErrorResponse } from "@/lib/http";
+import { refreshFeedAfterView } from "@/lib/server/notification-feed";
 import { canView, loadRequest } from "@/lib/server/requests";
 import { requireSession } from "@/lib/session";
 
@@ -27,6 +28,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       .collection("requests")
       .doc(id)
       .update({ [`viewedAt.${session.uid}`]: new Date().toISOString() });
+    // Dòng của đề xuất này trên chuông hết "chưa đọc" — chỉ tính lại cho chính người xem,
+    // và chỉ khi dòng đó đang chưa đọc (lib/server/notification-feed.ts).
+    after(() => refreshFeedAfterView(session.uid, id));
 
     return NextResponse.json({ ok: true });
   } catch (error) {

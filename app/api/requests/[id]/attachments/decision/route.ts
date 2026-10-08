@@ -4,7 +4,7 @@ import { apiErrorResponse } from "@/lib/http";
 import { MAX_DIRECT_UPLOAD_FILE_SIZE } from "@/lib/constants";
 import { canManageGroupsAtAppScope } from "@/lib/permissions";
 import { checkDecisionAttachmentEdit } from "@/lib/decision-attachment-edit";
-import { bumpNotificationSignal } from "@/lib/server/notification-signal";
+import { refreshNotificationFeedsForRequest } from "@/lib/server/notification-feed";
 import { canView, loadRequest } from "@/lib/server/requests";
 import { parseDecisionAttachmentEditBody, planDecisionAttachmentEdit } from "@/lib/server/decision-attachment-edit";
 import { verifyUploadedAttachment } from "@/lib/server/verify-upload";
@@ -94,7 +94,7 @@ export async function PATCH(
     });
 
     if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
-    after(() => bumpNotificationSignal());
+    after(() => refreshNotificationFeedsForRequest(id));
     return NextResponse.json({ attachments: result.attachments, history: result.history });
   } catch (error) {
     return apiErrorResponse(error);

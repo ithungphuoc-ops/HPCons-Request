@@ -83,6 +83,90 @@ export interface NotificationFeedContext {
   groupMentionCommentIds?: ReadonlySet<string>;
 }
 
+/**
+ * Chuông "cấp 2" (Sếp duyệt 08/10/2026 — thông báo phải được ĐẨY tới, không hỏi
+ * vòng): máy chủ tính sẵn danh sách thông báo của TỪNG NGƯỜI bị ảnh hưởng ngay lúc
+ * có sự kiện rồi ghi vào `notification-feed/{uid}` (project hpcons-request); trình
+ * duyệt chỉ nghe (onSnapshot) đúng tài liệu của mình — xem
+ * lib/server/notification-feed.ts và lib/firebase/notification-feed-listener.ts.
+ * Rules chỉ cho đọc đúng tài liệu `uid` của mình (firestore.rules).
+ */
+export const NOTIFICATION_FEED_COLLECTION = "notification-feed";
+/** Đổi cấu trúc tài liệu thì tăng số này — client thấy lệch sẽ gọi GET để tính lại. */
+export const NOTIFICATION_FEED_VERSION = 1;
+/** Tài liệu cũ hơn ngần này (chưa có sự kiện nào chạm tới) → mở app thì gọi GET 1 lần
+ * để tính lại: bù cho thứ đổi NGOÀI sự kiện đề xuất (họ tên ở App Tổng, cấu hình nhóm,
+ * quản lý trực tiếp…). Không phải hỏi vòng — chỉ 1 lần lúc mở trang. */
+export const NOTIFICATION_FEED_STALE_MS = 12 * 60 * 60 * 1000;
+
+export interface StoredNotificationFeed extends NotificationFeed {
+  v: number;
+  uid: string;
+  /** Tên hiển thị lúc tính — sự kiện của người khác tính lại cho mình cần tên này
+   * (`history.actor` lưu theo TÊN) mà không phải đọc App Tổng. */
+  name: string;
+  /** Cài đặt thông báo lúc tính — cùng lý do, đỡ 1 lượt đọc App Tổng mỗi người mỗi sự kiện. */
+  settings: NotificationSettings;
+  /** Id đề xuất đang có dòng trên chuông — để sự kiện của 1 đề xuất tìm lại đúng những
+   * người cần GỠ dòng (vd bị bỏ khỏi người theo dõi, đề xuất bị xoá). */
+  requestIds: string[];
+  /** Mốc dữ liệu (ms, thời điểm đọc kho) đã dùng để tính — chặn bản tính cũ ghi đè bản mới. */
+  basedOn: number;
+  updatedAt: string;
+}
+
+/**
+ * Những ai CÓ THỂ có dòng của đề xuất `r` trên chuông — đúng các vai trò mà
+ * buildNotificationFeed xét (người gửi, người duyệt, người theo dõi, người bị nhắc tên
+ * kể cả qua phòng ban đã giãn sẵn vào `mentionedUids`, người duyệt điều chỉnh). Thiếu
+ * quản lý trực tiếp bị "qua mặt" — cần tra App Tổng nên máy chủ tự thêm. Thừa người
+ * thì vô hại (tính lại ra y như cũ thì không ghi), thiếu người mới là lỗi.
+ */
+export function feedRecipientCandidates(r: RequestInstance): string[] {
+  const out = new Set<string>();
+  out.add(r.submittedBy.uid);
+  for (const a of r.approvers ?? []) out.add(a.id);
+  for (const a of r.approversSnapshot ?? []) out.add(a.id);
+  for (const f of r.followers ?? []) out.add(f.id);
+  for (const a of r.pendingAdjustment?.approvers ?? []) out.add(a.uid);
+  for (const u of r.adjustmentReviewerUids ?? []) out.add(u);
+  for (const u of r.mentionedUids ?? []) out.add(u);
+  for (const c of r.comments ?? []) for (const m of c.mentionIds ?? []) out.add(m);
+  out.delete("");
+  return [...out];
+}
+
+/** Dòng ĐÃ ĐỌC quá cửa sổ hiển thị thì ẩn — tài liệu lưu sẵn có thể đã tính từ vài ngày
+ * trước, client tự lọc theo giờ hiện tại (cùng mốc `readFloor` của buildNotificationFeed;
+ * dòng bị ẩn không bao giờ `counted` nên số đỏ không đổi). */
+export function hideExpiredEntries(feed: NotificationFeed, now: number): NotificationFeed {
+  const floor = new Date(now - READ_ENTRY_WINDOW_DAYS * 86_400_000).toISOString();
+  const entries = feed.entries.filter((e) => e.must || e.unread || e.at >= floor);
+  if (entries.length === feed.entries.length) return feed;
+  return { ...feed, entries, badge: entries.filter((e) => e.counted).length };
+}
+
+/** JSON với khoá xếp theo thứ tự — Firestore trả map theo khoá đã sắp xếp, còn object
+ * vừa tính thì theo thứ tự tạo, so JSON thường sẽ luôn "khác". */
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    return `{${Object.keys(obj)
+      .filter((k) => obj[k] !== undefined)
+      .sort()
+      .map((k) => `${JSON.stringify(k)}:${stableJson(obj[k])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value ?? null);
+}
+
+/** 2 bản danh sách giống hệt nhau? — giống thì khỏi ghi (đỡ 1 lượt ghi + 1 lượt đọc
+ * ở trình duyệt đang nghe). */
+export function sameFeedContent(a: NotificationFeed, b: NotificationFeed): boolean {
+  return a.badge === b.badge && a.mustCount === b.mustCount && stableJson(a.entries) === stableJson(b.entries);
+}
+
 /** Sự kiện trang chi tiết bắn sau khi ghi "đã xem" (RequestDetailView) — chuông tải lại. */
 export const REQUEST_VIEWED_EVENT = "request-app:viewed";
 

@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { buildNotificationFeed, isQuietHistoryEntry, type NotificationFeedContext } from "./notification-feed";
+import {
+  buildNotificationFeed,
+  feedRecipientCandidates,
+  hideExpiredEntries,
+  isQuietHistoryEntry,
+  sameFeedContent,
+  type NotificationFeedContext,
+} from "./notification-feed";
 import type { NotificationSettings, RequestInstance } from "./types";
 
 const ME = { uid: "me", name: "Nguyễn Hữu Phước" };
@@ -220,5 +227,104 @@ describe("số đỏ trên chuông", () => {
     const feed = buildNotificationFeed([r], ctx());
     expect(feed.entries[0].counted).toBe(true);
     expect(feed.badge).toBe(1);
+  });
+});
+
+describe("feedRecipientCandidates — ai cần tính lại khi đề xuất đổi", () => {
+  const people = ["lm", "a1", "a2", "f1", "m1", "dep-uid", "adj1", "adj-old", "nguoi-ngoai"];
+  const names: Record<string, string> = Object.fromEntries(people.map((u) => [u, `Tên ${u}`]));
+  const r = req({
+    id: "9",
+    status: "approved",
+    approvalFlow: "parallel",
+    submittedBy: { uid: "lm", name: names.lm },
+    approversSnapshot: [{ id: "a1" }, { id: "a2" }],
+    approvers: [
+      { id: "a1", decision: "approved" },
+      { id: "a2", decision: "approved" },
+    ],
+    followers: [{ id: "f1", name: names.f1, avatarInitial: "F" }],
+    history: [
+      { at: t(60), actor: names.lm, action: "Đã gửi đề xuất" },
+      { at: t(50), actor: names.a1, action: "Đã chấp thuận" },
+      { at: t(40), actor: names.a2, action: "Đã chấp thuận" },
+    ],
+    comments: [
+      { id: "c1", authorUid: "a1", authorName: names.a1, text: "@m1 xem giúp", at: t(30), mentionIds: ["m1"] },
+      { id: "c2", authorUid: "a1", authorName: names.a1, text: "@Phòng KT", at: t(20), mentionIds: ["phong-kt"] },
+    ],
+    mentionedUids: ["m1", "dep-uid"],
+    adjustmentReviewerUids: ["adj-old"],
+    pendingAdjustment: {
+      noiDung: "đổi",
+      attachment: null,
+      requestedByUid: "lm",
+      requestedByName: names.lm,
+      createdAt: t(10),
+      approvers: [{ uid: "adj1", name: names.adj1, approvedAt: null }],
+    },
+  } as never);
+
+  it("gồm mọi người mà buildNotificationFeed cho ra dòng của đề xuất này (không sót ai)", () => {
+    const candidates = new Set(feedRecipientCandidates(r));
+    for (const uid of people) {
+      const feed = buildNotificationFeed([r], {
+        uid,
+        name: names[uid],
+        settings: null,
+        now: NOW,
+        groupMentionCommentIds: uid === "dep-uid" ? new Set(["c2"]) : undefined,
+      });
+      if (feed.entries.length > 0) expect(candidates.has(uid), uid).toBe(true);
+    }
+    expect(candidates.has("nguoi-ngoai")).toBe(false);
+  });
+
+  it("liệt kê đủ các vai trò", () => {
+    expect(new Set(feedRecipientCandidates(r))).toEqual(
+      new Set(["lm", "a1", "a2", "f1", "adj1", "adj-old", "m1", "dep-uid", "phong-kt"]),
+    );
+  });
+});
+
+describe("hideExpiredEntries — tài liệu lưu sẵn, client lọc theo giờ hiện tại", () => {
+  it("ẩn dòng đã đọc quá 14 ngày, giữ việc cần duyệt / chưa đọc, số đỏ không đổi", () => {
+    const old = new Date(NOW - 15 * 86_400_000).toISOString();
+    const mk = (id: string, over: object) => ({
+      requestId: id,
+      code: null,
+      title: id,
+      groupName: "g",
+      must: false,
+      unread: false,
+      counted: false,
+      at: old,
+      main: { kind: "following" as const, text: "x", at: old },
+      extra: 0,
+      ...over,
+    });
+    const feed = {
+      entries: [mk("must", { must: true, counted: true }), mk("unread", { unread: true, counted: true }), mk("doc-cu", {}), mk("moi", { at: t(5) })],
+      badge: 2,
+      mustCount: 1,
+    };
+    const out = hideExpiredEntries(feed, NOW);
+    expect(out.entries.map((e) => e.requestId)).toEqual(["must", "unread", "moi"]);
+    expect(out.badge).toBe(2);
+    expect(hideExpiredEntries(feed, NOW - 2 * 86_400_000)).toBe(feed);
+  });
+});
+
+describe("sameFeedContent", () => {
+  it("không phân biệt thứ tự khoá (Firestore trả map theo khoá đã sắp xếp)", () => {
+    const r = req({ id: "1", approvers: [{ id: "me", decision: "pending" }] });
+    const feed = buildNotificationFeed([r], ctx());
+    const reordered = JSON.parse(JSON.stringify(feed, (_k, v) =>
+      v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).reverse()) : v,
+    ));
+    expect(sameFeedContent(feed, reordered)).toBe(true);
+    expect(sameFeedContent(feed, { ...feed, badge: 0 })).toBe(false);
+    const changed = { ...feed, entries: [{ ...feed.entries[0], unread: !feed.entries[0].unread }] };
+    expect(sameFeedContent(feed, changed)).toBe(false);
   });
 });

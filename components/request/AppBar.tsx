@@ -17,7 +17,7 @@ const iconItems = [
 ];
 
 export default function AppBar() {
-  const { isAdmin } = useCurrentSession();
+  const { isAdmin, session } = useCurrentSession();
   const { mobileNavOpen, setMobileNavOpen } = useRequestContext();
   const [launcherOpen, setLauncherOpen] = useState(false);
   const [giftPopupOpen, setGiftPopupOpen] = useState(false);
@@ -70,7 +70,7 @@ export default function AppBar() {
           <Home size={22} strokeWidth={1.75} />
         </Link>
 
-        <NotificationBell />
+        <NotificationBell uid={session?.uid} />
 
         {/* ĐÃ BỎ nút chuông thứ hai (BellRing) trỏ tới /request/settings/notifications
             — Sếp chốt 15/09/2026. Hai cái chuông đứng cạnh nhau, hình gần giống

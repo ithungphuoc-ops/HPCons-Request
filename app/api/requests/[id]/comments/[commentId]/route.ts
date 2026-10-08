@@ -1,6 +1,7 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebase/admin";
 import { apiErrorResponse } from "@/lib/http";
+import { refreshNotificationFeedsForRequest } from "@/lib/server/notification-feed";
 import { canView, loadRequest } from "@/lib/server/requests";
 import { requireSession } from "@/lib/session";
 import type { GroupPermissionRules, RequestComment, RequestInstance } from "@/lib/types";
@@ -107,6 +108,8 @@ export async function PATCH(
       return NextResponse.json({ error: "Không tìm thấy bình luận." }, { status: 404 });
     }
 
+    // Nội dung dòng "X bình luận: …" trên chuông lấy từ bình luận — sửa/xoá thì tính lại.
+    after(() => refreshNotificationFeedsForRequest(id));
     return NextResponse.json({ comments: updated });
   } catch (error) {
     return apiErrorResponse(error);
@@ -161,6 +164,8 @@ export async function DELETE(
       return NextResponse.json({ error: "Không tìm thấy bình luận." }, { status: 404 });
     }
 
+    // Nội dung dòng "X bình luận: …" trên chuông lấy từ bình luận — sửa/xoá thì tính lại.
+    after(() => refreshNotificationFeedsForRequest(id));
     return NextResponse.json({ comments: updated });
   } catch (error) {
     return apiErrorResponse(error);

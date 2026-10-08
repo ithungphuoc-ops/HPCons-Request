@@ -17,7 +17,7 @@ import {
   hpcoreSubmitterReturned,
 } from "@/lib/server/hpcore-notifications";
 import { applyDecisionToRequest, type DecisionGroupSettings, type DecisionKind } from "@/lib/server/decision-apply";
-import { bumpNotificationSignal } from "@/lib/server/notification-signal";
+import { refreshNotificationFeedsForRequest } from "@/lib/server/notification-feed";
 import { sanitizeDecisionAttachmentsInput } from "@/lib/server/decision-attachments";
 import { verifyUploadedAttachment } from "@/lib/server/verify-upload";
 import { MAX_DIRECT_UPLOAD_FILE_SIZE } from "@/lib/constants";
@@ -229,9 +229,9 @@ export async function POST(
       return plan;
     });
     const { updated, status } = result;
-    // Mọi effect (none/forward/decision) đều ghi updatedAt trong transaction ở trên — báo chuông
-    // thông báo tự tải lại (Sếp duyệt 06/10/2026, xem lib/server/notification-signal.ts).
-    after(() => bumpNotificationSignal());
+    // Mọi effect (none/forward/decision) đều ghi updatedAt trong transaction ở trên — tính lại
+    // chuông cho người liên quan (cấp 2, Sếp duyệt 08/10/2026, xem lib/server/notification-feed.ts).
+    after(() => refreshNotificationFeedsForRequest(id));
 
     // Đề xuất TRỰC TIẾP (không groupId) không đọc `notificationRules` ở trên
     // (`notificationRules` giữ nguyên `undefined`) — truyền thẳng `null` để

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebase/admin";
 import { apiErrorResponse } from "@/lib/http";
-import { loadNotificationFeed } from "@/lib/server/notification-feed";
+import { computeAndStoreFeedForSession, loadNotificationFeed } from "@/lib/server/notification-feed";
 import { requireSession } from "@/lib/session";
 
 export const runtime = "nodejs";
@@ -28,6 +28,8 @@ export async function POST() {
       }
       await batch.commit();
     }
+    // Ghi lại chuông của chính mình — trình duyệt đang nghe nhận ngay bản "đã đọc hết".
+    if (ids.length > 0) await computeAndStoreFeedForSession(session);
     return NextResponse.json({ ok: true, marked: ids.length });
   } catch (error) {
     return apiErrorResponse(error);

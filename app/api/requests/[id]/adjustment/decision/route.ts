@@ -9,7 +9,7 @@ import { loadAdjustmentGroupSettings } from "@/lib/server/adjustment-approval-ru
 import { loadActiveUsers } from "@/lib/server/adjustment-reviewers";
 import { notifyAdjustmentApprovers, notifyAdjustmentRequesterResult } from "@/lib/server/notification-emails";
 import { hpcoreAdjustmentPending, hpcoreAdjustmentResult } from "@/lib/server/hpcore-notifications";
-import { bumpNotificationSignal } from "@/lib/server/notification-signal";
+import { refreshNotificationFeedsForRequest } from "@/lib/server/notification-feed";
 import { loadRequest } from "@/lib/server/requests";
 import { requireSession, ForbiddenError } from "@/lib/session";
 import type { RequestInstance } from "@/lib/types";
@@ -171,7 +171,7 @@ export async function POST(
       });
       if ("loi" in ketQua) return NextResponse.json({ error: ketQua.loi }, { status: ketQua.ma });
       const saved = ketQua.request;
-      after(() => bumpNotificationSignal());
+      after(() => refreshNotificationFeedsForRequest(id));
       after(async () => {
         const settings = await loadAdjustmentGroupSettings(saved.groupId);
         await notifyAdjustmentApprovers([targetId], saved, pending.requestedByName, settings);
@@ -198,7 +198,7 @@ export async function POST(
         };
       });
       if ("loi" in ketQua) return NextResponse.json({ error: ketQua.loi }, { status: ketQua.ma });
-      after(() => bumpNotificationSignal());
+      after(() => refreshNotificationFeedsForRequest(id));
       // Email thông báo thật (Đợt 3, Sếp chốt 06/10/2026) — báo người đã đề
       // nghị điều chỉnh này biết bị từ chối. Lấy `requestedByUid` từ snapshot
       // ĐỌC TRƯỚC khi transaction xoá `pendingAdjustment`.
@@ -258,7 +258,7 @@ export async function POST(
     if ("loi" in ketQua) {
       return NextResponse.json({ error: ketQua.loi }, { status: ketQua.ma });
     }
-    after(() => bumpNotificationSignal());
+    after(() => refreshNotificationFeedsForRequest(id));
     if (ketQua.finalized) {
       const pendingSnapshot = ketQua.pendingSnapshot;
       const files = pendingAdjustmentFiles(pendingSnapshot);

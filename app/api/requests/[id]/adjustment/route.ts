@@ -11,7 +11,7 @@ import {
 } from "@/lib/server/adjustment-reviewers";
 import { notifyAdjustmentApprovers } from "@/lib/server/notification-emails";
 import { hpcoreAdjustmentPending } from "@/lib/server/hpcore-notifications";
-import { bumpNotificationSignal } from "@/lib/server/notification-signal";
+import { refreshNotificationFeedsForRequest } from "@/lib/server/notification-feed";
 import { collectAttachmentPaths, loadRequest } from "@/lib/server/requests";
 import { requireSession, ForbiddenError } from "@/lib/session";
 import { ADJUSTMENT_MAX_LENGTH } from "@/lib/request-history-labels";
@@ -210,8 +210,8 @@ export async function POST(
       return NextResponse.json({ error: ketQua.loi }, { status: ketQua.ma });
     }
     const saved = ketQua.request;
-    // Chuông thông báo của 2 người duyệt tự tải lại gần như ngay.
-    after(() => bumpNotificationSignal());
+    // Tính lại chuông của 2 người duyệt → họ thấy gần như ngay (onSnapshot).
+    after(() => refreshNotificationFeedsForRequest(id));
     after(() =>
       notifyAdjustmentApprovers(
         approvers.map((a) => a.uid),

@@ -8,7 +8,7 @@ import {
 } from "@/lib/adjustment-settings";
 import { canManageGroupsAtAppScope } from "@/lib/permissions";
 import { ADJUSTMENT_CANCELLED_ACTION } from "@/lib/request-history-labels";
-import { bumpNotificationSignal } from "@/lib/server/notification-signal";
+import { refreshNotificationFeedsForRequest } from "@/lib/server/notification-feed";
 import { loadRequest } from "@/lib/server/requests";
 import { requireSession, ForbiddenError } from "@/lib/session";
 import type { RequestHistoryEntry, RequestInstance } from "@/lib/types";
@@ -101,8 +101,8 @@ export async function POST(
       return { request: { ...moiNhat, pendingAdjustment: null, history, updatedAt: nowIso } };
     });
     if ("loi" in ketQua) return NextResponse.json({ error: ketQua.loi }, { status: ketQua.ma });
-    // Chuông của người duyệt tự tải lại → hết thông báo "chờ duyệt điều chỉnh".
-    after(() => bumpNotificationSignal());
+    // Tính lại chuông của người duyệt → hết thông báo "chờ duyệt điều chỉnh".
+    after(() => refreshNotificationFeedsForRequest(id));
     return NextResponse.json({ request: ketQua.request });
   } catch (error) {
     return apiErrorResponse(error);

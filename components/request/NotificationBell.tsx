@@ -18,17 +18,18 @@ import {
   XCircle,
   type LucideIcon,
 } from "lucide-react";
-import { listenRequestChanges } from "@/lib/firebase/request-change-signal";
+import { listenMyNotificationFeed } from "@/lib/firebase/notification-feed-listener";
 import {
+  hideExpiredEntries,
+  NOTIFICATION_FEED_STALE_MS,
+  NOTIFICATION_FEED_VERSION,
   REQUEST_VIEWED_EVENT,
   type NotificationEntry,
   type NotificationFeed,
   type NotificationKind,
 } from "@/lib/notification-feed";
 
-/** Tải lại dự phòng khi tab đang mở — tín hiệu tức thì mới là đường chính. */
-const FALLBACK_REFRESH_MS = 120_000;
-/** Gom nhiều tín hiệu sát nhau thành 1 lần tải. */
+/** Gom nhiều yêu cầu tải sát nhau thành 1 lần (chỉ dùng ở chế độ dự phòng). */
 const DEBOUNCE_MS = 800;
 
 /** "5 phút trước" / "Hôm qua 14:20" — dễ đọc hơn dãy "09:37:16 15/9/2026".
@@ -66,16 +67,19 @@ const KIEU_THONG_BAO: Record<NotificationKind, { Icon: LucideIcon; nen: string; 
 const EMPTY_FEED: NotificationFeed = { entries: [], badge: 0, mustCount: 0 };
 
 /**
- * Chuông thông báo (Đợt 1, Sếp duyệt demo 06/10/2026):
- *  - 1 lượt tải `/api/notifications` (máy chủ tính sẵn, mỗi đề xuất 1 dòng) thay cho 7
- *    lượt tải riêng chỉ chạy 1 lần lúc mở trang như trước.
- *  - Tự cập nhật: tín hiệu tức thì khi có đề xuất thay đổi (lib/firebase/
- *    request-change-signal.ts), khi mở chuông, khi quay lại tab, sau khi xem 1 đề xuất,
- *    và 2 phút/lần để dự phòng.
+ * Chuông thông báo (Đợt 1 Sếp duyệt 06/10/2026; "cấp 2" Sếp duyệt 08/10/2026):
+ *  - Máy chủ tính sẵn danh sách (mỗi đề xuất 1 dòng) cho đúng những người bị ảnh hưởng
+ *    lúc có sự kiện và ghi `notification-feed/{uid}`; chuông chỉ NGHE tài liệu của mình
+ *    (lib/firebase/notification-feed-listener.ts) — không hỏi vòng, không tải lại khi
+ *    mở chuông/quay lại tab, tab ẩn không gọi máy chủ.
+ *  - GET `/api/notifications` chỉ gọi khi: chưa có tài liệu (lần đầu), tài liệu khác
+ *    phiên bản / quá NOTIFICATION_FEED_STALE_MS, bấm "Thử lại", hoặc trình duyệt không
+ *    nghe được Firestore (chế độ dự phòng: tải khi mở trang, quay lại tab, sau khi xem).
+ *  - Giờ tương đối ("5 phút trước") và việc ẩn dòng đã đọc quá 14 ngày tính ở trình duyệt
+ *    theo giờ hiện tại, nên tài liệu lưu từ hôm trước vẫn hiện đúng.
  *  - "Cần bạn duyệt" luôn nằm trên; số trên chuông = việc cần duyệt + dòng chưa đọc.
- *  - Tải lỗi thì báo + nút thử lại (trước đây chuông trống không báo gì).
  */
-export default function NotificationBell() {
+export default function NotificationBell({ uid }: { uid?: string | null }) {
   const [open, setOpen] = useState(false);
   const [feed, setFeed] = useState<NotificationFeed>(EMPTY_FEED);
   const [error, setError] = useState(false);
@@ -86,9 +90,32 @@ export default function NotificationBell() {
   const againRef = useRef(false);
   const timerRef = useRef<number | null>(null);
   const lastBadgeRef = useRef<number | null>(null);
+  /** Không nghe được Firestore → dựa vào GET như trước (nhưng không còn 2 phút/lần). */
+  const fallbackRef = useRef(false);
   // Mốc thời gian để tính "5 phút trước" — làm mới mỗi phút (gọi Date.now() thẳng lúc
   // render thì mỗi lần render một số khác, nhãn nhảy lung tung).
   const [now, setNow] = useState(() => Date.now());
+
+  const applyFeed = useCallback((data: NotificationFeed) => {
+    const t = Date.now();
+    const shownFeed = hideExpiredEntries(data, t);
+    setFeed(shownFeed);
+    setNow(t);
+    // Rung chuông khi có thêm việc/thông báo mới (không rung lần tải đầu).
+    if (lastBadgeRef.current !== null && shownFeed.badge > lastBadgeRef.current) {
+      bellRef.current?.animate?.(
+        [
+          { transform: "rotate(0)" },
+          { transform: "rotate(14deg)" },
+          { transform: "rotate(-12deg)" },
+          { transform: "rotate(8deg)" },
+          { transform: "rotate(0)" },
+        ],
+        { duration: 700, easing: "ease-in-out" },
+      );
+    }
+    lastBadgeRef.current = shownFeed.badge;
+  }, []);
 
   const load = useCallback(async () => {
     if (loadingRef.current) {
@@ -99,24 +126,8 @@ export default function NotificationBell() {
     try {
       const res = await fetch("/api/notifications", { cache: "no-store" });
       if (!res.ok) throw new Error(String(res.status));
-      const data = (await res.json()) as NotificationFeed;
-      setFeed(data);
+      applyFeed((await res.json()) as NotificationFeed);
       setError(false);
-      setNow(Date.now());
-      // Rung chuông khi có thêm việc/thông báo mới (không rung lần tải đầu).
-      if (lastBadgeRef.current !== null && data.badge > lastBadgeRef.current) {
-        bellRef.current?.animate?.(
-          [
-            { transform: "rotate(0)" },
-            { transform: "rotate(14deg)" },
-            { transform: "rotate(-12deg)" },
-            { transform: "rotate(8deg)" },
-            { transform: "rotate(0)" },
-          ],
-          { duration: 700, easing: "ease-in-out" },
-        );
-      }
-      lastBadgeRef.current = data.badge;
     } catch {
       setError(true);
     } finally {
@@ -126,7 +137,7 @@ export default function NotificationBell() {
         void load();
       }
     }
-  }, []);
+  }, [applyFeed]);
 
   const scheduleLoad = useCallback(() => {
     if (timerRef.current !== null) window.clearTimeout(timerRef.current);
@@ -137,28 +148,57 @@ export default function NotificationBell() {
   }, [load]);
 
   useEffect(() => {
-    void load();
-    const stopSignal = listenRequestChanges(scheduleLoad);
+    if (!uid) return;
+    fallbackRef.current = false;
+    // GET "làm tươi" tối đa 1 lần mỗi lần mở trang — GET ghi lại tài liệu, snapshot mới
+    // về sẽ tươi nên không thành vòng lặp.
+    let refreshed = false;
+    const refreshOnce = () => {
+      if (refreshed) return;
+      refreshed = true;
+      void load();
+    };
+    const stopListen = listenMyNotificationFeed(
+      uid,
+      (data) => {
+        const usable = !!data && data.v === NOTIFICATION_FEED_VERSION;
+        const ageMs = data ? Date.now() - Date.parse(data.updatedAt) : NaN;
+        if (!usable || !(ageMs < NOTIFICATION_FEED_STALE_MS)) refreshOnce();
+        if (usable && data) {
+          applyFeed(data);
+          setError(false);
+        }
+      },
+      () => {
+        fallbackRef.current = true;
+        void load();
+      },
+    );
+    // Chỉ ở chế độ dự phòng mới tải lại khi quay lại tab / sau khi xem 1 đề xuất; bình
+    // thường tài liệu tự đổi (máy chủ tính lại lúc ghi "đã xem"), tab ẩn không gọi gì.
     const onVisible = () => {
-      if (document.visibilityState === "visible") scheduleLoad();
+      if (fallbackRef.current && document.visibilityState === "visible") scheduleLoad();
+    };
+    const onViewed = () => {
+      if (fallbackRef.current) scheduleLoad();
     };
     document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("focus", onVisible);
-    window.addEventListener(REQUEST_VIEWED_EVENT, scheduleLoad);
-    const fallback = window.setInterval(() => {
-      if (document.visibilityState === "visible") void load();
-    }, FALLBACK_REFRESH_MS);
-    const clock = window.setInterval(() => setNow(Date.now()), 60_000);
+    window.addEventListener(REQUEST_VIEWED_EVENT, onViewed);
     return () => {
-      stopSignal();
+      stopListen();
       document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("focus", onVisible);
-      window.removeEventListener(REQUEST_VIEWED_EVENT, scheduleLoad);
-      window.clearInterval(fallback);
-      window.clearInterval(clock);
+      window.removeEventListener(REQUEST_VIEWED_EVENT, onViewed);
       if (timerRef.current !== null) window.clearTimeout(timerRef.current);
     };
-  }, [load, scheduleLoad]);
+  }, [uid, load, scheduleLoad, applyFeed]);
+
+  // Đồng hồ cho nhãn "5 phút trước" — chỉ đổi khi tab đang hiện (không gọi máy chủ).
+  useEffect(() => {
+    const clock = window.setInterval(() => {
+      if (document.visibilityState === "visible") setNow(Date.now());
+    }, 60_000);
+    return () => window.clearInterval(clock);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -176,10 +216,7 @@ export default function NotificationBell() {
     };
   }, [open]);
 
-  const toggle = () => {
-    if (!open) void load();
-    setOpen((v) => !v);
-  };
+  const toggle = () => setOpen((v) => !v);
 
   /** Bấm 1 dòng: coi như đã đọc ngay (trang chi tiết sẽ ghi "đã xem" thật). */
   const markEntryRead = (entry: NotificationEntry) => {
@@ -199,7 +236,8 @@ export default function NotificationBell() {
       return { ...f, entries, badge: entries.filter((e) => e.counted).length };
     });
     await fetch("/api/notifications/read", { method: "POST" }).catch(() => {});
-    void load();
+    // Bình thường máy chủ ghi lại tài liệu → snapshot tự về; dự phòng thì tải lại.
+    if (fallbackRef.current) void load();
   };
 
   const unreadCount = feed.entries.filter((e) => e.must || e.unread).length;

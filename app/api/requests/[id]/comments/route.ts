@@ -4,7 +4,7 @@ import { adminDb } from "@/lib/firebase/admin";
 import { apiErrorResponse } from "@/lib/http";
 import { expandMentionsToUids } from "@/lib/server/mentions";
 import { hpcoreCommentOnMine, hpcoreMentioned } from "@/lib/server/hpcore-notifications";
-import { bumpNotificationSignal } from "@/lib/server/notification-signal";
+import { refreshNotificationFeedsForRequest } from "@/lib/server/notification-feed";
 import { canView, loadRequest } from "@/lib/server/requests";
 import { requireSession } from "@/lib/session";
 import type { RequestAttachment, RequestComment } from "@/lib/types";
@@ -88,7 +88,7 @@ export async function POST(
     }
 
     await adminDb.collection("requests").doc(id).update(patch);
-    after(() => bumpNotificationSignal());
+    after(() => refreshNotificationFeedsForRequest(id));
     // Chuông chung HPcore (Sếp chốt 07/10/2026) — trước đây route này không
     // gửi thông báo rời nào cả (chỉ có chuông riêng của Request-app tự tính
     // lại khi tải trang). Báo người tạo đề xuất (nếu không phải chính họ bình

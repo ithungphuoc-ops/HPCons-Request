@@ -32,8 +32,24 @@ service cloud.firestore {
     // field, bình luận, ai đã xem) tới MỌI người đã đăng nhập, kể cả người
     // không có quyền xem đề xuất đó. Đổi sang nghe tài liệu rỗng này để
     // không còn rò rỉ, đồng thời nhẹ hơn nhiều lần mỗi khi có người thao tác.
+    //
+    // 08/10/2026 ("cấp 2"): chuông KHÔNG còn nghe tài liệu này (thay bằng
+    // notification-feed bên dưới). Giữ rule thêm 1 đợt cho các tab đang mở
+    // bản cũ lúc deploy khỏi báo lỗi; máy chủ không ghi vào đây nữa — gỡ ở
+    // lần deploy rules sau.
     match /system/notification-signal {
       allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // Chuông "cấp 2" (Sếp duyệt 08/10/2026): máy chủ tính sẵn danh sách
+    // thông báo của TỪNG NGƯỜI rồi ghi `notification-feed/{uid}` (Admin SDK,
+    // lib/server/notification-feed.ts); trình duyệt nghe đúng tài liệu của
+    // mình. Tài liệu chứa tóm tắt đề xuất (mã, tên, trích bình luận) — CHỈ
+    // chính chủ được đọc: uid Firebase Auth = uid SSO (custom token ký bằng
+    // session.uid, app/api/auth/firebase-token/route.ts).
+    match /notification-feed/{uid} {
+      allow read: if isSignedIn() && request.auth.uid == uid;
       allow write: if false;
     }
   }
