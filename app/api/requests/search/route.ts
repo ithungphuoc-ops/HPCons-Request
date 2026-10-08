@@ -3,8 +3,8 @@ import { adminDb } from "@/lib/firebase/admin";
 import { apiErrorResponse } from "@/lib/http";
 import { canManageGroupsAtAppScope } from "@/lib/permissions";
 import { isAdjustmentReviewer } from "@/lib/adjustment-settings";
+import { REQUEST_SUMMARY_FIELDS, toRequestSummary } from "@/lib/request-summary";
 import { requireSession } from "@/lib/session";
-import type { RequestInstance } from "@/lib/types";
 
 /**
  * Tìm kiếm/lọc đề xuất, tôn trọng phạm vi quyền xem — thành viên thường chỉ
@@ -22,10 +22,15 @@ export async function GET(request: Request) {
     const from = url.searchParams.get("from");
     const to = url.searchParams.get("to");
 
-    const snap = await adminDb.collection("requests").orderBy("submittedAt", "desc").get();
-    let requests = snap.docs
-      .map((doc) => ({ id: doc.id, ...doc.data() }) as RequestInstance)
-      .filter((r) => r.status !== "draft");
+    // Bản GỌN (lib/request-summary.ts): trang Tìm kiếm chỉ hiện tên nhóm/người gửi/ngày/
+    // trạng thái và mở trang chi tiết riêng — không cần lịch sử, bình luận, tệp… Vẫn đọc
+    // cả bản đã xoá mềm như trước (giữ nguyên kết quả tìm kiếm, không đổi phạm vi).
+    const snap = await adminDb
+      .collection("requests")
+      .orderBy("submittedAt", "desc")
+      .select(...REQUEST_SUMMARY_FIELDS)
+      .get();
+    let requests = snap.docs.map((doc) => toRequestSummary(doc.id, doc.data())).filter((r) => r.status !== "draft");
 
     if (!canManageGroupsAtAppScope(session.role)) {
       requests = requests.filter(

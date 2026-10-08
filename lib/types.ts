@@ -918,6 +918,9 @@ export interface RequestInstance {
   /** `"dung"` (03/10/2026): hàng chờ đồng bộ đã thử hết lượt / quá 1 ngày → dừng, chờ Admin gửi lại
    * tay (xem lib/dong-bo/hang-cho.ts). Đề xuất duyệt từ 03/10 không còn dùng `"failed"`. */
   thuMuaSyncStatus?: "synced" | "failed" | "dung";
+  /** Mốc lần TỰ THỬ LẠI đồng bộ Thu mua gần nhất — chặn thử lại dày hơn 30 phút
+   * (lib/sync-retry-guard.ts, 08/10/2026). */
+  thuMuaRetryAt?: string;
   /**
    * ★★★ KẾT QUẢ LẦN ĐỒNG BỘ SANG QLK CTR (app Kho công trình) GẦN NHẤT — thêm 18/09/2026.
    *
@@ -944,6 +947,9 @@ export interface RequestInstance {
    * "sai dữ liệu" — chỗ đó gửi lại y nguyên thì không bao giờ đổi được gì.
    */
   qlkCtrSyncStatus?: "synced" | "failed" | "bo_qua" | "dung";
+  /** Mốc lần TỰ THỬ LẠI đồng bộ QLK CTR gần nhất — chặn thử lại dày hơn 30 phút
+   * (lib/sync-retry-guard.ts, 08/10/2026). */
+  qlkCtrRetryAt?: string;
   /**
    * "Chỉ huy trưởng" — `approversSnapshot[0]` tại ĐÚNG thời điểm `approversSnapshot`
    * được dựng lần đầu (gửi chính thức từ nháp, hoặc tạo không phải nháp), TRƯỚC

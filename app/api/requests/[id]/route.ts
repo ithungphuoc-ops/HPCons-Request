@@ -57,11 +57,12 @@ export async function GET(
       );
     }
     // Bắn rồi quên — không đợi kết quả, không làm chậm màn hình. Xem lib/thumua-sync.ts.
-    void retryThuMuaSyncNeuLoi(found);
+    // after() thay `void` (08/10/2026) — xem chú thích ở app/api/requests/route.ts (scope mine).
+    after(() => retryThuMuaSyncNeuLoi(found));
     /* ★ Thêm 18/09/2026: đường sang QLK CTR nay cũng tự thử lại. Trước đó nó là đường DUY NHẤT
        không có cơ chế này — bốn đề xuất công trình đã mất tích ở kho vì vậy (000000096 ·
        000000098 · 000000100 · 000000104). Xem lib/qlkctr-sync.ts. */
-    void retryQlkCtrSyncNeuLoi(found);
+    after(() => retryQlkCtrSyncNeuLoi(found));
     /* ★ 03/10/2026 — hàng chờ đồng bộ: có người mở đề xuất thì máy chủ tranh thủ gửi các việc đã tới
        hạn (của MỌI đề xuất, tối đa 1 lần/phút). Xem lib/dong-bo/hang-cho.ts. */
     after(() => quetViecToiHan());

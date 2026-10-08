@@ -98,7 +98,9 @@ export default function RequestHomePage() {
 
   const load = () => {
     setStatus("loading");
-    fetch("/api/requests?scope=all")
+    // `view=summary`: bản gọn (không lịch sử/bình luận/tệp) — Trang chủ chỉ hiện hàng danh
+    // sách, bấm vào thì mở /request/list (tải bản đầy đủ). Xem lib/request-summary.ts.
+    fetch("/api/requests?scope=all&view=summary")
       .then((res) => (res.ok ? res.json() : Promise.reject(new Error("fetch failed"))))
       .then((data: { requests: RequestInstance[] }) => {
         setRequests(data.requests ?? []);

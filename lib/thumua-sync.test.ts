@@ -16,8 +16,18 @@ const updateMock = vi.fn().mockResolvedValue(undefined);
 vi.mock("firebase-admin/firestore", () => ({
   FieldValue: { arrayUnion: (...items: unknown[]) => ({ __arrayUnion: items }) },
 }));
+// Giữ chỗ lượt thử lại (lib/sync-retry-guard.ts, 08/10/2026) chạy trong transaction —
+// `retryAtStore` giả mốc `thuMuaRetryAt` đang lưu trên Firestore.
+const retryAtStore: { value: string | undefined } = { value: undefined };
+const txUpdateMock = vi.fn((_ref: unknown, data: Record<string, string>) => {
+  retryAtStore.value = data.thuMuaRetryAt;
+});
 vi.mock("@/lib/firebase/admin", () => ({
-  adminDb: { collection: () => ({ doc: () => ({ update: updateMock }) }) },
+  adminDb: {
+    collection: () => ({ doc: () => ({ update: updateMock }) }),
+    runTransaction: async (fn: (tx: unknown) => Promise<unknown>) =>
+      fn({ get: async () => ({ exists: true, get: () => retryAtStore.value }), update: txUpdateMock }),
+  },
 }));
 
 const {
@@ -168,6 +178,7 @@ describe("retryThuMuaSyncNeuLoi", () => {
   });
 
   it("thử lại thành công thì ghi thuMuaSyncStatus='synced' + thêm dòng lịch sử", async () => {
+    retryAtStore.value = undefined;
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -190,7 +201,8 @@ describe("retryThuMuaSyncNeuLoi", () => {
     vi.unstubAllGlobals();
   });
 
-  it("thử lại vẫn thất bại thì giữ nguyên thuMuaSyncStatus='failed', vẫn ghi thêm lịch sử (không throw)", async () => {
+  it("thử lại vẫn thất bại (lỗi khác lần trước) → không ghi lại trạng thái 'failed' y cũ, vẫn nối lịch sử (không throw)", async () => {
+    retryAtStore.value = undefined;
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({ ok: false, status: 404, json: async () => { throw new SyntaxError("Unexpected token '<'"); } }),
@@ -202,7 +214,46 @@ describe("retryThuMuaSyncNeuLoi", () => {
 
     expect(updateMock).toHaveBeenCalledTimes(1);
     const patch = updateMock.mock.calls[0][0];
-    expect(patch.thuMuaSyncStatus).toBe("failed");
+    expect("thuMuaSyncStatus" in patch).toBe(false);
+    expect(patch.history.__arrayUnion).toHaveLength(1);
+    vi.unstubAllGlobals();
+  });
+
+  it("08/10/2026: kết quả y hệt dòng gần nhất của kênh Thu mua → không ghi gì thêm", async () => {
+    retryAtStore.value = undefined;
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 500, json: async () => ({ error: "Kho bận" }) }));
+    updateMock.mockClear();
+    process.env.THUMUA_API_URL = "https://thumua.hpcore.vn";
+    const daCoDongTrung = {
+      ...reqDaLoi,
+      history: [
+        ...reqDaLoi.history,
+        { at: "2026-10-07T10:00:00.000Z", actor: "Hệ thống", action: "Đồng bộ App Thu mua thất bại (tự thử lại)", note: "Kho bận" },
+      ],
+    };
+
+    await retryThuMuaSyncNeuLoi(daCoDongTrung);
+
+    expect(updateMock).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it("08/10/2026: vừa thử lại chưa đủ 30 phút → không gọi Thu mua, không ghi", async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    updateMock.mockClear();
+    txUpdateMock.mockClear();
+    const vuaThu = new Date(Date.now() - 5 * 60_000).toISOString();
+
+    // Bản đọc đã có mốc gần → dừng ngay, không cả transaction.
+    await retryThuMuaSyncNeuLoi({ ...reqDaLoi, thuMuaRetryAt: vuaThu });
+    // Bản đọc cũ (chưa có mốc) nhưng tab khác vừa giữ chỗ → transaction chặn.
+    retryAtStore.value = vuaThu;
+    await retryThuMuaSyncNeuLoi(reqDaLoi);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(updateMock).not.toHaveBeenCalled();
+    expect(txUpdateMock).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
   });
 });
