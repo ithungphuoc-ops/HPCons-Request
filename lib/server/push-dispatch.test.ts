@@ -17,6 +17,7 @@ vi.mock("@/lib/hpcore", () => ({
 const {
   DEFAULT_PUSH_DISPATCH_URL,
   DISPATCH_RETRY_DELAY_MS,
+  MAX_BODY_BYTES,
   buildDispatchItems,
   buildEventId,
   chunkDispatch,
@@ -153,8 +154,10 @@ describe("dựng gói gửi App Tổng", () => {
     expect(weird).not.toContain("/");
   });
 
-  it("chia lô ≤ 200 người, mã sự kiện thêm :c0, :c1", () => {
-    const items = buildDispatchItems(Array.from({ length: 450 }, (_, i) => ({ uid: `u${i}`, payload: payload("approved") })));
+  it("chia lô ≤ 200 người (thư rất ngắn), mã sự kiện thêm :c0, :c1", () => {
+    // Phần tử rút gọn (chỉ uid) để 200 người vẫn dưới 14.000 byte → giới hạn 200 người là thứ chặn.
+    const tiny = (i: number) => ({ uid: `${i}` }) as unknown as Parameters<typeof chunkDispatch>[1][number];
+    const items = Array.from({ length: 450 }, (_, i) => tiny(i));
     const one = chunkDispatch("ev", items.slice(0, 200));
     expect(one).toHaveLength(1);
     expect(one[0].eventId).toBe("ev");
@@ -165,6 +168,37 @@ describe("dựng gói gửi App Tổng", () => {
       ["ev:c2", 50],
     ]);
     expect(many.every((b) => b.appId === "de_xuat")).toBe(true);
+    for (const b of many) expect(Buffer.byteLength(JSON.stringify(b), "utf8")).toBeLessThanOrEqual(MAX_BODY_BYTES);
+  });
+
+  it("thư thật cỡ vừa: 1 lô vừa 14.000 byte thì giữ nguyên mã, không hậu tố", () => {
+    const items = buildDispatchItems(Array.from({ length: 5 }, (_, i) => ({ uid: `u${i}`, payload: payload("approved") })));
+    expect(chunkDispatch("ev", items).map((b) => b.eventId)).toEqual(["ev"]);
+  });
+
+  it("200 người tên dài, nội dung dài → chia theo byte: mỗi lô ≤ 14.000 byte UTF-8, ≤ 200 người, đủ người, ổn định", () => {
+    const longName = "Nguyễn Thị Phương Thảo Hoàng Đức Trường Giang Lê Văn Khánh Thượng";
+    const big = buildPushPayload({
+      kind: "mentioned",
+      requestId: "abcdefghijklmnopqrst",
+      code: "000000166",
+      groupName: "1.0. Phiếu đề nghị thanh toán tạm ứng vật tư công trình (HPCons) — Đợt ".repeat(2),
+      actorName: longName,
+      excerpt: "Đề nghị bổ sung báo giá thép hộp 40×80 và chứng từ vận chuyển trước ngày nghiệm thu ".repeat(3),
+    });
+    const items = buildDispatchItems(
+      Array.from({ length: 200 }, (_, i) => ({ uid: `uid-${"x".repeat(20)}-${i}`, payload: big })),
+    );
+    const bodies = chunkDispatch("mentioned:abcdefghijklmnopqrst:cmt1:0123456789abcdef01234567", items);
+    expect(bodies.length).toBeGreaterThan(1);
+    for (const b of bodies) {
+      expect(Buffer.byteLength(JSON.stringify(b), "utf8")).toBeLessThanOrEqual(MAX_BODY_BYTES);
+      expect(b.items.length).toBeLessThanOrEqual(200);
+    }
+    expect(bodies.flatMap((b) => b.items.map((i) => i.uid))).toEqual(items.map((i) => i.uid));
+    expect(bodies.map((b) => b.eventId)).toEqual(bodies.map((_, i) => `mentioned:abcdefghijklmnopqrst:cmt1:0123456789abcdef01234567:c${i}`));
+    // Gọi lại với cùng dữ liệu → y hệt các lô (thử lại gửi đúng như lần đầu).
+    expect(chunkDispatch("mentioned:abcdefghijklmnopqrst:cmt1:0123456789abcdef01234567", items)).toEqual(bodies);
   });
 });
 
@@ -208,8 +242,8 @@ describe("gọi App Tổng + thử lại", () => {
     expect(JSON.stringify(err.mock.calls)).not.toContain(KEY);
   });
 
-  it("4xx khác (401/400) → KHÔNG thử lại", async () => {
-    for (const status of [400, 401, 403, 404]) {
+  it("4xx khác (401/400/413) → KHÔNG thử lại; 413 ghi log lỗi", async () => {
+    for (const status of [400, 401, 403, 404, 413]) {
       fetchMock.mockReset();
       fetchMock.mockResolvedValue(new Response(null, { status }));
       const sleep = vi.fn(async () => {});
@@ -217,15 +251,22 @@ describe("gọi App Tổng + thử lại", () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
       expect(sleep).not.toHaveBeenCalled();
     }
+    const err = console.error as unknown as ReturnType<typeof vi.fn>;
+    expect(err.mock.calls.some((c) => String(c[0]).includes("413"))).toBe(true);
   });
 
   it("nhiều lô gửi lần lượt, mỗi lô 1 lượt", async () => {
     const items = Array.from({ length: 201 }, (_, i) => ({ uid: `u${i}`, payload: payload("approved") }));
     await dispatchPushItems(items, { eventKey: "approved:r1:t" }, noSleep);
     const bodies = sentBodies();
-    expect(bodies.map((b) => b.items.length)).toEqual([200, 1]);
-    expect(bodies[0].eventId.endsWith(":c0")).toBe(true);
-    expect(bodies[1].eventId.endsWith(":c1")).toBe(true);
+    expect(bodies.length).toBeGreaterThan(1);
+    expect(bodies.reduce((n, b) => n + b.items.length, 0)).toBe(201);
+    bodies.forEach((b, i) => {
+      expect(b.eventId.endsWith(`:c${i}`)).toBe(true);
+      expect(Buffer.byteLength(JSON.stringify(b), "utf8")).toBeLessThanOrEqual(MAX_BODY_BYTES);
+    });
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(Buffer.byteLength(init.body as string, "utf8")).toBeLessThanOrEqual(MAX_BODY_BYTES);
   });
 
   it("không còn ai nhận (chỉ người thao tác) → không gọi mạng", async () => {

@@ -26,6 +26,8 @@ const MIN_KEY_LENGTH = 24;
 export const DISPATCH_TIMEOUT_MS = 8_000;
 export const DISPATCH_RETRY_DELAY_MS = 1_500;
 export const MAX_ITEMS_PER_REQUEST = 200;
+/** App Tổng từ chối thân > 16KB (413) — chừa biên, mỗi lần gửi ≤ 14.000 byte UTF-8. */
+export const MAX_BODY_BYTES = 14_000;
 const EVENT_ID_MAX = 200;
 /** Chừa chỗ cho hậu tố chia lô ":c12". */
 const EVENT_ID_BASE_MAX = EVENT_ID_MAX - 8;
@@ -149,18 +151,40 @@ export function buildEventId(eventKey: string, items: DispatchItem[]): string {
   return `${readable}:${fingerprint}`;
 }
 
-/** Chia lô ≤ 200 người/lần; nhiều lô thì mã sự kiện thêm hậu tố :c0, :c1... */
+function bodyBytes(body: DispatchBody): number {
+  return Buffer.byteLength(JSON.stringify(body), "utf8");
+}
+
+/**
+ * Chia lô: mỗi lần gửi ≤ 200 người VÀ thân JSON ≤ 14.000 byte (UTF-8). Giữ nguyên thứ tự người
+ * nhận → cùng dữ liệu luôn ra cùng các lô (thử lại gửi y hệt). 1 lô thì giữ nguyên mã sự kiện;
+ * nhiều lô thì thêm hậu tố :c0, :c1... (tính kích thước theo hậu tố dài nhất có thể).
+ */
 export function chunkDispatch(eventId: string, items: DispatchItem[]): DispatchBody[] {
-  if (items.length <= MAX_ITEMS_PER_REQUEST) return [{ appId: PUSH_APP_ID, eventId, items }];
-  const bodies: DispatchBody[] = [];
-  for (let i = 0; i * MAX_ITEMS_PER_REQUEST < items.length; i++) {
-    bodies.push({
-      appId: PUSH_APP_ID,
-      eventId: `${eventId}:c${i}`,
-      items: items.slice(i * MAX_ITEMS_PER_REQUEST, (i + 1) * MAX_ITEMS_PER_REQUEST),
-    });
+  const whole: DispatchBody = { appId: PUSH_APP_ID, eventId, items };
+  if (items.length <= MAX_ITEMS_PER_REQUEST && bodyBytes(whole) <= MAX_BODY_BYTES) return [whole];
+  // Đo với hậu tố dài nhất có thể (":c" + số lô ≤ số người) để lô nào cũng chắc chắn vừa.
+  const probeId = `${eventId}:c${items.length}`;
+  // JSON của mảng = "[" + các phần tử nối bằng "," + "]" → cộng dồn chính xác, khỏi stringify lại cả lô.
+  const emptyBytes = bodyBytes({ appId: PUSH_APP_ID, eventId: probeId, items: [] });
+  const groups: DispatchItem[][] = [];
+  let current: DispatchItem[] = [];
+  let currentBytes = emptyBytes;
+  for (const item of items) {
+    const itemBytes = Buffer.byteLength(JSON.stringify(item), "utf8");
+    const nextBytes = currentBytes + itemBytes + (current.length > 0 ? 1 : 0);
+    if (current.length > 0 && (current.length + 1 > MAX_ITEMS_PER_REQUEST || nextBytes > MAX_BODY_BYTES)) {
+      groups.push(current);
+      current = [item];
+      currentBytes = emptyBytes + itemBytes;
+    } else {
+      // 1 người một mình vẫn quá lớn là bất thường (nội dung đã cắt theo giới hạn) — vẫn gửi riêng.
+      current.push(item);
+      currentBytes = nextBytes;
+    }
   }
-  return bodies;
+  if (current.length > 0) groups.push(current);
+  return groups.map((group, i) => ({ appId: PUSH_APP_ID, eventId: `${eventId}:c${i}`, items: group }));
 }
 
 export interface DispatchDeps {
@@ -182,6 +206,10 @@ async function attempt(body: DispatchBody, config: DispatchConfig, doFetch: type
     });
     await res.body?.cancel().catch(() => {});
     if (res.ok) return { ok: true };
+    if (res.status === 413) {
+      // Lỗi lập trình (chia lô sai) — không thử lại, ghi rõ để sửa.
+      console.error(`LỖI: App Tổng từ chối thân quá lớn (413, ${Buffer.byteLength(JSON.stringify(body), "utf8")} byte, sự kiện ${body.eventId}) — kiểm tra chunkDispatch.`);
+    }
     const retry = res.status >= 500 || res.status === 429;
     return { ok: false, retry, reason: `HTTP ${res.status}` };
   } catch (error) {
