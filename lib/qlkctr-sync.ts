@@ -1,7 +1,7 @@
 import { createSignedReadUrl } from "@/lib/r2";
 import { TITLE_FIELD_CODES } from "@/lib/request-title";
 import { deserializeTableRows, flattenLineBreaks } from "@/lib/table-field";
-import { duocThuLai, giuChoThuLai, trungKetQuaLanTruoc } from "@/lib/sync-retry-guard";
+import { duocThuLai, giuChoThuLai, nhaChoThuLai, trungKetQuaLanTruoc } from "@/lib/sync-retry-guard";
 import type { ProposalField, RequestAttachment, RequestInstance } from "@/lib/types";
 
 /**
@@ -327,5 +327,7 @@ export async function retryQlkCtrSyncNeuLoi(request: RequestInstance): Promise<v
     if (Object.keys(patch).length > 0) await adminDb.collection("requests").doc(request.id).update(patch);
   } catch (err) {
     console.error(`Tự thử lại đồng bộ QLK CTR cho đề xuất ${request.id} lỗi:`, err);
+    // Hỏng giữa chừng (vd đọc R2/ghi Firestore lỗi) → gỡ mốc, lần mở sau thử lại ngay.
+    await nhaChoThuLai(request.id, "qlkCtrRetryAt");
   }
 }

@@ -24,8 +24,9 @@ export function duocThuLai(lastRetryAt: string | null | undefined, now: number):
   return now - last >= SYNC_RETRY_MIN_INTERVAL_MS;
 }
 
-const HAU_TO_THU_LAI = " (tự thử lại)";
-const boHauTo = (action: string) => (action.endsWith(HAU_TO_THU_LAI) ? action.slice(0, -HAU_TO_THU_LAI.length) : action);
+/** Bỏ hậu tố "(tự thử lại)" và "(gửi lại lần N)" (hàng chờ, lib/dong-bo/hang-cho.ts) —
+ * cùng 1 kết quả dù ghi từ đường nào cũng coi là trùng. */
+const boHauTo = (action: string) => action.replace(/ \((tự thử lại|gửi lại lần \d+)\)$/u, "");
 
 /**
  * Dòng nhật ký sắp ghi có TRÙNG kết quả với dòng gần nhất của cùng kênh không (so hành
@@ -46,6 +47,18 @@ export function trungKetQuaLanTruoc(
  * (không thử); ngược lại ghi mốc = bây giờ rồi trả true. Lỗi → false (thà bỏ 1 lượt thử
  * còn hơn gửi trùng; lượt mở sau sẽ thử).
  */
+/** Gỡ mốc giữ chỗ khi lượt thử lại hỏng giữa chừng (lỗi bất ngờ, chưa gửi được) — để lần
+ * mở sau được thử ngay, không bị chặn oan 30 phút. Lỗi khi gỡ chỉ log. */
+export async function nhaChoThuLai(requestId: string, field: SyncRetryField): Promise<void> {
+  try {
+    const { adminDb } = await import("@/lib/firebase/admin");
+    const { FieldValue } = await import("firebase-admin/firestore");
+    await adminDb.collection("requests").doc(requestId).update({ [field]: FieldValue.delete() });
+  } catch (err) {
+    console.error(`Gỡ mốc tự thử lại đồng bộ (${field}) cho đề xuất ${requestId} lỗi:`, err);
+  }
+}
+
 export async function giuChoThuLai(requestId: string, field: SyncRetryField, now = Date.now()): Promise<boolean> {
   try {
     const { adminDb } = await import("@/lib/firebase/admin");

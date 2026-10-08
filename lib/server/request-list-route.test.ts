@@ -118,6 +118,11 @@ describe("GET /api/requests — danh sách đọc gọn", () => {
     expect("viewedAt" in requests[0]).toBe(false);
   });
 
+  it("view=summary chỉ nhận cho scope=all — scope khác vẫn đọc bản đầy đủ", async () => {
+    await call("scope=following&view=summary");
+    expect(queries[0].select).toBeNull();
+  });
+
   it("sent-to-me / following: cùng tập như trước, không lẫn bản đã xoá hay nháp", async () => {
     expect((await call("scope=sent-to-me")).requests.map((r) => r.id)).toEqual(["bb"]);
     expect((await call("scope=following")).requests.map((r) => r.id)).toEqual(["ccc"]);

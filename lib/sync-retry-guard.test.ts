@@ -30,6 +30,10 @@ describe("trungKetQuaLanTruoc — không nối dòng nhật ký trùng", () => {
     expect(trungKetQuaLanTruoc(history, { action: "Đã đồng bộ sang QLK CTR (tự thử lại)", note: "Công trình: AID" }, qlk)).toBe(false);
     expect(trungKetQuaLanTruoc(history, { action: "QLK CTR CHƯA nhận — bỏ qua vì không khớp công trình (tự thử lại)", note: "khác" }, qlk)).toBe(false);
   });
+  it("dòng do hàng chờ ghi \"(gửi lại lần N)\" cũng tính là trùng", () => {
+    const h = [{ at: iso(1000), actor: "Hệ thống", action: "Đồng bộ QLK CTR thất bại (gửi lại lần 3)", note: "x" }];
+    expect(trungKetQuaLanTruoc(h, { action: "Đồng bộ QLK CTR thất bại (tự thử lại)", note: "x" }, qlk)).toBe(true);
+  });
   it("chưa có dòng nào của kênh → không trùng", () => {
     expect(trungKetQuaLanTruoc([], { action: "Đồng bộ QLK CTR thất bại", note: "x" }, qlk)).toBe(false);
     expect(trungKetQuaLanTruoc(undefined, { action: "Đồng bộ QLK CTR thất bại", note: "x" }, qlk)).toBe(false);

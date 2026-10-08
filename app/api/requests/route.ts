@@ -70,7 +70,9 @@ export async function GET(request: Request) {
     const session = await requireSession();
     const params = new URL(request.url).searchParams;
     const scope = params.get("scope") ?? "mine";
-    const summary = params.get("view") === "summary";
+    // Chỉ nhận bản gọn cho scope=all (Trang chủ): bản gọn bỏ `viewedAt`, scope khác như
+    // following-unseen cần nó (hasUnseenUpdate) — gọi nhầm cũng không ra kết quả sai.
+    const summary = scope === "all" && params.get("view") === "summary";
     /* ★ 03/10/2026 — hàng chờ đồng bộ Kho / Thu mua: mọi lần mở danh sách (mọi tab) đều cho máy chủ
        tranh thủ gửi các việc đã tới hạn (tối đa 1 lần/phút). Gói Vercel miễn phí chỉ có cron 1 lần/ngày
        nên đây là đường gửi lại chính trong giờ làm việc. Xem lib/dong-bo/hang-cho.ts. */
@@ -91,9 +93,12 @@ export async function GET(request: Request) {
       // (Không dùng bản gọn ở đây: tự thử lại đồng bộ bên dưới cần `history`/`values` đầy đủ.)
       // Bắn rồi quên cho từng đề xuất lỡ đồng bộ Thu mua thất bại lần trước — xem
       // lib/thumua-sync.ts. Đây là màn người gửi hay mở lại nhất, nên tự vá ở đây trước.
-      for (const r of requests) void retryThuMuaSyncNeuLoi(r);
+      // Chạy trong after() (không `void` trần) — 08/10/2026: lượt thử lại giờ ghi mốc
+      // `*RetryAt` trước khi gửi; nếu Vercel đóng băng hàm ngay sau khi trả lời thì mốc đã
+      // ghi mà không gửi gì, chặn oan 30 phút. after() giữ hàm sống tới khi gửi xong.
+      for (const r of requests) after(() => retryThuMuaSyncNeuLoi(r));
       /* ★ Thêm 18/09/2026 — cùng lý do, xem lib/qlkctr-sync.ts. */
-      for (const r of requests) void retryQlkCtrSyncNeuLoi(r);
+      for (const r of requests) after(() => retryQlkCtrSyncNeuLoi(r));
       return NextResponse.json({ requests });
     }
 
