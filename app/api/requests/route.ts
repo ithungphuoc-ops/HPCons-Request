@@ -553,7 +553,7 @@ export async function POST(request: Request) {
       after(async () => {
         try {
           await Promise.all([
-            hpcorePendingApprovers(created),
+            hpcorePendingApprovers(created, { actorUid: session.uid }),
             hpcoreFollowersSubmitted(created.followers, created),
           ]);
         } catch (hpcoreError) {

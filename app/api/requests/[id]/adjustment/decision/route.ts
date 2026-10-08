@@ -177,7 +177,7 @@ export async function POST(
         await notifyAdjustmentApprovers([targetId], saved, pending.requestedByName, settings);
       });
       // Chuông chung HPcore (Sếp chốt 07/10/2026).
-      after(() => hpcoreAdjustmentPending(saved, [targetId]));
+      after(() => hpcoreAdjustmentPending(saved, [targetId], { actorUid: session.uid }));
       return NextResponse.json({ request: saved });
     }
 
@@ -213,7 +213,7 @@ export async function POST(
       // Chuông chung HPcore (Sếp chốt 07/10/2026).
       after(async () => {
         try {
-          await hpcoreAdjustmentResult(ketQua.request, ketQua.pendingSnapshot.requestedByUid, "rejected", session.name);
+          await hpcoreAdjustmentResult(ketQua.request, ketQua.pendingSnapshot.requestedByUid, "rejected", session.name, { actorUid: session.uid });
         } catch (hpcoreError) {
           console.error("Ghi thông báo sang HPcore khi từ chối điều chỉnh sau duyệt thất bại (không ảnh hưởng thao tác chính):", hpcoreError);
         }
@@ -275,7 +275,7 @@ export async function POST(
       // Chuông chung HPcore (Sếp chốt 07/10/2026).
       after(async () => {
         try {
-          await hpcoreAdjustmentResult(ketQua.request, pendingSnapshot.requestedByUid, "approved");
+          await hpcoreAdjustmentResult(ketQua.request, pendingSnapshot.requestedByUid, "approved", undefined, { actorUid: session.uid });
         } catch (hpcoreError) {
           console.error("Ghi thông báo sang HPcore khi duyệt xong điều chỉnh sau duyệt thất bại (không ảnh hưởng thao tác chính):", hpcoreError);
         }

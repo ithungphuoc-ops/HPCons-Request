@@ -15,6 +15,11 @@ const { mockSet, mockCommit, mockBatch, mockCollection } = vi.hoisted(() => {
   return { mockSet, mockCommit, mockBatch, mockCollection };
 });
 
+// Web Push (08/10/2026): chỉ bắt lại danh sách thư định đẩy để kiểm nội dung/người nhận —
+// việc gửi thật đã test riêng ở web-push.test.ts.
+const { mockSendWebPush } = vi.hoisted(() => ({ mockSendWebPush: vi.fn().mockResolvedValue(undefined) }));
+vi.mock("@/lib/server/web-push", () => ({ sendWebPushItems: mockSendWebPush }));
+
 vi.mock("@/lib/hpcore", () => ({
   getHpcoreDb: () => ({ collection: mockCollection, batch: mockBatch }),
 }));
@@ -70,6 +75,7 @@ beforeEach(() => {
   mockCommit.mockClear();
   mockBatch.mockClear();
   mockCollection.mockClear();
+  mockSendWebPush.mockClear();
 });
 
 describe("hpcorePendingApprovers — đúng người đang tới lượt, không phụ thuộc công tắc nhóm", () => {
@@ -271,6 +277,80 @@ describe("meta lỗi → vẫn ghi thông báo, chỉ bỏ meta", () => {
     expect(payload.title).toBe("Đang chờ bạn duyệt");
     expect("meta" in payload).toBe(false);
     expect(mockCommit).toHaveBeenCalled();
+    errSpy.mockRestore();
+  });
+});
+
+describe("Web Push (cấp 3) — đi kèm đúng 3 nhóm sự kiện, nội dung ngắn", () => {
+  /** Đề xuất có tên tự gõ chứa số tiền + bảng giá trị — KHÔNG được lọt ra màn hình khoá. */
+  const nhayCam = () =>
+    baseRequest({
+      groupNameSnapshot: "1.0. Phiếu đề nghị (HPCons)",
+      fieldsSnapshot: [{ id: "f1", code: "ten_de_xuat", label: "Tên đề xuất", type: "short_text", required: false }] as unknown as RequestInstance["fieldsSnapshot"],
+      values: { f1: "Mua thép 987.654.321 đồng" },
+    });
+  const allPushed = () => mockSendWebPush.mock.calls.flatMap((c) => c[0] as { uid: string; payload: { title: string; body: string; kind: string } }[]);
+
+  it("chờ duyệt / nhắc tên / kết quả / điều chỉnh → có đẩy, kèm actorUid để loại người làm", async () => {
+    await hpcorePendingApprovers(nhayCam(), { actorUid: "submitter" });
+    await hpcoreMentioned(nhayCam(), ["uA", "uC"], "Người A", "Giá 500.000.000 nhé @uA", { actorUid: "uX" });
+    await hpcoreSubmitterResult({ ...nhayCam(), status: "approved" }, { actorUid: "uB" });
+    await hpcoreSubmitterReturned(nhayCam(), "Sai số tiền 123.456", { actorUid: "uA" });
+    await hpcoreAdjustmentPending(nhayCam(), ["uA"], { actorUid: "submitter" });
+    await hpcoreAdjustmentResult(nhayCam(), "submitter", "rejected", "Người B", { actorUid: "uB" });
+    expect(mockSendWebPush.mock.calls.map((c) => c[1])).toEqual([
+      { actorUid: "submitter" },
+      { actorUid: "uX" },
+      { actorUid: "uB" },
+      { actorUid: "uA" },
+      { actorUid: "submitter" },
+      { actorUid: "uB" },
+    ]);
+    const items = allPushed();
+    expect(items.map((i) => `${i.uid}:${i.payload.kind}`)).toEqual([
+      "uA:pending_approval",
+      "uA:mentioned",
+      "uC:mentioned",
+      "submitter:approved",
+      "submitter:returned",
+      "uA:adjustment_pending",
+      "submitter:adjustment_rejected",
+    ]);
+    for (const { payload } of items) {
+      const text = `${payload.title} ${payload.body}`;
+      expect(text).not.toMatch(/987|500\.000|123\.456|Mua thép|Giá|Sai số/);
+      expect(text).toContain("000000001");
+    }
+    expect(items[0].payload.body).toBe("Người gửi gửi · 1.0. Phiếu đề nghị (HPCons)");
+    expect(items[1].payload.title).toBe("Người A nhắc bạn trong đề xuất 000000001");
+    // Chứng minh dữ liệu nhạy cảm CÓ trên chuông (meta.groupName = tên tự gõ) nhưng KHÔNG lên push.
+    expect(mockSet.mock.calls[0][1].meta.groupName).toBe("Mua thép 987.654.321 đồng");
+  });
+
+  it("đề xuất TRỰC TIẾP (groupId null): tên tự gõ nằm trong groupNameSnapshot → KHÔNG lên màn hình khoá", async () => {
+    const direct = baseRequest({ groupId: null, groupNameSnapshot: "Tạm ứng 50.000.000 cho anh B" });
+    await hpcorePendingApprovers(direct, { actorUid: "submitter" });
+    await hpcoreMentioned(direct, ["uA"], "Người A", "x", { actorUid: "uX" });
+    await hpcoreSubmitterResult({ ...direct, status: "rejected" });
+    for (const { payload } of allPushed()) {
+      expect(`${payload.title} ${payload.body}`).not.toMatch(/Tạm ứng|50\.000/);
+    }
+    expect(allPushed()[0].payload.body).toBe("Người gửi gửi · Đề xuất trực tiếp");
+    expect(allPushed()[1].payload.body).toBe("Đề xuất trực tiếp");
+  });
+
+  it("theo dõi / bình luận thường KHÔNG đẩy ra màn hình (chỉ có trên chuông)", async () => {
+    await hpcoreFollowersSubmitted([user("f1")], baseRequest());
+    await hpcoreFollowersFullyApproved(baseRequest({ status: "approved", followers: [user("f1")] }));
+    await hpcoreCommentOnMine(baseRequest(), "uA", "Người A", "hi");
+    expect(mockSendWebPush).not.toHaveBeenCalled();
+  });
+
+  it("ghi chuông lỗi vẫn đẩy được (2 việc độc lập)", async () => {
+    mockCommit.mockRejectedValueOnce(new Error("Firestore lỗi"));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    await hpcoreSubmitterResult(baseRequest({ status: "rejected" }));
+    expect(allPushed().map((i) => i.payload.kind)).toEqual(["rejected"]);
     errSpy.mockRestore();
   });
 });

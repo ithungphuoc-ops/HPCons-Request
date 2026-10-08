@@ -221,7 +221,7 @@ export async function POST(
       ),
     );
     // Chuông chung HPcore (Sếp chốt 07/10/2026).
-    after(() => hpcoreAdjustmentPending(saved, approvers.map((a) => a.uid)));
+    after(() => hpcoreAdjustmentPending(saved, approvers.map((a) => a.uid), { actorUid: session.uid }));
     return NextResponse.json({ request: saved });
   } catch (error) {
     return apiErrorResponse(error);

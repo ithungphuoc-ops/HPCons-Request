@@ -52,5 +52,20 @@ service cloud.firestore {
       allow read: if isSignedIn() && request.auth.uid == uid;
       allow write: if false;
     }
+
+    // Thông báo ra màn hình (Web Push — cấp 3, 08/10/2026): đăng ký trình duyệt
+    // (endpoint + khoá mã hoá) và 3 công tắc của từng người. CHỈ máy chủ đọc/ghi
+    // qua Admin SDK (app/api/push/*) — trình duyệt không bao giờ chạm thẳng.
+    // Rules mặc định đã chặn (không có match nào khác khớp); ghi rõ ra đây để
+    // không ai lỡ mở rộng nhầm sau này.
+    match /push-subscriptions/{uid}/{document=**} {
+      allow read, write: if false;
+    }
+    match /push-subscriptions/{uid} {
+      allow read, write: if false;
+    }
+    match /push-endpoints/{id} {
+      allow read, write: if false;
+    }
   }
 }

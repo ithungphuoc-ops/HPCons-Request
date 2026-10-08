@@ -12,7 +12,10 @@ import {
   metaSubmitterDecision,
   type HpcoreNotificationMeta,
 } from "@/lib/hpcore-notification-meta";
+import { NOTIFICATION_TEXT } from "@/lib/notification-feed";
 import { requestDetailUrl } from "@/lib/server/mailer";
+import { sendWebPushItems, type PushItem } from "@/lib/server/web-push";
+import { buildPushPayload, type PushKind } from "@/lib/web-push-payload";
 import type { RequestInstance, TaggedUser } from "@/lib/types";
 
 /**
@@ -83,6 +86,55 @@ async function pushToHpcore(entries: HpcoreNotificationEntry[]): Promise<void> {
   }
 }
 
+/**
+ * Thông báo "ra màn hình" (Web Push — cấp 3, Sếp duyệt 08/10/2026) đi KÈM đúng các điểm
+ * ghi chuông chung ở dưới: nơi này đã biết loại sự kiện + người nhận, khỏi tính lại lần 2.
+ * Chỉ 3 nhóm được đẩy (chờ tôi duyệt / được nhắc tên / kết quả đề xuất của tôi) — người
+ * theo dõi & bình luận thường KHÔNG đẩy ra màn hình (chỉ có trên chuông).
+ * `actorUid` = người vừa thao tác → không bao giờ tự đẩy cho chính họ.
+ */
+export interface PushOptions {
+  actorUid?: string;
+}
+
+type PushRequest = Pick<RequestInstance, "id" | "groupId" | "code" | "groupNameSnapshot">;
+
+/** Đề xuất TRỰC TIẾP (groupId null) lưu TÊN NGƯỜI DÙNG TỰ GÕ vào groupNameSnapshot
+ * (app/api/requests/route.ts) — có thể chứa số tiền → KHÔNG đưa lên màn hình khoá,
+ * thay bằng chữ cố định. Chỉ đề xuất thuộc nhóm (tên nhóm do Admin đặt) mới dùng snapshot. */
+export const DIRECT_REQUEST_PUSH_LABEL = "Đề xuất trực tiếp";
+
+export function pushGroupLabel(request: Pick<RequestInstance, "groupId" | "groupNameSnapshot">): string {
+  return typeof request.groupId === "string" && request.groupId ? request.groupNameSnapshot : DIRECT_REQUEST_PUSH_LABEL;
+}
+
+function pushItem(
+  userId: string,
+  kind: PushKind,
+  request: PushRequest,
+  actorName: string | undefined,
+  extra: { forwarded?: boolean } = {},
+): PushItem {
+  return {
+    uid: userId,
+    payload: buildPushPayload({
+      kind,
+      requestId: request.id,
+      code: request.code,
+      // CỐ Ý dùng tên NHÓM, không dùng meta.groupName (= tên đề xuất người dùng gõ, có thể
+      // chứa số tiền) — quyết định số 4: màn hình khoá chỉ ghi ngắn.
+      groupName: pushGroupLabel(request),
+      actorName,
+      forwarded: extra.forwarded,
+    }),
+  };
+}
+
+/** Ghi chuông chung + đẩy ra màn hình SONG SONG — 2 việc độc lập, lỗi bên này không chặn bên kia. */
+async function deliverAll(entries: HpcoreNotificationEntry[], pushItems: PushItem[], opts: PushOptions | undefined): Promise<void> {
+  await Promise.all([pushToHpcore(entries), sendWebPushItems(pushItems, { actorUid: opts?.actorUid })]);
+}
+
 /** "tên đề xuất (mã)" — KHÔNG escape HTML vì HPcore render thẳng dạng text
  * (không dangerouslySetInnerHTML, xem NotificationsPageClient.tsx), không
  * có rủi ro XSS như email (lib/server/mailer.ts) đã phải vá. */
@@ -91,7 +143,8 @@ function label(request: Pick<RequestInstance, "groupNameSnapshot" | "code" | "id
 }
 
 export async function hpcorePendingApprovers(
-  request: Pick<RequestInstance, "id" | "groupNameSnapshot" | "code" | "approvalFlow" | "approvers" | "submittedBy"> & MetaExtras,
+  request: Pick<RequestInstance, "id" | "groupId" | "groupNameSnapshot" | "code" | "approvalFlow" | "approvers" | "submittedBy"> & MetaExtras,
+  opts?: PushOptions,
 ): Promise<void> {
   // Cùng cách tính "ai đang tới lượt" với email (notifyPendingApprovers) — xem
   // lib/server/notification-emails.ts. Khác email ở chỗ KHÔNG đọc công tắc
@@ -102,51 +155,58 @@ export async function hpcorePendingApprovers(
     .map((a) => a.id);
   if (uids.length === 0) return;
   const link = requestDetailUrl(request.id);
-  await pushToHpcore(
-    uids.map((userId) => ({
-      userId,
-      title: "Đang chờ bạn duyệt",
-      body: `Đề xuất ${label(request)} đang chờ bạn xét duyệt.`,
-      link,
-      meta: safeMeta(() => metaPendingApproval(request, userId)),
-    })),
-  );
+  const entries = uids.map((userId) => ({
+    userId,
+    title: "Đang chờ bạn duyệt",
+    body: `Đề xuất ${label(request)} đang chờ bạn xét duyệt.`,
+    link,
+    meta: safeMeta(() => metaPendingApproval(request, userId)),
+  }));
+  const pushItems = entries.map((e) => {
+    const actorName = e.meta?.actorName ?? request.submittedBy?.name;
+    return pushItem(e.userId, "pending_approval", request, actorName, {
+      // Lượt tới tay người này do được chuyển tiếp → "X chuyển tiếp" thay vì "X gửi".
+      forwarded: !!e.meta?.actorName && e.meta.headline === NOTIFICATION_TEXT.forwardedToMe(e.meta.actorName),
+    });
+  });
+  await deliverAll(entries, pushItems, opts);
 }
 
 export async function hpcoreSubmitterResult(
-  request: Pick<RequestInstance, "id" | "groupNameSnapshot" | "code" | "status" | "submittedBy"> & MetaExtras,
+  request: Pick<RequestInstance, "id" | "groupId" | "groupNameSnapshot" | "code" | "status" | "submittedBy"> & MetaExtras,
+  opts?: PushOptions,
 ): Promise<void> {
   if (request.status !== "approved" && request.status !== "rejected") return;
   const approved = request.status === "approved";
-  await pushToHpcore([
-    {
-      userId: request.submittedBy.uid,
-      title: approved ? "Đã được chấp thuận" : "Đã bị từ chối",
-      body: `Đề xuất ${label(request)} bạn đã gửi ${approved ? "đã được chấp thuận." : "đã bị từ chối."}`,
-      link: requestDetailUrl(request.id),
-      meta: safeMeta(() => metaSubmitterDecision(request, approved ? "approved" : "rejected")),
-    },
-  ]);
+  const entry = {
+    userId: request.submittedBy.uid,
+    title: approved ? "Đã được chấp thuận" : "Đã bị từ chối",
+    body: `Đề xuất ${label(request)} bạn đã gửi ${approved ? "đã được chấp thuận." : "đã bị từ chối."}`,
+    link: requestDetailUrl(request.id),
+    meta: safeMeta(() => metaSubmitterDecision(request, approved ? "approved" : "rejected")),
+  };
+  await deliverAll([entry], [pushItem(entry.userId, approved ? "approved" : "rejected", request, entry.meta?.actorName)], opts);
 }
 
 export async function hpcoreSubmitterReturned(
-  request: Pick<RequestInstance, "id" | "groupNameSnapshot" | "code" | "submittedBy"> & MetaExtras,
+  request: Pick<RequestInstance, "id" | "groupId" | "groupNameSnapshot" | "code" | "submittedBy"> & MetaExtras,
   reason: string | undefined,
+  opts?: PushOptions,
 ): Promise<void> {
-  await pushToHpcore([
-    {
-      userId: request.submittedBy.uid,
-      title: "Đã bị trả lại",
-      body: `Đề xuất ${label(request)} bạn đã gửi đã bị trả lại${reason ? ` — lý do: ${reason}` : "."}`,
-      link: requestDetailUrl(request.id),
-      meta: safeMeta(() => metaSubmitterDecision(request, "returned", reason)),
-    },
-  ]);
+  const entry = {
+    userId: request.submittedBy.uid,
+    title: "Đã bị trả lại",
+    body: `Đề xuất ${label(request)} bạn đã gửi đã bị trả lại${reason ? ` — lý do: ${reason}` : "."}`,
+    link: requestDetailUrl(request.id),
+    meta: safeMeta(() => metaSubmitterDecision(request, "returned", reason)),
+  };
+  // Lý do trả lại KHÔNG lên màn hình khoá — chỉ lấy tên người làm.
+  await deliverAll([entry], [pushItem(entry.userId, "returned", request, entry.meta?.actorName)], opts);
 }
 
 export async function hpcoreFollowersSubmitted(
   followers: TaggedUser[],
-  request: Pick<RequestInstance, "id" | "groupNameSnapshot" | "code" | "submittedBy"> & MetaExtras,
+  request: Pick<RequestInstance, "id" | "groupId" | "groupNameSnapshot" | "code" | "submittedBy"> & MetaExtras,
 ): Promise<void> {
   if (followers.length === 0) return;
   const link = requestDetailUrl(request.id);
@@ -163,7 +223,7 @@ export async function hpcoreFollowersSubmitted(
 }
 
 export async function hpcoreFollowersFullyApproved(
-  request: Pick<RequestInstance, "id" | "groupNameSnapshot" | "code" | "status" | "followers"> & MetaExtras,
+  request: Pick<RequestInstance, "id" | "groupId" | "groupNameSnapshot" | "code" | "status" | "followers"> & MetaExtras,
 ): Promise<void> {
   if (request.status !== "approved" || request.followers.length === 0) return;
   const link = requestDetailUrl(request.id);
@@ -180,7 +240,7 @@ export async function hpcoreFollowersFullyApproved(
 }
 
 export async function hpcoreCommentOnMine(
-  request: Pick<RequestInstance, "id" | "groupNameSnapshot" | "code" | "submittedBy"> & MetaExtras,
+  request: Pick<RequestInstance, "id" | "groupId" | "groupNameSnapshot" | "code" | "submittedBy"> & MetaExtras,
   commenterUid: string,
   commenterName: string,
   /** Nội dung bình luận — chỉ dùng cho `meta` (headline/excerpt), `body` giữ câu cũ. */
@@ -199,60 +259,64 @@ export async function hpcoreCommentOnMine(
 }
 
 export async function hpcoreMentioned(
-  request: Pick<RequestInstance, "id" | "groupNameSnapshot" | "code"> & MetaExtras,
+  request: Pick<RequestInstance, "id" | "groupId" | "groupNameSnapshot" | "code"> & MetaExtras,
   mentionedUids: string[],
   commenterName: string,
   commentText?: string,
+  opts?: PushOptions,
 ): Promise<void> {
   if (mentionedUids.length === 0) return;
   const link = requestDetailUrl(request.id);
   const meta = safeMeta(() => metaComment(request, "mentioned", commenterName, commentText));
-  await pushToHpcore(
-    mentionedUids.map((userId) => ({
-      userId,
-      title: "Bạn được nhắc tên",
-      body: `${commenterName} nhắc bạn trong bình luận đề xuất ${label(request)}.`,
-      link,
-      meta,
-    })),
-  );
+  const entries = mentionedUids.map((userId) => ({
+    userId,
+    title: "Bạn được nhắc tên",
+    body: `${commenterName} nhắc bạn trong bình luận đề xuất ${label(request)}.`,
+    link,
+    meta,
+  }));
+  // Nội dung bình luận KHÔNG lên màn hình khoá — chỉ tên người nhắc + mã + tên nhóm.
+  await deliverAll(entries, mentionedUids.map((uid) => pushItem(uid, "mentioned", request, commenterName)), opts);
 }
 
 export async function hpcoreAdjustmentPending(
-  request: Pick<RequestInstance, "id" | "groupNameSnapshot" | "code"> & MetaExtras,
+  request: Pick<RequestInstance, "id" | "groupId" | "groupNameSnapshot" | "code"> & MetaExtras,
   uids: string[],
+  opts?: PushOptions,
 ): Promise<void> {
   if (uids.length === 0) return;
   const link = requestDetailUrl(request.id);
   const meta = safeMeta(() => metaAdjustmentPending(request));
-  await pushToHpcore(
-    uids.map((userId) => ({
-      userId,
-      title: "Điều chỉnh sau duyệt đang chờ bạn duyệt",
-      body: `Có 1 điều chỉnh sau duyệt của đề xuất ${label(request)} đang chờ bạn xét duyệt.`,
-      link,
-      meta,
-    })),
-  );
+  const entries = uids.map((userId) => ({
+    userId,
+    title: "Điều chỉnh sau duyệt đang chờ bạn duyệt",
+    body: `Có 1 điều chỉnh sau duyệt của đề xuất ${label(request)} đang chờ bạn xét duyệt.`,
+    link,
+    meta,
+  }));
+  // Nội dung điều chỉnh (thường là số tiền/khối lượng) KHÔNG lên màn hình khoá.
+  const actorName = request.pendingAdjustment?.requestedByName;
+  await deliverAll(entries, uids.map((uid) => pushItem(uid, "adjustment_pending", request, actorName)), opts);
 }
 
 export async function hpcoreAdjustmentResult(
-  request: Pick<RequestInstance, "id" | "groupNameSnapshot" | "code"> & MetaExtras,
+  request: Pick<RequestInstance, "id" | "groupId" | "groupNameSnapshot" | "code"> & MetaExtras,
   requesterUid: string,
   outcome: "approved" | "rejected",
   /** Người vừa bấm quyết định (người từ chối) — chỉ dùng cho `meta`. */
   actorName?: string,
+  opts?: PushOptions,
 ): Promise<void> {
-  await pushToHpcore([
-    {
-      userId: requesterUid,
-      title: outcome === "approved" ? "Điều chỉnh sau duyệt đã được chấp thuận" : "Điều chỉnh sau duyệt đã bị từ chối",
-      body:
-        outcome === "approved"
-          ? `Điều chỉnh sau duyệt bạn đã đề nghị cho đề xuất ${label(request)} đã được chấp thuận và áp dụng.`
-          : `Điều chỉnh sau duyệt bạn đã đề nghị cho đề xuất ${label(request)} đã bị từ chối.`,
-      link: requestDetailUrl(request.id),
-      meta: safeMeta(() => metaAdjustmentResult(request, outcome, actorName)),
-    },
-  ]);
+  const entry = {
+    userId: requesterUid,
+    title: outcome === "approved" ? "Điều chỉnh sau duyệt đã được chấp thuận" : "Điều chỉnh sau duyệt đã bị từ chối",
+    body:
+      outcome === "approved"
+        ? `Điều chỉnh sau duyệt bạn đã đề nghị cho đề xuất ${label(request)} đã được chấp thuận và áp dụng.`
+        : `Điều chỉnh sau duyệt bạn đã đề nghị cho đề xuất ${label(request)} đã bị từ chối.`,
+    link: requestDetailUrl(request.id),
+    meta: safeMeta(() => metaAdjustmentResult(request, outcome, actorName)),
+  };
+  const kind = outcome === "approved" ? "adjustment_approved" : "adjustment_rejected";
+  await deliverAll([entry], [pushItem(requesterUid, kind, request, actorName)], opts);
 }
