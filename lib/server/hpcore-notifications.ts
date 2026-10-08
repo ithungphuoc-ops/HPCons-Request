@@ -16,7 +16,7 @@ import { pendingAdjustmentFiles } from "@/lib/adjustment-settings";
 import { NOTIFICATION_TEXT } from "@/lib/notification-feed";
 import { resolveRequestTitle } from "@/lib/request-title";
 import { requestDetailUrl } from "@/lib/server/mailer";
-import { sendWebPushItems, type PushItem } from "@/lib/server/web-push";
+import { dispatchPushItems, type PushItem } from "@/lib/server/push-dispatch";
 import { buildPushPayload, type PushKind } from "@/lib/web-push-payload";
 import type { RequestInstance, TaggedUser } from "@/lib/types";
 
@@ -95,6 +95,8 @@ async function pushToHpcore(entries: HpcoreNotificationEntry[]): Promise<void> {
  * đề xuất của tôi. Người theo dõi KHÔNG đẩy ra màn hình (chỉ có trên chuông); không báo tiến
  * độ từng bước (Sếp chốt câu 4 demo "noi-dung-thong-bao-day-2026-10-08").
  * `actorUid` = người vừa thao tác → không bao giờ tự đẩy cho chính họ.
+ * Từ 08/10/2026 việc GỬI đi qua App Tổng (lib/server/push-dispatch.ts) — cài đặt bật/tắt nằm ở
+ * account.hpcore.vn; nội dung + người nhận vẫn dựng ở đây y như trước.
  */
 export interface PushOptions {
   actorUid?: string;
@@ -107,10 +109,13 @@ export interface PushOptions {
    * không suy ra từ meta/nhật ký. */
   actorName?: string;
   note?: string;
+  /** Mốc riêng của sự kiện để dựng mã sự kiện chống gửi trùng (vd. id bình luận). Thiếu thì
+   * dùng thời điểm dòng nhật ký cuối của đề xuất. */
+  eventKey?: string;
 }
 
 type PushRequest = Pick<RequestInstance, "id" | "groupId" | "code" | "groupNameSnapshot"> &
-  Partial<Pick<RequestInstance, "fieldsSnapshot" | "values">>;
+  Partial<Pick<RequestInstance, "fieldsSnapshot" | "values" | "history" | "updatedAt">>;
 
 /** Đề xuất TRỰC TIẾP (groupId null) lưu TÊN NGƯỜI DÙNG TỰ GÕ vào groupNameSnapshot
  * (app/api/requests/route.ts) — dòng "nhóm" dùng chữ cố định; tên tự gõ vẫn hiện ở dòng
@@ -162,9 +167,24 @@ function pushItem(userId: string, kind: PushKind, request: PushRequest, extra: P
   };
 }
 
+/** Mốc sự kiện: id bình luận (nơi gọi truyền) → thời điểm dòng nhật ký cuối → updatedAt. */
+function pushEventKey(kind: PushKind, request: PushRequest, opts: PushOptions | undefined): string {
+  const history = Array.isArray(request.history) ? request.history : [];
+  const anchor = opts?.eventKey ?? history[history.length - 1]?.at ?? request.updatedAt ?? "";
+  return `${kind}:${request.id}:${anchor}`;
+}
+
 /** Ghi chuông chung + đẩy ra màn hình SONG SONG — 2 việc độc lập, lỗi bên này không chặn bên kia. */
-async function deliverAll(entries: HpcoreNotificationEntry[], pushItems: PushItem[], opts: PushOptions | undefined): Promise<void> {
-  await Promise.all([pushToHpcore(entries), sendWebPushItems(pushItems, { actorUid: opts?.actorUid })]);
+async function deliverAll(
+  entries: HpcoreNotificationEntry[],
+  pushItems: PushItem[],
+  opts: PushOptions | undefined,
+  event: { kind: PushKind; request: PushRequest },
+): Promise<void> {
+  await Promise.all([
+    pushToHpcore(entries),
+    dispatchPushItems(pushItems, { actorUid: opts?.actorUid, eventKey: pushEventKey(event.kind, event.request, opts) }),
+  ]);
 }
 
 /** "tên đề xuất (mã)" — KHÔNG escape HTML vì HPcore render thẳng dạng text
@@ -202,7 +222,7 @@ export async function hpcorePendingApprovers(
       forwarded: !!e.meta?.actorName && e.meta.headline === NOTIFICATION_TEXT.forwardedToMe(e.meta.actorName),
     });
   });
-  await deliverAll(entries, pushItems, opts);
+  await deliverAll(entries, pushItems, opts, { kind: "pending_approval", request });
 }
 
 export async function hpcoreSubmitterResult(
@@ -228,7 +248,7 @@ export async function hpcoreSubmitterResult(
         approvalFlow: request.approvalFlow,
       })
     : pushItem(entry.userId, "rejected", request, { actorName, excerpt: opts?.note ?? entry.meta?.excerpt });
-  await deliverAll([entry], [item], opts);
+  await deliverAll([entry], [item], opts, { kind: approved ? "approved" : "rejected", request });
 }
 
 export async function hpcoreSubmitterReturned(
@@ -253,6 +273,7 @@ export async function hpcoreSubmitterReturned(
       }),
     ],
     opts,
+    { kind: "returned", request },
   );
 }
 
@@ -313,7 +334,7 @@ export async function hpcoreCommentOnMine(
   const mentionedToo = opts?.mentionedUids?.includes(entry.userId) ?? false;
   const item = pushItem(entry.userId, "comment_on_mine", request, { actorName: commenterName, excerpt: commentText });
   const items = [mentionedToo ? { ...item, onlyIfDisabled: "mention" as const } : item];
-  await deliverAll([entry], items, { ...opts, actorUid: opts?.actorUid ?? commenterUid });
+  await deliverAll([entry], items, { ...opts, actorUid: opts?.actorUid ?? commenterUid }, { kind: "comment_on_mine", request });
 }
 
 export async function hpcoreMentioned(
@@ -337,6 +358,7 @@ export async function hpcoreMentioned(
     entries,
     mentionedUids.map((uid) => pushItem(uid, "mentioned", request, { actorName: commenterName, excerpt: commentText })),
     opts,
+    { kind: "mentioned", request },
   );
 }
 
@@ -360,7 +382,10 @@ export async function hpcoreAdjustmentPending(
     excerpt: request.pendingAdjustment?.noiDung,
     fileCount: pendingAdjustmentFiles(request.pendingAdjustment).length,
   };
-  await deliverAll(entries, uids.map((uid) => pushItem(uid, "adjustment_pending", request, extra)), opts);
+  await deliverAll(entries, uids.map((uid) => pushItem(uid, "adjustment_pending", request, extra)), opts, {
+    kind: "adjustment_pending",
+    request,
+  });
 }
 
 export async function hpcoreAdjustmentResult(
@@ -382,5 +407,5 @@ export async function hpcoreAdjustmentResult(
     meta: safeMeta(() => metaAdjustmentResult(request, outcome, actorName)),
   };
   const kind = outcome === "approved" ? "adjustment_approved" : "adjustment_rejected";
-  await deliverAll([entry], [pushItem(requesterUid, kind, request, { actorName, approverTotal: opts?.approverCount })], opts);
+  await deliverAll([entry], [pushItem(requesterUid, kind, request, { actorName, approverTotal: opts?.approverCount })], opts, { kind, request });
 }

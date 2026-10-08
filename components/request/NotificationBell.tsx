@@ -33,6 +33,7 @@ import {
 } from "@/lib/notification-feed";
 import { groupByVnDay, vnGroupDate, vnRelativeDayLabel, vnTime } from "@/lib/notification-day-group";
 import WebPushBanner from "@/components/request/WebPushBanner";
+import { migrateLegacyPushSubscription } from "@/lib/web-push-client";
 
 /** Gom nhiều yêu cầu tải sát nhau thành 1 lần (chỉ dùng ở chế độ dự phòng). */
 const DEBOUNCE_MS = 800;
@@ -159,6 +160,12 @@ export default function NotificationBell({ uid }: { uid?: string | null }) {
       void load();
     }, DEBOUNCE_MS);
   }, [load]);
+
+  // Thông báo ra màn hình đã chuyển sang App Tổng (08/10/2026): máy còn đăng ký cũ trên
+  // request.hpcore.vn thì tự gỡ im lặng, 1 lần/trình duyệt (không có đăng ký → không gọi mạng).
+  useEffect(() => {
+    if (uid) void migrateLegacyPushSubscription();
+  }, [uid]);
 
   useEffect(() => {
     if (!uid) return;

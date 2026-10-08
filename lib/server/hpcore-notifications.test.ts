@@ -15,10 +15,10 @@ const { mockSet, mockCommit, mockBatch, mockCollection } = vi.hoisted(() => {
   return { mockSet, mockCommit, mockBatch, mockCollection };
 });
 
-// Web Push (08/10/2026): chỉ bắt lại danh sách thư định đẩy để kiểm nội dung/người nhận —
-// việc gửi thật đã test riêng ở web-push.test.ts.
+// Thông báo ra màn hình (08/10/2026, gửi qua App Tổng): chỉ bắt lại danh sách thư định đẩy để
+// kiểm nội dung/người nhận — việc dựng gói + gọi App Tổng test riêng ở push-dispatch.test.ts.
 const { mockSendWebPush } = vi.hoisted(() => ({ mockSendWebPush: vi.fn().mockResolvedValue(undefined) }));
-vi.mock("@/lib/server/web-push", () => ({ sendWebPushItems: mockSendWebPush }));
+vi.mock("@/lib/server/push-dispatch", () => ({ dispatchPushItems: mockSendWebPush }));
 
 vi.mock("@/lib/hpcore", () => ({
   getHpcoreDb: () => ({ collection: mockCollection, batch: mockBatch }),
@@ -303,7 +303,7 @@ describe("Web Push (cấp 3) — 4 nhóm sự kiện, nội dung rõ theo demo 0
       { actorUid: "submitter" },
     );
     await hpcoreAdjustmentResult(coTen(), "submitter", "approved", undefined, { actorUid: "uB", approverCount: 2 });
-    expect(mockSendWebPush.mock.calls.map((c) => c[1])).toEqual([
+    expect(mockSendWebPush.mock.calls.map((c) => ({ actorUid: (c[1] as { actorUid?: string }).actorUid }))).toEqual([
       { actorUid: "submitter" },
       { actorUid: "uX" },
       { actorUid: "uB" },
@@ -357,7 +357,7 @@ describe("Web Push (cấp 3) — 4 nhóm sự kiện, nội dung rõ theo demo 0
       hpcoreMentioned(coTen(), mentioned, "Người A", "@submitter xem", { actorUid: "uA" }),
     ]);
     // Cả 2 thư cùng được giao cho bộ gửi; thư "bình luận" gắn onlyIfDisabled: "mention" → chỉ đi
-    // khi người đó tắt "Nhắc tên" (bộ gửi xét theo công tắc thật — test ở web-push.test.ts).
+    // khi người đó tắt "Nhắc tên" (App Tổng xét theo công tắc thật; gói gửi đi kiểm ở push-dispatch.test.ts).
     const forSubmitter = (mockSendWebPush.mock.calls.flatMap((c) => c[0]) as { uid: string; payload: { kind: string }; onlyIfDisabled?: string }[])
       .filter((i) => i.uid === "submitter")
       .map((i) => `${i.payload.kind}:${i.onlyIfDisabled ?? "-"}`)

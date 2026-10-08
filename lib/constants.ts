@@ -3,6 +3,9 @@
 export const HPCORE_APPS_API = "https://account.hpcore.vn/api/apps";
 export const HPCORE_PROFILE_URL = "https://account.hpcore.vn/profile";
 export const HPCORE_DASHBOARD_URL = "https://account.hpcore.vn/dashboard";
+/** Cài đặt thông báo ra màn hình CHUNG mọi app (App Tổng) — Sếp duyệt 08/10/2026. */
+export const HPCORE_PUSH_SETTINGS_URL = "https://account.hpcore.vn/dashboard/thong-bao?caidat=man-hinh";
+export const PUSH_MOVED_MESSAGE = "Thông báo ra màn hình giờ cài ở App Tổng — một chỗ cho mọi ứng dụng";
 
 // Khoá nhận diện "app đang dùng" trong danh sách ứng dụng — khớp domain thật
 // của base-request-app (request.hpcore.vn), theo đúng pattern app.href.includes(...)

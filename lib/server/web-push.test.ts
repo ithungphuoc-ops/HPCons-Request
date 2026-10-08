@@ -58,255 +58,47 @@ const { store, fakeDb } = vi.hoisted(() => {
 
 vi.mock("@/lib/firebase/admin", () => ({ adminDb: fakeDb }));
 
-const {
-  allowTestPush,
-  isDeviceRegisteredTo,
-  endpointId,
-  getWebPushConfig,
-  isAllowedPushEndpoint,
-  parseSubscriptionInput,
-  saveSubscription,
-  sendTestPush,
-  sendWebPushItems,
-} = await import("./web-push");
-const { generateVapidKeys, b64urlEncode } = await import("./web-push-crypto");
-const { buildPushPayload, buildTestPushPayload } = await import("@/lib/web-push-payload");
-import { createECDH, randomBytes } from "node:crypto";
+const { endpointId, isAllowedPushEndpoint, removeSubscription } = await import("./web-push");
 
-const vapid = generateVapidKeys();
-
-function browserKeys() {
-  const ecdh = createECDH("prime256v1");
-  ecdh.generateKeys();
-  return { p256dh: b64urlEncode(ecdh.getPublicKey()), auth: b64urlEncode(randomBytes(16)) };
-}
-
-function addDevice(uid: string, endpoint: string) {
-  store.set(`push-subscriptions/${uid}/devices/${endpointId(endpoint)}`, {
-    endpoint,
-    keys: browserKeys(),
-    lastUsedAt: new Date().toISOString(),
-  });
-  // Như saveSubscription thật: kèm chỉ mục endpoint -> người.
-  store.set(`push-endpoints/${endpointId(endpoint)}`, { uid });
-}
-
-const payload = (kind: Parameters<typeof buildPushPayload>[0]["kind"]) =>
-  buildPushPayload({ kind, requestId: "r1", code: "000123", groupName: "1.0. Phiếu đề nghị (HPCons)", actorName: "Nguyễn Văn A" });
-
-const fetchMock = vi.fn();
-
-beforeEach(() => {
-  store.clear();
-  fetchMock.mockReset();
-  fetchMock.mockResolvedValue(new Response(null, { status: 201 }));
-  vi.stubGlobal("fetch", fetchMock);
-  vi.stubEnv("WEB_PUSH_VAPID_PUBLIC_KEY", vapid.publicKey);
-  vi.stubEnv("WEB_PUSH_VAPID_PRIVATE_KEY", vapid.privateKey);
-  vi.stubEnv("WEB_PUSH_SUBJECT", "mailto:test@hpcons.example");
-  vi.spyOn(console, "error").mockImplementation(() => {});
-});
-
-afterEach(() => {
-  vi.unstubAllEnvs();
-  vi.unstubAllGlobals();
-  vi.restoreAllMocks();
-});
+/**
+ * 08/10/2026: việc gửi đã chuyển sang App Tổng (push-dispatch.test.ts). Ở đây chỉ còn phần
+ * DỌN đăng ký cũ — DELETE /api/push/subscription gọi removeSubscription.
+ */
 
 const FCM = (n: string) => `https://fcm.googleapis.com/fcm/send/${n}`;
 
-describe("tắt hoàn toàn khi thiếu biến môi trường", () => {
-  it("thiếu 1 trong 3 biến → config null, không đọc Firestore, không gọi mạng", async () => {
-    vi.stubEnv("WEB_PUSH_VAPID_PRIVATE_KEY", "");
-    expect(getWebPushConfig()).toBeNull();
-    addDevice("uA", FCM("a"));
-    await sendWebPushItems([{ uid: "uA", payload: payload("pending_approval") }]);
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(await sendTestPush("uA", FCM("a"), buildTestPushPayload())).toBe("disabled");
-  });
+beforeEach(() => {
+  store.clear();
 });
 
-describe("lọc người nhận", () => {
-  it("gửi cho người có máy đã đăng ký; người chưa bật thì bỏ qua", async () => {
-    addDevice("uA", FCM("a"));
-    await sendWebPushItems([
-      { uid: "uA", payload: payload("pending_approval") },
-      { uid: "uB", payload: payload("pending_approval") },
-    ]);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe(FCM("a"));
-    expect(init.headers["Content-Encoding"]).toBe("aes128gcm");
-    expect(init.headers.Authorization).toMatch(/^vapid t=.+, k=/);
-    expect(init.headers.Urgency).toBe("high");
-  });
-
-  it("KHÔNG gửi cho chính người vừa thao tác", async () => {
-    addDevice("actor", FCM("x"));
-    addDevice("uA", FCM("a"));
-    await sendWebPushItems(
-      [
-        { uid: "actor", payload: payload("mentioned") },
-        { uid: "uA", payload: payload("mentioned") },
-      ],
-      { actorUid: "actor" },
-    );
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0][0]).toBe(FCM("a"));
-  });
-
-  it("tôn trọng công tắc từng loại", async () => {
-    addDevice("uA", FCM("a"));
-    store.set("push-subscriptions/uA", { prefs: { approval: false, mention: true, result: true } });
-    await sendWebPushItems([{ uid: "uA", payload: payload("pending_approval") }]);
-    await sendWebPushItems([{ uid: "uA", payload: payload("adjustment_pending") }]);
-    expect(fetchMock).not.toHaveBeenCalled();
-    await sendWebPushItems([{ uid: "uA", payload: payload("mentioned") }]);
-    await sendWebPushItems([{ uid: "uA", payload: payload("returned") }]);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-  });
-
-  it("công tắc 'bình luận trên đề xuất của tôi' riêng; thiếu khoá = bật", async () => {
-    addDevice("uA", FCM("a"));
-    await sendWebPushItems([{ uid: "uA", payload: payload("comment_on_mine") }]);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    store.set("push-subscriptions/uA", { prefs: { comment: false } });
-    await sendWebPushItems([{ uid: "uA", payload: payload("comment_on_mine") }]);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    await sendWebPushItems([{ uid: "uA", payload: payload("mentioned") }]);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-  });
-
-  it("1 người lặp 2 lần trong 1 sự kiện → chỉ 1 thư mỗi máy", async () => {
-    addDevice("uA", FCM("a1"));
-    addDevice("uA", FCM("a2"));
-    await sendWebPushItems([
-      { uid: "uA", payload: payload("pending_approval") },
-      { uid: "uA", payload: payload("pending_approval") },
-    ]);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(new Set(fetchMock.mock.calls.map((c) => c[0]))).toEqual(new Set([FCM("a1"), FCM("a2")]));
-  });
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
-describe("dọn đăng ký chết", () => {
-  it("410 Gone → xoá máy đó + chỉ mục; máy khác vẫn còn", async () => {
-    addDevice("uA", FCM("dead"));
-    addDevice("uA", FCM("live"));
-    store.set(`push-endpoints/${endpointId(FCM("dead"))}`, { uid: "uA" });
-    fetchMock.mockImplementation(async (url: string) => new Response(null, { status: url === FCM("dead") ? 410 : 201 }));
-    await sendWebPushItems([{ uid: "uA", payload: payload("approved") }]);
-    expect(store.has(`push-subscriptions/uA/devices/${endpointId(FCM("dead"))}`)).toBe(false);
-    expect(store.has(`push-endpoints/${endpointId(FCM("dead"))}`)).toBe(false);
-    expect(store.has(`push-subscriptions/uA/devices/${endpointId(FCM("live"))}`)).toBe(true);
-  });
-
-  it("lỗi khác (500 / mất mạng) chỉ log, không xoá, không ném lỗi", async () => {
-    addDevice("uA", FCM("a"));
-    fetchMock.mockResolvedValueOnce(new Response(null, { status: 500 }));
-    await expect(sendWebPushItems([{ uid: "uA", payload: payload("approved") }])).resolves.toBeUndefined();
-    fetchMock.mockRejectedValueOnce(new Error("network"));
-    await expect(sendWebPushItems([{ uid: "uA", payload: payload("approved") }])).resolves.toBeUndefined();
-    expect(store.has(`push-subscriptions/uA/devices/${endpointId(FCM("a"))}`)).toBe(true);
-  });
-});
-
-describe("đăng ký", () => {
-  it("chỉ chấp nhận endpoint của dịch vụ đẩy thật (chặn SSRF)", () => {
+describe("gỡ đăng ký cũ", () => {
+  it("chỉ chấp nhận endpoint của dịch vụ đẩy thật", () => {
     expect(isAllowedPushEndpoint(FCM("a"))).toBe(true);
     expect(isAllowedPushEndpoint("https://web.push.apple.com/abc")).toBe(true);
-    expect(isAllowedPushEndpoint("https://updates.push.services.mozilla.com/wpush/v2/x")).toBe(true);
-    expect(isAllowedPushEndpoint("https://wns2-par02p.notify.windows.com/w/?token=x")).toBe(true);
     expect(isAllowedPushEndpoint("http://fcm.googleapis.com/x")).toBe(false);
-    expect(isAllowedPushEndpoint("https://169.254.169.254/latest")).toBe(false);
     expect(isAllowedPushEndpoint("https://evilfcm.googleapis.com.attacker.io/x")).toBe(false);
-    expect(parseSubscriptionInput({ endpoint: FCM("a"), keys: { p256dh: "a b", auth: "x" } })).toBeNull();
+    expect(isAllowedPushEndpoint(42)).toBe(false);
   });
 
-  it("1 trình duyệt chỉ thuộc 1 người: người mới bật → gỡ khỏi người cũ", async () => {
-    const keys = browserKeys();
-    await saveSubscription("uOld", { endpoint: FCM("shared"), keys }, "UA");
-    await saveSubscription("uNew", { endpoint: FCM("shared"), keys }, "UA");
-    const id = endpointId(FCM("shared"));
-    expect(store.has(`push-subscriptions/uOld/devices/${id}`)).toBe(false);
-    expect(store.has(`push-subscriptions/uNew/devices/${id}`)).toBe(true);
-    expect(store.get(`push-endpoints/${id}`)?.uid).toBe("uNew");
+  it("xoá máy của đúng người + chỉ mục nếu chỉ mục thuộc người đó", async () => {
+    const id = endpointId(FCM("a"));
+    store.set(`push-subscriptions/uA/devices/${id}`, { endpoint: FCM("a") });
+    store.set(`push-endpoints/${id}`, { uid: "uA" });
+    await removeSubscription("uA", FCM("a"));
+    expect(store.has(`push-subscriptions/uA/devices/${id}`)).toBe(false);
+    expect(store.has(`push-endpoints/${id}`)).toBe(false);
   });
 
-  it("Gửi thử chỉ tới máy của đúng người đang đăng nhập", async () => {
-    addDevice("uA", FCM("a"));
-    expect(await sendTestPush("uB", FCM("a"), buildTestPushPayload())).toBe("not_found");
-    expect(await sendTestPush("uA", FCM("a"), buildTestPushPayload())).toBe("ok");
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe("vá sau review bảo mật (PR #95)", () => {
-  it("WEB_PUSH_SUBJECT sai định dạng → tắt hẳn + cảnh báo đúng 1 lần", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    vi.stubEnv("WEB_PUSH_SUBJECT", "admin@hpcons.example");
-    expect(getWebPushConfig()).toBeNull();
-    expect(getWebPushConfig()).toBeNull();
-    expect(warn).toHaveBeenCalledTimes(1);
-    vi.stubEnv("WEB_PUSH_SUBJECT", "https://request.hpcore.vn");
-    expect(getWebPushConfig()).not.toBeNull();
-  });
-
-  it("gọi dịch vụ đẩy với redirect: manual; 3xx = lỗi, không xoá đăng ký", async () => {
-    addDevice("uA", FCM("a"));
-    fetchMock.mockResolvedValueOnce(new Response(null, { status: 302, headers: { Location: "https://evil.example" } }));
-    await sendWebPushItems([{ uid: "uA", payload: payload("approved") }]);
-    expect(fetchMock.mock.calls[0][1].redirect).toBe("manual");
-    expect(store.has(`push-subscriptions/uA/devices/${endpointId(FCM("a"))}`)).toBe(true);
-    expect(console.error).toHaveBeenCalled();
-  });
-
-  it("bỏ bản ghi máy mà chỉ mục nói nay thuộc người khác", async () => {
-    addDevice("uOld", FCM("shared"));
-    store.set(`push-endpoints/${endpointId(FCM("shared"))}`, { uid: "uNew" });
-    await sendWebPushItems([{ uid: "uOld", payload: payload("approved") }]);
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(await isDeviceRegisteredTo("uOld", FCM("shared"))).toBe(false);
-    expect(await sendTestPush("uOld", FCM("shared"), buildTestPushPayload())).toBe("not_found");
-  });
-
-  it("isDeviceRegisteredTo: đúng người + có chỉ mục mới tính là đã bật", async () => {
-    await saveSubscription("uA", { endpoint: FCM("a"), keys: browserKeys() }, "UA");
-    expect(await isDeviceRegisteredTo("uA", FCM("a"))).toBe(true);
-    expect(await isDeviceRegisteredTo("uB", FCM("a"))).toBe(false);
-  });
-
-  it("Gửi thử giới hạn 1 lần / 10 giây / người", () => {
-    expect(allowTestPush("rl-1", 1_000)).toBe(true);
-    expect(allowTestPush("rl-1", 5_000)).toBe(false);
-    expect(allowTestPush("rl-2", 5_000)).toBe(true);
-    expect(allowTestPush("rl-1", 11_000)).toBe(true);
-  });
-});
-
-describe("nhắc tên thắng nhưng theo công tắc thật (review PR #96)", () => {
-  const items = () => [
-    { uid: "uA", payload: payload("mentioned") },
-  ];
-  const commentFallback = () => [{ uid: "uA", payload: payload("comment_on_mine"), onlyIfDisabled: "mention" as const }];
-
-  it("bật 'Nhắc tên' → chỉ 1 thư nhắc tên", async () => {
-    addDevice("uA", FCM("a"));
-    await Promise.all([sendWebPushItems(items()), sendWebPushItems(commentFallback())]);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("tắt 'Nhắc tên', bật 'Bình luận' → vẫn nhận thư bình luận", async () => {
-    addDevice("uA", FCM("a"));
-    store.set("push-subscriptions/uA", { prefs: { mention: false, comment: true } });
-    await Promise.all([sendWebPushItems(items()), sendWebPushItems(commentFallback())]);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("tắt cả 2 → không nhận gì", async () => {
-    addDevice("uA", FCM("a"));
-    store.set("push-subscriptions/uA", { prefs: { mention: false, comment: false } });
-    await Promise.all([sendWebPushItems(items()), sendWebPushItems(commentFallback())]);
-    expect(fetchMock).not.toHaveBeenCalled();
+  it("chỉ mục thuộc người khác (máy dùng chung) → giữ chỉ mục, chỉ xoá bản ghi của mình", async () => {
+    const id = endpointId(FCM("b"));
+    store.set(`push-subscriptions/uA/devices/${id}`, { endpoint: FCM("b") });
+    store.set(`push-endpoints/${id}`, { uid: "uB" });
+    await removeSubscription("uA", FCM("b"));
+    expect(store.has(`push-subscriptions/uA/devices/${id}`)).toBe(false);
+    expect(store.get(`push-endpoints/${id}`)?.uid).toBe("uB");
   });
 });
