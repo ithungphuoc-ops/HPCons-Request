@@ -66,6 +66,8 @@ export interface NotificationEntry {
 
 export interface NotificationFeed {
   entries: NotificationEntry[];
+  /** Mọi đề xuất có dòng TRƯỚC khi cắt bớt — xem StoredNotificationFeed.trackedRequestIds. */
+  trackedRequestIds?: string[];
   /** Số đỏ trên chuông = số dòng `counted` (việc cần duyệt + chưa đọc liên quan trực tiếp). */
   badge: number;
   mustCount: number;
@@ -94,10 +96,16 @@ export interface NotificationFeedContext {
 export const NOTIFICATION_FEED_COLLECTION = "notification-feed";
 /** Đổi cấu trúc tài liệu thì tăng số này — client thấy lệch sẽ gọi GET để tính lại. */
 export const NOTIFICATION_FEED_VERSION = 1;
-/** Tài liệu cũ hơn ngần này (chưa có sự kiện nào chạm tới) → mở app thì gọi GET 1 lần
- * để tính lại: bù cho thứ đổi NGOÀI sự kiện đề xuất (họ tên ở App Tổng, cấu hình nhóm,
- * quản lý trực tiếp…). Không phải hỏi vòng — chỉ 1 lần lúc mở trang. */
+/** `profileAt` (lần cuối tính bằng PHIÊN của chính người đó) cũ hơn ngần này → mở app thì
+ * gọi GET 1 lần để tính lại: bù cho thứ đổi NGOÀI sự kiện đề xuất (họ tên ở App Tổng, cài
+ * đặt, cấu hình nhóm, quản lý trực tiếp, thành viên phòng ban…). Dựa trên `profileAt`, KHÔNG
+ * dựa `updatedAt` — người có sự kiện liên tục thì `updatedAt` luôn mới, tên/cài đặt lưu kèm
+ * sẽ không bao giờ được làm tươi (review PR #92). Không phải hỏi vòng — 1 lần lúc mở trang. */
 export const NOTIFICATION_FEED_STALE_MS = 12 * 60 * 60 * 1000;
+
+/** Tối đa ngần này dòng CHƯA ĐỌC chỉ-theo-dõi (không tính số đỏ) — người theo dõi rất nhiều
+ * đề xuất mà không mở bao giờ thì danh sách không phình tới giới hạn 1 MB của tài liệu. */
+export const MAX_UNREAD_FOLLOWING_ENTRIES = 50;
 
 export interface StoredNotificationFeed extends NotificationFeed {
   v: number;
@@ -110,9 +118,18 @@ export interface StoredNotificationFeed extends NotificationFeed {
   /** Id đề xuất đang có dòng trên chuông — để sự kiện của 1 đề xuất tìm lại đúng những
    * người cần GỠ dòng (vd bị bỏ khỏi người theo dõi, đề xuất bị xoá). */
   requestIds: string[];
+  /** Mọi đề xuất có dòng cho người này TRƯỚC khi cắt bớt (đã đọc quá 20, theo dõi chưa đọc
+   * quá 50) — sự kiện tính lại chỉ đọc đề xuất "gần đây" + những đề xuất này
+   * (feedCandidateRequests), nên phải nhớ cả dòng đang bị cắt để kết quả y như đọc cả kho. */
+  trackedRequestIds: string[];
   /** Mốc dữ liệu (ms, thời điểm đọc kho) đã dùng để tính — chặn bản tính cũ ghi đè bản mới. */
   basedOn: number;
   updatedAt: string;
+  /** Lần cuối tính bằng phiên của chính người này (GET / đánh dấu đã đọc / đổi cài đặt) — tên
+   * + cài đặt lưu kèm tươi tới mốc này. Sự kiện của người khác KHÔNG đổi mốc này. */
+  profileAt: string;
+  /** Lần tính lại do sự kiện bị lỗi → client gọi GET 1 lần để tự chữa. */
+  stale?: boolean;
 }
 
 /**
@@ -130,10 +147,35 @@ export function feedRecipientCandidates(r: RequestInstance): string[] {
   for (const f of r.followers ?? []) out.add(f.id);
   for (const a of r.pendingAdjustment?.approvers ?? []) out.add(a.uid);
   for (const u of r.adjustmentReviewerUids ?? []) out.add(u);
+  // `mentionedUids` đã giãn sẵn MỌI lượt nhắc (người lẫn phòng ban) ra uid lúc tạo bình
+  // luận (app/api/requests/[id]/comments). KHÔNG lấy `comments[].mentionIds` — trong đó có
+  // id phòng ban thô, thành lượt đọc `notification-feed/{id phòng ban}` vô ích.
   for (const u of r.mentionedUids ?? []) out.add(u);
-  for (const c of r.comments ?? []) for (const m of c.mentionIds ?? []) out.add(m);
   out.delete("");
   return [...out];
+}
+
+/**
+ * Đề xuất cần đọc khi TÍNH LẠI do sự kiện (không đọc cả kho): còn chờ duyệt, đang có điều
+ * chỉnh chờ duyệt, có biến động trong cửa sổ hiển thị (`updatedAt` ≥ 14 ngày trước), hoặc
+ * nằm trong `keepIds` (trackedRequestIds của những người được tính lại + đề xuất vừa có sự
+ * kiện). Ra ĐÚNG kết quả như đọc cả kho vì:
+ *  - dòng "phải duyệt" chỉ có ở đề xuất pending / có pendingAdjustment;
+ *  - dòng đã đọc chỉ hiện khi `at` ≥ mốc 14 ngày, mà `at` (giờ sự kiện) ≤ `updatedAt`
+ *    (mọi thao tác tạo sự kiện đều ghi updatedAt; dòng nhật ký không ghi updatedAt — xoá/
+ *    khôi phục, đồng bộ… — đều là dòng "im lặng", xem isQuietHistoryEntry);
+ *  - dòng chưa đọc cũ hơn cửa sổ thì đã có trong trackedRequestIds từ lần tính đầy đủ trước
+ *    (xem đề xuất không đổi `updatedAt` chỉ làm mất "chưa đọc", không làm hiện dòng mới);
+ *  - đề xuất vừa có sự kiện mà không đổi updatedAt (vd thêm người theo dõi) luôn được đưa
+ *    vào `keepIds`.
+ * Đổi ngoài sự kiện (cài đặt, cấu hình nhóm, phòng ban) thì đường GET đọc cả kho chữa lại.
+ * notification-feed.test.ts so 2 cách tính trên dữ liệu ngẫu nhiên.
+ */
+export function feedCandidateRequests(requests: RequestInstance[], now: number, keepIds: ReadonlySet<string>): RequestInstance[] {
+  const floor = new Date(now - READ_ENTRY_WINDOW_DAYS * 86_400_000).toISOString();
+  return requests.filter(
+    (r) => r.status === "pending" || !!r.pendingAdjustment || (r.updatedAt ?? "") >= floor || keepIds.has(r.id),
+  );
 }
 
 /** Dòng ĐÃ ĐỌC quá cửa sổ hiển thị thì ẩn — tài liệu lưu sẵn có thể đã tính từ vài ngày
@@ -164,7 +206,12 @@ function stableJson(value: unknown): string {
 /** 2 bản danh sách giống hệt nhau? — giống thì khỏi ghi (đỡ 1 lượt ghi + 1 lượt đọc
  * ở trình duyệt đang nghe). */
 export function sameFeedContent(a: NotificationFeed, b: NotificationFeed): boolean {
-  return a.badge === b.badge && a.mustCount === b.mustCount && stableJson(a.entries) === stableJson(b.entries);
+  return (
+    a.badge === b.badge &&
+    a.mustCount === b.mustCount &&
+    stableJson(a.entries) === stableJson(b.entries) &&
+    stableJson([...(a.trackedRequestIds ?? [])].sort()) === stableJson([...(b.trackedRequestIds ?? [])].sort())
+  );
 }
 
 /** Sự kiện trang chi tiết bắn sau khi ghi "đã xem" (RequestDetailView) — chuông tải lại. */
@@ -395,7 +442,13 @@ export function buildNotificationFeed(requests: RequestInstance[], ctx: Notifica
   }
 
   const mustEntries = entries.filter((e) => e.must).sort((a, b) => b.at.localeCompare(a.at));
-  const unreadEntries = entries.filter((e) => !e.must && e.unread).sort((a, b) => b.at.localeCompare(a.at));
+  // Dòng chưa đọc CHỈ do theo dõi (không tính số đỏ) giữ tối đa MAX_UNREAD_FOLLOWING_ENTRIES
+  // dòng mới nhất; dòng chưa đọc liên quan trực tiếp (counted) giữ hết.
+  let followingKept = 0;
+  const unreadEntries = entries
+    .filter((e) => !e.must && e.unread)
+    .sort((a, b) => b.at.localeCompare(a.at))
+    .filter((e) => e.counted || followingKept++ < MAX_UNREAD_FOLLOWING_ENTRIES);
   const readEntries = entries
     .filter((e) => !e.must && !e.unread)
     .sort((a, b) => b.at.localeCompare(a.at))
@@ -405,5 +458,6 @@ export function buildNotificationFeed(requests: RequestInstance[], ctx: Notifica
     entries: entriesOut,
     badge: entriesOut.filter((e) => e.counted).length,
     mustCount: mustEntries.length,
+    trackedRequestIds: entries.map((e) => e.requestId),
   };
 }

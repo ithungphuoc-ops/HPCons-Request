@@ -30,6 +30,9 @@ export function listenMyNotificationFeed(
   (async () => {
     try {
       const auth = getFirebaseAuth();
+      // Chờ Firebase khôi phục phiên đã nhớ (IndexedDB) rồi mới so uid — so ngay thì
+      // `currentUser` luôn null lúc mới tải trang, mỗi lần mở trang lại xin token mới.
+      await auth.authStateReady();
       if (auth.currentUser?.uid !== uid) {
         const res = await fetch("/api/auth/firebase-token", { method: "POST" });
         if (!res.ok) throw new Error("token");

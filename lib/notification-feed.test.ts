@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   buildNotificationFeed,
+  feedCandidateRequests,
   feedRecipientCandidates,
+  MAX_UNREAD_FOLLOWING_ENTRIES,
   hideExpiredEntries,
   isQuietHistoryEntry,
   sameFeedContent,
@@ -282,7 +284,8 @@ describe("feedRecipientCandidates — ai cần tính lại khi đề xuất đ�
 
   it("liệt kê đủ các vai trò", () => {
     expect(new Set(feedRecipientCandidates(r))).toEqual(
-      new Set(["lm", "a1", "a2", "f1", "adj1", "adj-old", "m1", "dep-uid", "phong-kt"]),
+      // Không có "phong-kt" (id phòng ban thô trong comments[].mentionIds) — review PR #92.
+      new Set(["lm", "a1", "a2", "f1", "adj1", "adj-old", "m1", "dep-uid"]),
     );
   });
 });
@@ -326,5 +329,85 @@ describe("sameFeedContent", () => {
     expect(sameFeedContent(feed, { ...feed, badge: 0 })).toBe(false);
     const changed = { ...feed, entries: [{ ...feed.entries[0], unread: !feed.entries[0].unread }] };
     expect(sameFeedContent(feed, changed)).toBe(false);
+  });
+});
+
+describe("giới hạn dòng chưa đọc chỉ-theo-dõi", () => {
+  it("giữ tối đa MAX_UNREAD_FOLLOWING_ENTRIES dòng mới nhất, dòng liên quan trực tiếp giữ hết, vẫn nhớ đủ id", () => {
+    const n = MAX_UNREAD_FOLLOWING_ENTRIES + 5;
+    const follow = Array.from({ length: n }, (_, i) =>
+      req({ id: `f${i}`, followers: [{ id: "me", name: ME.name, avatarInitial: "P" }], history: [{ at: t(i + 1), actor: "Lê Minh", action: "Đã gửi đề xuất" }] } as never),
+    );
+    const mine = req({ id: "duyet", approvers: [{ id: "me", decision: "pending" }] });
+    const feed = buildNotificationFeed([...follow, mine], ctx());
+    expect(feed.entries.filter((e) => !e.must && e.unread && !e.counted)).toHaveLength(MAX_UNREAD_FOLLOWING_ENTRIES);
+    expect(feed.entries.some((e) => e.requestId === "f0")).toBe(true);
+    expect(feed.entries.some((e) => e.requestId === `f${n - 1}`)).toBe(false);
+    expect(feed.mustCount).toBe(1);
+    expect(feed.trackedRequestIds).toHaveLength(n + 1);
+  });
+});
+
+/**
+ * Đường SỰ KIỆN chỉ đọc feedCandidateRequests thay vì cả kho — phải ra Y HỆT. Sinh dữ liệu
+ * ngẫu nhiên (cố định hạt giống), tính đầy đủ làm "tài liệu đang lưu", rồi giả lập 1 sự
+ * kiện như route thật (ghi updatedAt; riêng thêm người theo dõi thì không) và so 2 cách.
+ */
+describe("feedCandidateRequests — tính lại do sự kiện ra y như đọc cả kho", () => {
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+  const pick = <T,>(xs: T[]) => xs[Math.floor(rnd() * xs.length)];
+  const users = ["me", "u1", "u2", "u3", "u4"];
+  const nameOf = (u: string) => (u === "me" ? ME.name : `Tên ${u}`);
+  const DAY = 24 * 60;
+
+  function randomRequest(i: number): RequestInstance {
+    const submitter = pick(users);
+    const age = Math.floor(rnd() * 60 * DAY); // tới 60 ngày trước
+    const status = pick(["pending", "approved", "rejected", "returned"] as const);
+    const approvers = users.filter((u) => u !== submitter && rnd() < 0.4).map((id) => ({ id, decision: status === "pending" ? "pending" : "approved" }));
+    const followers = users.filter((u) => u !== submitter && rnd() < 0.4).map((id) => ({ id, name: nameOf(id), avatarInitial: "X" }));
+    const history = [{ at: t(age), actor: nameOf(submitter), action: "Đã gửi đề xuất" }];
+    let last = age;
+    if (status !== "pending" && approvers[0]) {
+      last = Math.max(0, age - Math.floor(rnd() * 3 * DAY));
+      history.push({ at: t(last), actor: nameOf(approvers[0].id), action: status === "approved" ? "Đã chấp thuận" : status === "rejected" ? "Đã từ chối" : "Đã trả lại" });
+    }
+    const comments = rnd() < 0.3 ? [{ id: `c${i}`, authorUid: pick(users), authorName: nameOf(pick(users)), text: "hi", at: t(last), mentionIds: [] }] : [];
+    const viewedAt = Object.fromEntries(users.filter(() => rnd() < 0.5).map((u) => [u, t(Math.floor(rnd() * age))]));
+    const pendingAdjustment =
+      status === "approved" && rnd() < 0.15
+        ? { noiDung: "đổi", attachment: null, requestedByUid: submitter, requestedByName: nameOf(submitter), createdAt: t(last), approvers: [{ uid: pick(users), name: "x", approvedAt: null }] }
+        : null;
+    return req({ id: `r${i}`, status, submittedBy: { uid: submitter, name: nameOf(submitter) }, submittedAt: t(age), updatedAt: t(last), approvers, approversSnapshot: approvers.map((a) => ({ id: a.id })), followers, history, comments, viewedAt, pendingAdjustment } as never);
+  }
+
+  const feedFor = (requests: RequestInstance[], uid: string) => buildNotificationFeed(requests, { uid, name: nameOf(uid), settings: null, now: NOW });
+  const visible = (f: ReturnType<typeof feedFor>) => ({ entries: f.entries, badge: f.badge, mustCount: f.mustCount });
+
+  it("200 lượt ngẫu nhiên × 5 người: kết quả trùng khớp", () => {
+    for (let round = 0; round < 200; round++) {
+      const before = Array.from({ length: 40 }, (_, i) => randomRequest(i));
+      const stored = new Map(users.map((u) => [u, feedFor(before, u)]));
+      // Sự kiện: chọn 1 đề xuất, đổi theo 1 trong 3 cách như route thật.
+      const target = pick(before);
+      const kind = pick(["comment", "follower", "decide"] as const);
+      const after = before.map((r) => {
+        if (r !== target) return r;
+        if (kind === "follower") return { ...r, followers: [...r.followers, { id: pick(users), name: "x", avatarInitial: "X" }] } as RequestInstance; // không đổi updatedAt
+        const at = t(0);
+        if (kind === "comment") {
+          const who = pick(users);
+          return { ...r, updatedAt: at, comments: [...(r.comments ?? []), { id: `n${round}`, authorUid: who, authorName: nameOf(who), text: "mới", at }] } as RequestInstance;
+        }
+        return { ...r, updatedAt: at, status: "approved", history: [...r.history, { at, actor: nameOf(pick(users)), action: "Đã chấp thuận" }] } as RequestInstance;
+      });
+      const keep = new Set<string>([target.id]);
+      for (const f of stored.values()) for (const id of f.trackedRequestIds ?? []) keep.add(id);
+      const subset = feedCandidateRequests(after, NOW, keep);
+      for (const u of users) {
+        expect(visible(feedFor(subset, u)), `vòng ${round}, ${u}, ${kind}`).toEqual(visible(feedFor(after, u)));
+      }
+    }
   });
 });

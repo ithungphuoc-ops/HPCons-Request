@@ -162,8 +162,11 @@ export default function NotificationBell({ uid }: { uid?: string | null }) {
       uid,
       (data) => {
         const usable = !!data && data.v === NOTIFICATION_FEED_VERSION;
-        const ageMs = data ? Date.now() - Date.parse(data.updatedAt) : NaN;
-        if (!usable || !(ageMs < NOTIFICATION_FEED_STALE_MS)) refreshOnce();
+        // Tuổi tính theo `profileAt` (lần cuối tính bằng phiên của chính mình), không theo
+        // `updatedAt` — sự kiện của người khác làm updatedAt luôn mới. `stale`: lần tính do
+        // sự kiện bị lỗi → tự chữa bằng 1 lượt GET.
+        const ageMs = data?.profileAt ? Date.now() - Date.parse(data.profileAt) : NaN;
+        if (!usable || data.stale || !(ageMs < NOTIFICATION_FEED_STALE_MS)) refreshOnce();
         if (usable && data) {
           applyFeed(data);
           setError(false);

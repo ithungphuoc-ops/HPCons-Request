@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
 const { mockAuth, mockSignIn, mockOnSnapshot, mockDoc, mockGetAuth, mockGetFirestore } = vi.hoisted(() => {
-  const mockAuth = { currentUser: null as { uid: string } | null };
+  const mockAuth = { currentUser: null as { uid: string } | null, authStateReady: async () => {} };
   return {
     mockAuth,
     mockSignIn: vi.fn(),

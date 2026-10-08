@@ -2,6 +2,7 @@ import "server-only";
 import { adminDb } from "@/lib/firebase/admin";
 import {
   buildNotificationFeed,
+  feedCandidateRequests,
   feedRecipientCandidates,
   NOTIFICATION_FEED_COLLECTION,
   NOTIFICATION_FEED_VERSION,
@@ -29,6 +30,13 @@ import type { NotificationSettings, ProposalGroup, RequestInstance } from "@/lib
  * kiện ≈ số người liên quan tới đề xuất đó (thường < 20), và chỉ ghi khi danh sách thật
  * sự đổi. Người CHƯA có tài liệu (chưa mở app từ khi lên bản này) thì bỏ qua — lần đầu
  * mở chuông họ gọi GET, route đó tính + ghi (bù dần, không cần chạy chuyển dữ liệu).
+ *
+ * 2 đường tính:
+ *  - PHIÊN (GET, đánh dấu đã đọc hết, đổi cài đặt): đọc CẢ kho đề xuất còn hiệu lực, tên +
+ *    cài đặt mới nhất, ghi `profileAt` — luôn đúng tuyệt đối, là "mốc chuẩn".
+ *  - SỰ KIỆN: chỉ đọc đề xuất có thể hiện trên chuông (feedCandidateRequests — chờ duyệt,
+ *    có điều chỉnh chờ, biến động 14 ngày gần đây, hoặc đang được theo dõi trong tài liệu),
+ *    dùng tên + cài đặt lưu kèm. Chi phí không tăng theo số đề xuất cũ đã xong.
  */
 
 const feedCol = () => adminDb.collection(NOTIFICATION_FEED_COLLECTION);
@@ -39,14 +47,56 @@ interface LiveRequests {
   readTimeMs: number;
 }
 
+const readMs = (snap: { readTime?: { toMillis?: () => number } }) =>
+  typeof snap.readTime?.toMillis === "function" ? snap.readTime.toMillis() : Date.now();
+const isLive = (r: RequestInstance) => !r.deletedAt && r.status !== "draft";
+
 /**
  * 1 lượt đọc các đề xuất CÒN HIỆU LỰC (`deletedAt == null`; đo 06/10/2026: 35/230 đề
- * xuất, ~0,4 giây). Dùng chung cho mọi người được tính lại trong cùng 1 sự kiện.
+ * xuất, ~0,4 giây). Đường PHIÊN dùng.
  */
 export async function loadLiveRequests(): Promise<LiveRequests> {
   const snap = await adminDb.collection("requests").where("deletedAt", "==", null).get();
-  const requests = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }) as RequestInstance).filter((r) => r.status !== "draft");
-  const readTimeMs = typeof snap.readTime?.toMillis === "function" ? snap.readTime.toMillis() : Date.now();
+  const requests = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }) as RequestInstance).filter(isLive);
+  return { requests, readTimeMs: readMs(snap) };
+}
+
+/**
+ * Đường SỰ KIỆN: chỉ đọc đề xuất feedCandidateRequests có thể cần — 3 truy vấn trên đề xuất
+ * còn hiệu lực + đọc thẳng các id trong `keepIds`. `basedOn` lấy mốc đọc SỚM NHẤT trong các
+ * lượt (an toàn cho phép chặn bản cũ đè bản mới).
+ *
+ * ⚠️ 2 truy vấn (deletedAt + updatedAt ≥, deletedAt + pendingAdjustment ≠) CẦN INDEX GHÉP
+ * trong firestore.indexes.json (đã thử chỉ-đọc trên production 08/10/2026: thiếu index →
+ * FAILED_PRECONDITION). Chưa deploy index thì rơi về đọc cả kho còn hiệu lực như đường
+ * PHIÊN — vẫn đúng, chỉ chưa rẻ hơn.
+ */
+export async function loadCandidateRequests(keepIds: ReadonlySet<string>, now = Date.now()): Promise<LiveRequests> {
+  const floor = new Date(now - READ_ENTRY_WINDOW_DAYS * 86_400_000).toISOString();
+  const col = adminDb.collection("requests");
+  const live = col.where("deletedAt", "==", null);
+  let snaps;
+  try {
+    snaps = await Promise.all([
+      live.where("updatedAt", ">=", floor).get(),
+      live.where("status", "==", "pending").get(),
+      live.where("pendingAdjustment", "!=", null).get(),
+    ]);
+  } catch (error) {
+    if ((error as { code?: unknown })?.code !== 9) throw error;
+    console.warn("Thiếu index ghép cho chuông (firestore.indexes.json) — tạm đọc cả kho còn hiệu lực.");
+    return loadLiveRequests();
+  }
+  const byId = new Map<string, RequestInstance>();
+  for (const s of snaps) for (const d of s.docs) byId.set(d.id, { id: d.id, ...d.data() } as RequestInstance);
+  let readTimeMs = Math.min(...snaps.map(readMs));
+  const missing = [...keepIds].filter((id) => id && !byId.has(id));
+  if (missing.length > 0) {
+    const docs = await adminDb.getAll(...missing.map((id) => col.doc(id)));
+    for (const d of docs) if (d.exists) byId.set(d.id, { id: d.id, ...d.data() } as RequestInstance);
+    readTimeMs = Math.min(readTimeMs, ...docs.map(readMs));
+  }
+  const requests = feedCandidateRequests([...byId.values()].filter(isLive), now, keepIds);
   return { requests, readTimeMs };
 }
 
@@ -60,9 +110,12 @@ export interface FeedRun extends LiveRequests {
   groupMentionUids: Map<string, Promise<string[]>>;
 }
 
+function toRun(live: LiveRequests, now = Date.now()): FeedRun {
+  return { ...live, now, groupMentionUids: new Map() };
+}
+
 export async function startFeedRun(): Promise<FeedRun> {
-  const live = await loadLiveRequests();
-  return { ...live, now: Date.now(), groupMentionUids: new Map() };
+  return toRun(await loadLiveRequests());
 }
 
 /** Đề xuất → quản lý trực tiếp của người gửi, chỉ với đề xuất thuộc nhóm bật notifyManager
@@ -162,60 +215,82 @@ export function usableStoredFeed(data: unknown): data is StoredNotificationFeed 
   return !!d && d.v === NOTIFICATION_FEED_VERSION && typeof d.uid === "string" && typeof d.name === "string" && !!d.settings;
 }
 
+const sameProfile = (a: Pick<FeedUser, "name" | "settings">, b: Partial<Pick<FeedUser, "name" | "settings">>) =>
+  a.name === b.name && JSON.stringify(a.settings) === JSON.stringify(b.settings);
+
+type WriteResult = "written" | "skipped" | "profile-changed";
+
 /**
  * Ghi danh sách vào `notification-feed/{uid}` trong transaction:
  *  - Bản đang lưu tính từ dữ liệu MỚI HƠN (`basedOn` lớn hơn) → bỏ, không để bản tính
  *    cũ (2 sự kiện sát nhau, lượt chậm ghi sau) đè bản mới.
- *  - `skipIfSame`: nội dung y hệt → không ghi (sự kiện) — GET thì vẫn ghi để làm mới
- *    `updatedAt` (client dựa vào đó biết tài liệu còn "tươi").
- * Trả về true nếu đã ghi.
+ *  - Đường SỰ KIỆN (`fromSession` = false): tên/cài đặt đang lưu KHÁC bản đã dùng để tính
+ *    (người đó vừa đổi cài đặt giữa chừng) → không ghi, báo "profile-changed" để nơi gọi
+ *    tính lại bằng bản mới; nội dung y hệt → không ghi; giữ nguyên `profileAt` cũ.
+ *  - Đường PHIÊN: luôn ghi, đặt `profileAt` = bây giờ.
  */
-async function writeFeed(user: FeedUser, feed: NotificationFeed, basedOn: number, skipIfSame: boolean): Promise<boolean> {
+async function writeFeed(user: FeedUser, feed: NotificationFeed, basedOn: number, fromSession: boolean): Promise<WriteResult> {
   const ref = feedCol().doc(user.uid);
-  return adminDb.runTransaction(async (tx) => {
+  return adminDb.runTransaction(async (tx): Promise<WriteResult> => {
     const cur = await tx.get(ref);
     const old = cur.exists ? (cur.data() as Partial<StoredNotificationFeed>) : undefined;
-    if (old && typeof old.basedOn === "number" && old.basedOn > basedOn) return false;
-    if (
-      skipIfSame &&
-      usableStoredFeed(old) &&
-      old.name === user.name &&
-      JSON.stringify(old.settings) === JSON.stringify(user.settings) &&
-      sameFeedContent(old, feed)
-    ) {
-      return false;
+    if (old && typeof old.basedOn === "number" && old.basedOn > basedOn) return "skipped";
+    if (!fromSession) {
+      if (!usableStoredFeed(old)) return "skipped";
+      if (!sameProfile(user, old)) return "profile-changed";
+      if (!old.stale && sameFeedContent(old, feed)) return "skipped";
     }
+    const nowIso = new Date().toISOString();
     const doc: StoredNotificationFeed = {
-      ...feed,
+      entries: feed.entries,
+      badge: feed.badge,
+      mustCount: feed.mustCount,
+      trackedRequestIds: feed.trackedRequestIds ?? feed.entries.map((e) => e.requestId),
       v: NOTIFICATION_FEED_VERSION,
       uid: user.uid,
       name: user.name,
       settings: user.settings,
       requestIds: feed.entries.map((e) => e.requestId),
       basedOn,
-      updatedAt: new Date().toISOString(),
+      updatedAt: nowIso,
+      profileAt: fromSession ? nowIso : (old?.profileAt ?? nowIso),
     };
     tx.set(ref, doc);
-    return true;
+    return "written";
   });
+}
+
+/** Đánh dấu tài liệu "cần tính lại" khi lượt tính do sự kiện bị lỗi — client thấy sẽ gọi GET
+ * 1 lần. Cố gắng hết mức, lỗi khi đánh dấu chỉ log. */
+async function markStale(uids: string[]): Promise<void> {
+  await Promise.all(
+    uids.map((uid) =>
+      feedCol()
+        .doc(uid)
+        .set({ stale: true }, { merge: true })
+        .catch((error: unknown) => console.error(`Đánh dấu chuông ${uid} cần tính lại thất bại:`, error)),
+    ),
+  );
 }
 
 /**
  * Tính + ghi cho CHÍNH người đang đăng nhập (GET /api/notifications, "đánh dấu đã đọc
- * hết", đổi cài đặt thông báo). Đọc cài đặt + tên mới nhất từ phiên/App Tổng nên cũng là
- * đường "làm tươi" tên và cài đặt lưu kèm tài liệu.
+ * hết", đổi cài đặt thông báo). Đọc cả kho + cài đặt + tên mới nhất từ phiên/App Tổng nên
+ * cũng là đường "làm tươi" tên và cài đặt lưu kèm tài liệu (`profileAt`).
  */
 export async function computeAndStoreFeedForSession(session: { uid: string; name: string }): Promise<NotificationFeed> {
   const [run, settings] = await Promise.all([startFeedRun(), getNotificationSettings(session.uid)]);
   const user: FeedUser = { uid: session.uid, name: session.name, settings };
   const feed = await computeFeedFor(run, user);
   try {
-    await writeFeed(user, feed, run.readTimeMs, false);
+    await writeFeed(user, feed, run.readTimeMs, true);
   } catch (error) {
     // Ghi hỏng thì vẫn trả danh sách cho người đang chờ — chuông vẫn hiện đúng.
     console.error("Ghi notification-feed thất bại (vẫn trả danh sách):", error);
   }
-  return feed;
+  const { trackedRequestIds: _bo, ...forClient } = feed;
+  void _bo;
+  return forClient;
 }
 
 /** Chỉ TÍNH (không ghi) cho người đang đăng nhập — dùng khi cần danh sách để làm việc khác. */
@@ -224,28 +299,48 @@ export async function loadNotificationFeed(session: { uid: string; name: string 
   return computeFeedFor(run, { uid: session.uid, name: session.name, settings });
 }
 
-/** Tính lại cho 1 nhóm người ĐÃ CÓ tài liệu, dùng tên + cài đặt lưu sẵn. */
-async function refreshStoredUsers(uids: string[]): Promise<number> {
+/** Tính lại cho 1 nhóm người ĐÃ CÓ tài liệu, dùng tên + cài đặt lưu sẵn. `extraKeep`: đề
+ * xuất vừa có sự kiện (luôn đọc, kể cả khi không đổi updatedAt). */
+async function refreshStoredUsers(uids: string[], extraKeep: string[]): Promise<number> {
   const unique = [...new Set(uids.filter(Boolean))];
   if (unique.length === 0) return 0;
   const snaps = await adminDb.getAll(...unique.map((u) => feedCol().doc(u)));
   const users: FeedUser[] = [];
+  const keep = new Set<string>(extraKeep);
   for (const s of snaps) {
     const d = s.data();
     // Chưa có tài liệu / tài liệu bản cũ → bỏ qua; lần mở app tới, GET tự tính + ghi.
     if (!s.exists || !usableStoredFeed(d)) continue;
     users.push({ uid: s.id, name: d.name, settings: d.settings });
+    for (const id of d.trackedRequestIds ?? d.requestIds ?? []) keep.add(id);
   }
   if (users.length === 0) return 0;
-  const run = await startFeedRun();
+  let run: FeedRun;
+  try {
+    run = toRun(await loadCandidateRequests(keep));
+  } catch (error) {
+    console.error("Đọc đề xuất để tính lại chuông thất bại:", error);
+    await markStale(users.map((u) => u.uid));
+    return 0;
+  }
   let written = 0;
   await Promise.all(
     users.map(async (u) => {
       try {
-        const feed = await computeFeedFor(run, u);
-        if (await writeFeed(u, feed, run.readTimeMs, true)) written += 1;
+        let current = u;
+        // Tối đa 2 lượt: lượt 2 khi người đó vừa đổi tên/cài đặt giữa chừng (tính lại bằng bản mới).
+        for (let lan = 0; lan < 2; lan++) {
+          const feed = await computeFeedFor(run, current);
+          const kq = await writeFeed(current, feed, run.readTimeMs, false);
+          if (kq === "written") written += 1;
+          if (kq !== "profile-changed") return;
+          const fresh = (await feedCol().doc(u.uid).get()).data();
+          if (!usableStoredFeed(fresh)) return;
+          current = { uid: u.uid, name: fresh.name, settings: fresh.settings };
+        }
       } catch (error) {
         console.error(`Tính lại chuông cho ${u.uid} thất bại:`, error);
+        await markStale([u.uid]);
       }
     }),
   );
@@ -263,7 +358,7 @@ export async function affectedUidsForRequest(requestId: string): Promise<string[
   const out = new Set<string>(holders.docs.map((d) => d.id));
   if (reqSnap.exists) {
     const r = { id: reqSnap.id, ...reqSnap.data() } as RequestInstance;
-    if (!r.deletedAt && r.status !== "draft") {
+    if (isLive(r)) {
       for (const u of feedRecipientCandidates(r)) out.add(u);
       if (r.groupId) {
         const g = await adminDb.collection("groups").doc(r.groupId).get();
@@ -281,16 +376,15 @@ export async function affectedUidsForRequest(requestId: string): Promise<string[
 /**
  * Gọi SAU KHI ghi `requests/{id}` thành công (trong `after()`), ở mọi chỗ trước đây gọi
  * bumpNotificationSignal + các chỗ đổi danh sách mà trước đây nhờ hỏi vòng mới thấy
- * (thêm người theo dõi, sửa/xoá bình luận, xoá/khôi phục đề xuất). Lỗi chỉ log — không
- * được làm hỏng thao tác chính; người bị lỡ sẽ được tính lại ở sự kiện sau hoặc khi
- * tài liệu quá hạn (client gọi GET).
+ * (thêm người theo dõi, sửa/xoá bình luận, xoá/khôi phục đề xuất, lưu nháp khi bị trả lại).
+ * Lỗi chỉ log (+ đánh dấu `stale` cho người đã biết) — không được làm hỏng thao tác chính.
  * Không vòng lặp: ghi `notification-feed` không kích hoạt gì ở máy chủ, trình duyệt
  * nhận về chỉ hiển thị, không ghi ngược.
  */
 export async function refreshNotificationFeedsForRequest(requestId: string): Promise<void> {
   try {
     const uids = await affectedUidsForRequest(requestId);
-    await refreshStoredUsers(uids);
+    await refreshStoredUsers(uids, [requestId]);
   } catch (error) {
     console.error(`Tính lại chuông cho đề xuất ${requestId} thất bại:`, error);
   }
@@ -307,7 +401,7 @@ export async function refreshFeedAfterView(uid: string, requestId: string): Prom
     const d = snap.data();
     if (!snap.exists || !usableStoredFeed(d)) return;
     if (!d.entries.some((e) => e.requestId === requestId && e.unread)) return;
-    await refreshStoredUsers([uid]);
+    await refreshStoredUsers([uid], [requestId]);
   } catch (error) {
     console.error(`Tính lại chuông sau khi xem đề xuất ${requestId} thất bại:`, error);
   }

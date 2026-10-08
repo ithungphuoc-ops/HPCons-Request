@@ -213,6 +213,10 @@ export async function PATCH(
         followers,
         updatedAt,
       });
+      // Lưu (không gửi) khi đề xuất ĐÃ gửi (vd bị trả lại) vẫn đổi được người theo dõi /
+      // tên / người duyệt — những thứ chuông của người khác đang hiện. Nháp thật thì chưa
+      // ai thấy, khỏi tính.
+      if (found.status !== "draft") after(() => refreshNotificationFeedsForRequest(id));
       return NextResponse.json({ request: updated });
     }
 
