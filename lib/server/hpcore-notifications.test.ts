@@ -215,3 +215,48 @@ describe("Ghi lỗi (mất mạng/thiếu quyền) — không được throw ra 
     await expect(hpcoreSubmitterResult(baseRequest({ status: "approved" }))).resolves.toBeUndefined();
   });
 });
+
+describe("meta (08/10/2026) — gắn kèm mọi thông báo, title/body giữ nguyên", () => {
+  it("nhắc tên → meta.kind mentioned + đoạn bình luận, body vẫn là câu cũ", async () => {
+    await hpcoreMentioned(baseRequest(), ["uA"], "Người A", "@uA xem giúp");
+    const payload = mockSet.mock.calls[0][1];
+    expect(payload.title).toBe("Bạn được nhắc tên");
+    expect(payload.body).toContain("nhắc bạn trong bình luận đề xuất");
+    expect(payload.meta).toEqual({
+      v: 1,
+      kind: "mentioned",
+      headline: "Người A nhắc tới bạn: “@uA xem giúp”",
+      actorName: "Người A",
+      excerpt: "@uA xem giúp",
+      requestCode: "000000001",
+      groupName: "Nhóm test",
+    });
+  });
+
+  it("mọi hàm đều gắn meta có v=1 + đúng kind", async () => {
+    await hpcorePendingApprovers(baseRequest());
+    await hpcoreSubmitterResult(baseRequest({ status: "rejected" }));
+    await hpcoreSubmitterReturned(baseRequest(), "thiếu");
+    await hpcoreFollowersSubmitted([user("f1")], baseRequest());
+    await hpcoreFollowersFullyApproved(baseRequest({ status: "approved", followers: [user("f1")] }));
+    await hpcoreCommentOnMine(baseRequest(), "uA", "Người A", "hi");
+    await hpcoreAdjustmentPending(baseRequest(), ["uA"]);
+    await hpcoreAdjustmentResult(baseRequest(), "x", "approved");
+    await hpcoreAdjustmentResult(baseRequest(), "x", "rejected", "Người B");
+    const kinds = mockSet.mock.calls.map((c) => c[1].meta);
+    expect(kinds.every((m) => m.v === 1 && m.requestCode === "000000001")).toBe(true);
+    expect(kinds.map((m) => m.kind)).toEqual([
+      "pending_approval",
+      "rejected",
+      "returned",
+      "follow_submitted",
+      "follow_approved",
+      "comment_on_mine",
+      "adjustment_pending",
+      "adjustment_approved",
+      "adjustment_rejected",
+    ]);
+    // Firestore Admin không nhận undefined — meta không được chứa khoá undefined.
+    for (const m of kinds) expect(Object.values(m).includes(undefined)).toBe(false);
+  });
+});
