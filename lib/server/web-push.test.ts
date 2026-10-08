@@ -166,6 +166,17 @@ describe("lọc người nhận", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("công tắc 'bình luận trên đề xuất của tôi' riêng; thiếu khoá = bật", async () => {
+    addDevice("uA", FCM("a"));
+    await sendWebPushItems([{ uid: "uA", payload: payload("comment_on_mine") }]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    store.set("push-subscriptions/uA", { prefs: { comment: false } });
+    await sendWebPushItems([{ uid: "uA", payload: payload("comment_on_mine") }]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await sendWebPushItems([{ uid: "uA", payload: payload("mentioned") }]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("1 người lặp 2 lần trong 1 sự kiện → chỉ 1 thư mỗi máy", async () => {
     addDevice("uA", FCM("a1"));
     addDevice("uA", FCM("a2"));

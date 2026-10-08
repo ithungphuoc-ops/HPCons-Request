@@ -281,23 +281,28 @@ describe("meta lỗi → vẫn ghi thông báo, chỉ bỏ meta", () => {
   });
 });
 
-describe("Web Push (cấp 3) — đi kèm đúng 3 nhóm sự kiện, nội dung ngắn", () => {
-  /** Đề xuất có tên tự gõ chứa số tiền + bảng giá trị — KHÔNG được lọt ra màn hình khoá. */
-  const nhayCam = () =>
+
+describe("Web Push (cấp 3) — 4 nhóm sự kiện, nội dung rõ theo demo 08/10/2026", () => {
+  const coTen = () =>
     baseRequest({
       groupNameSnapshot: "1.0. Phiếu đề nghị (HPCons)",
       fieldsSnapshot: [{ id: "f1", code: "ten_de_xuat", label: "Tên đề xuất", type: "short_text", required: false }] as unknown as RequestInstance["fieldsSnapshot"],
-      values: { f1: "Mua thép 987.654.321 đồng" },
+      values: { f1: "Mua thép hộp\n40×80" },
     });
-  const allPushed = () => mockSendWebPush.mock.calls.flatMap((c) => c[0] as { uid: string; payload: { title: string; body: string; kind: string } }[]);
+  const allPushed = () =>
+    mockSendWebPush.mock.calls.flatMap((c) => c[0] as { uid: string; payload: { title: string; body: string; kind: string; actionTitle: string } }[]);
 
-  it("chờ duyệt / nhắc tên / kết quả / điều chỉnh → có đẩy, kèm actorUid để loại người làm", async () => {
-    await hpcorePendingApprovers(nhayCam(), { actorUid: "submitter" });
-    await hpcoreMentioned(nhayCam(), ["uA", "uC"], "Người A", "Giá 500.000.000 nhé @uA", { actorUid: "uX" });
-    await hpcoreSubmitterResult({ ...nhayCam(), status: "approved" }, { actorUid: "uB" });
-    await hpcoreSubmitterReturned(nhayCam(), "Sai số tiền 123.456", { actorUid: "uA" });
-    await hpcoreAdjustmentPending(nhayCam(), ["uA"], { actorUid: "submitter" });
-    await hpcoreAdjustmentResult(nhayCam(), "submitter", "rejected", "Người B", { actorUid: "uB" });
+  it("đúng người nhận + loại + actorUid; nội dung có tên đề xuất / trích dẫn (1 dòng)", async () => {
+    await hpcorePendingApprovers(coTen(), { actorUid: "submitter" });
+    await hpcoreMentioned(coTen(), ["uA", "uC"], "Người A", "Giá 500.000.000\nnhé @uA", { actorUid: "uX" });
+    await hpcoreSubmitterResult({ ...coTen(), status: "approved" }, { actorUid: "uB" });
+    await hpcoreSubmitterReturned(coTen(), "Bổ sung hình ảnh", { actorUid: "uA" });
+    await hpcoreAdjustmentPending(
+      { ...coTen(), pendingAdjustment: { noiDung: "Đổi 120 → 90 cây", attachment: null, attachments: [], requestedByUid: "submitter", requestedByName: "Người gửi", createdAt: "", approvers: [] } },
+      ["uA"],
+      { actorUid: "submitter" },
+    );
+    await hpcoreAdjustmentResult(coTen(), "submitter", "approved", undefined, { actorUid: "uB", approverCount: 2 });
     expect(mockSendWebPush.mock.calls.map((c) => c[1])).toEqual([
       { actorUid: "submitter" },
       { actorUid: "uX" },
@@ -314,35 +319,52 @@ describe("Web Push (cấp 3) — đi kèm đúng 3 nhóm sự kiện, nội dung
       "submitter:approved",
       "submitter:returned",
       "uA:adjustment_pending",
-      "submitter:adjustment_rejected",
+      "submitter:adjustment_approved",
     ]);
-    for (const { payload } of items) {
-      const text = `${payload.title} ${payload.body}`;
-      expect(text).not.toMatch(/987|500\.000|123\.456|Mua thép|Giá|Sai số/);
-      expect(text).toContain("000000001");
-    }
-    expect(items[0].payload.body).toBe("Người gửi gửi · 1.0. Phiếu đề nghị (HPCons)");
-    expect(items[1].payload.title).toBe("Người A nhắc bạn trong đề xuất 000000001");
-    // Chứng minh dữ liệu nhạy cảm CÓ trên chuông (meta.groupName = tên tự gõ) nhưng KHÔNG lên push.
-    expect(mockSet.mock.calls[0][1].meta.groupName).toBe("Mua thép 987.654.321 đồng");
+    expect(items[0].payload).toMatchObject({
+      title: "⏳ Chờ bạn duyệt — Người gửi gửi",
+      body: "Mua thép hộp 40×80\n#000001 · 1.0. Phiếu đề nghị (HPCons)",
+      actionTitle: "Mở để duyệt",
+    });
+    expect(items[1].payload.body).toBe("“Giá 500.000.000 nhé @uA”\n#000001 · 1.0. Phiếu đề nghị (HPCons)");
+    expect(items[3].payload.body).toBe("Mua thép hộp 40×80 · #000001");
+    expect(items[4].payload).toMatchObject({ actionTitle: "Sửa và gửi lại" });
+    expect(items[4].payload.body.split("\n")[0]).toContain("“Bổ sung hình ảnh”");
+    expect(items[5].payload.body.split("\n")[0]).toBe("Người gửi: “Đổi 120 → 90 cây”");
+    expect(items[6].payload.body.split("\n")[0]).toBe("Đủ 2/2 người duyệt");
   });
 
-  it("đề xuất TRỰC TIẾP (groupId null): tên tự gõ nằm trong groupNameSnapshot → KHÔNG lên màn hình khoá", async () => {
-    const direct = baseRequest({ groupId: null, groupNameSnapshot: "Tạm ứng 50.000.000 cho anh B" });
+  it("đề xuất TRỰC TIẾP: dòng nhóm là 'Đề xuất trực tiếp', tên tự gõ hiện ở dòng tên đề xuất", async () => {
+    const direct = baseRequest({ groupId: null, groupNameSnapshot: "Tạm ứng công tác" });
     await hpcorePendingApprovers(direct, { actorUid: "submitter" });
-    await hpcoreMentioned(direct, ["uA"], "Người A", "x", { actorUid: "uX" });
-    await hpcoreSubmitterResult({ ...direct, status: "rejected" });
-    for (const { payload } of allPushed()) {
-      expect(`${payload.title} ${payload.body}`).not.toMatch(/Tạm ứng|50\.000/);
-    }
-    expect(allPushed()[0].payload.body).toBe("Người gửi gửi · Đề xuất trực tiếp");
-    expect(allPushed()[1].payload.body).toBe("Đề xuất trực tiếp");
+    expect(allPushed()[0].payload.body).toBe("Tạm ứng công tác\n#000001 · Đề xuất trực tiếp");
   });
 
-  it("theo dõi / bình luận thường KHÔNG đẩy ra màn hình (chỉ có trên chuông)", async () => {
+  it("bình luận trên đề xuất của tôi → đẩy loại comment_on_mine, không đẩy cho chính người bình luận", async () => {
+    await hpcoreCommentOnMine(coTen(), "uA", "Lê Văn C", "Đã nhận hàng đợt 1", { actorUid: "uA", mentionedUids: [] });
+    expect(allPushed()).toEqual([
+      expect.objectContaining({ uid: "submitter", payload: expect.objectContaining({ kind: "comment_on_mine", title: "💬 Lê Văn C bình luận đề xuất của bạn" }) }),
+    ]);
+    mockSendWebPush.mockClear();
+    await hpcoreCommentOnMine(coTen(), "submitter", "Người gửi", "tự bình luận");
+    expect(mockSendWebPush).not.toHaveBeenCalled();
+  });
+
+  it("người gửi cũng bị nhắc trong chính bình luận đó → chỉ nhận 'nhắc tên' (nhắc tên thắng)", async () => {
+    const mentioned = ["submitter", "uC"];
+    await Promise.all([
+      hpcoreCommentOnMine(coTen(), "uA", "Người A", "@submitter xem", { actorUid: "uA", mentionedUids: mentioned }),
+      hpcoreMentioned(coTen(), mentioned, "Người A", "@submitter xem", { actorUid: "uA" }),
+    ]);
+    const forSubmitter = allPushed().filter((i) => i.uid === "submitter");
+    expect(forSubmitter.map((i) => i.payload.kind)).toEqual(["mentioned"]);
+    // Chuông vẫn ghi đủ như trước (không đổi hành vi chuông).
+    expect(mockSet.mock.calls.some((c) => c[1].userId === "submitter" && c[1].meta?.kind === "comment_on_mine")).toBe(true);
+  });
+
+  it("người theo dõi KHÔNG đẩy ra màn hình (chỉ có trên chuông)", async () => {
     await hpcoreFollowersSubmitted([user("f1")], baseRequest());
     await hpcoreFollowersFullyApproved(baseRequest({ status: "approved", followers: [user("f1")] }));
-    await hpcoreCommentOnMine(baseRequest(), "uA", "Người A", "hi");
     expect(mockSendWebPush).not.toHaveBeenCalled();
   });
 

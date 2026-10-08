@@ -22,13 +22,17 @@ const PUSH_LABELS: Record<PushCategory, { title: string; description: string }> 
     title: "Được nhắc tên",
     description: "Ai đó nhắc bạn (hoặc phòng ban/nhóm của bạn) trong bình luận.",
   },
+  comment: {
+    title: "Bình luận mới trên đề xuất của tôi",
+    description: "Ai đó bình luận trên đề xuất bạn gửi (nếu bình luận có nhắc tên bạn thì chỉ báo 1 lần).",
+  },
   result: {
     title: "Kết quả đề xuất của tôi",
     description: "Đề xuất bạn gửi được chấp thuận, bị từ chối, bị trả lại; điều chỉnh bạn đề nghị có kết quả.",
   },
 };
 
-const ORDER: PushCategory[] = ["approval", "mention", "result"];
+const ORDER: PushCategory[] = ["approval", "mention", "comment", "result"];
 
 function Switch({ enabled, label, onClick }: { enabled: boolean; label: string; onClick: () => void }) {
   return (
@@ -150,8 +154,8 @@ export default function WebPushSettings() {
       </div>
       <p className="mb-5 text-[14px] text-[var(--color-text-secondary)]">
         Hiện thông báo ở góc màn hình máy tính hoặc màn hình khoá điện thoại, kể cả khi đã đóng tab app. Bật riêng
-        cho từng máy/trình duyệt. Nội dung chỉ ghi mã đề xuất, tên nhóm và người làm — không ghi số tiền hay nội
-        dung bình luận.
+        cho từng máy/trình duyệt. Nội dung gồm người làm, tên đề xuất, mã, và trích
+        bình luận/lý do (có thể hiện cả trên màn hình khoá).
       </p>
 
       <div className="rounded border border-[var(--color-border)] px-4 py-3">
