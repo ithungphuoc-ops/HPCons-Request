@@ -1,13 +1,19 @@
 import { NextResponse } from "next/server";
 import { apiErrorResponse } from "@/lib/http";
-import { isAllowedPushEndpoint, sendTestPush } from "@/lib/server/web-push";
+import { rejectUnlessJsonSameOrigin } from "@/lib/server/push-request-guard";
+import { allowTestPush, isAllowedPushEndpoint, sendTestPush } from "@/lib/server/web-push";
 import { requireSession } from "@/lib/session";
 import { buildTestPushPayload } from "@/lib/web-push-payload";
 
 /** "Gửi thử" — đẩy 1 thông báo mẫu tới ĐÚNG trình duyệt đang bấm, để người dùng tự kiểm. */
 export async function POST(request: Request) {
   try {
+    const blocked = rejectUnlessJsonSameOrigin(request);
+    if (blocked) return blocked;
     const session = await requireSession();
+    if (!allowTestPush(session.uid)) {
+      return NextResponse.json({ error: "Vừa gửi thử rồi — đợi 10 giây rồi bấm lại." }, { status: 429 });
+    }
     const body = (await request.json().catch(() => null)) as { endpoint?: unknown } | null;
     if (!isAllowedPushEndpoint(body?.endpoint)) return NextResponse.json({ error: "Thiếu endpoint." }, { status: 400 });
     const result = await sendTestPush(session.uid, body.endpoint, buildTestPushPayload());

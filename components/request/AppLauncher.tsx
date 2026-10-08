@@ -36,6 +36,7 @@ import {
 } from "lucide-react";
 import { CURRENT_APP_HOST, HPCORE_APPS_API, HPCORE_DASHBOARD_URL, HPCORE_PROFILE_URL } from "@/lib/constants";
 import { useCurrentSession } from "@/lib/useCurrentSession";
+import { disablePushBeforeLogout } from "@/lib/web-push-client";
 
 // Cùng bộ khoá icon với hpcons-portal/lib/dashboardApps.ts — app nào chưa có
 // trong danh sách này thì rơi về icon mặc định (AppWindow).
@@ -141,6 +142,8 @@ export default function AppLauncher({ onClose }: { onClose: () => void }) {
   // Đăng xuất SSO: gọi route sẵn có xoá cookie .hpcore.vn rồi tải lại —
   // middleware sẽ tự chuyển hướng về trang đăng nhập app tổng kèm ?next.
   async function handleLogout() {
+    // Máy dùng chung: gỡ thông báo ra màn hình của người này trước khi xoá phiên (Web Push 08/10/2026).
+    await disablePushBeforeLogout();
     try {
       await fetch("/api/auth/logout", { method: "POST" });
     } catch {

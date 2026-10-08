@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { apiErrorResponse } from "@/lib/http";
 import { getPushPreferences, getWebPushConfig, updatePushPreferences } from "@/lib/server/web-push";
+import { rejectUnlessJsonSameOrigin } from "@/lib/server/push-request-guard";
 import { requireSession } from "@/lib/session";
 
 /**
@@ -24,10 +25,15 @@ export async function GET() {
 
 export async function PATCH(request: Request) {
   try {
+    const blocked = rejectUnlessJsonSameOrigin(request);
+    if (blocked) return blocked;
     const session = await requireSession();
     if (!getWebPushConfig()) return NextResponse.json({ error: "Thông báo ra màn hình chưa được bật." }, { status: 404 });
-    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-    const prefs = await updatePushPreferences(session.uid, body);
+    const body: unknown = await request.json().catch(() => null);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return NextResponse.json({ error: "Dữ liệu không hợp lệ." }, { status: 400 });
+    }
+    const prefs = await updatePushPreferences(session.uid, body as Record<string, unknown>);
     return NextResponse.json({ prefs });
   } catch (error) {
     return apiErrorResponse(error);

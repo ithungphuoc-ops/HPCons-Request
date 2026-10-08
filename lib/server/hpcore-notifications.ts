@@ -97,7 +97,16 @@ export interface PushOptions {
   actorUid?: string;
 }
 
-type PushRequest = Pick<RequestInstance, "id" | "code" | "groupNameSnapshot">;
+type PushRequest = Pick<RequestInstance, "id" | "groupId" | "code" | "groupNameSnapshot">;
+
+/** Đề xuất TRỰC TIẾP (groupId null) lưu TÊN NGƯỜI DÙNG TỰ GÕ vào groupNameSnapshot
+ * (app/api/requests/route.ts) — có thể chứa số tiền → KHÔNG đưa lên màn hình khoá,
+ * thay bằng chữ cố định. Chỉ đề xuất thuộc nhóm (tên nhóm do Admin đặt) mới dùng snapshot. */
+export const DIRECT_REQUEST_PUSH_LABEL = "Đề xuất trực tiếp";
+
+export function pushGroupLabel(request: Pick<RequestInstance, "groupId" | "groupNameSnapshot">): string {
+  return typeof request.groupId === "string" && request.groupId ? request.groupNameSnapshot : DIRECT_REQUEST_PUSH_LABEL;
+}
 
 function pushItem(
   userId: string,
@@ -114,7 +123,7 @@ function pushItem(
       code: request.code,
       // CỐ Ý dùng tên NHÓM, không dùng meta.groupName (= tên đề xuất người dùng gõ, có thể
       // chứa số tiền) — quyết định số 4: màn hình khoá chỉ ghi ngắn.
-      groupName: request.groupNameSnapshot,
+      groupName: pushGroupLabel(request),
       actorName,
       forwarded: extra.forwarded,
     }),
@@ -134,7 +143,7 @@ function label(request: Pick<RequestInstance, "groupNameSnapshot" | "code" | "id
 }
 
 export async function hpcorePendingApprovers(
-  request: Pick<RequestInstance, "id" | "groupNameSnapshot" | "code" | "approvalFlow" | "approvers" | "submittedBy"> & MetaExtras,
+  request: Pick<RequestInstance, "id" | "groupId" | "groupNameSnapshot" | "code" | "approvalFlow" | "approvers" | "submittedBy"> & MetaExtras,
   opts?: PushOptions,
 ): Promise<void> {
   // Cùng cách tính "ai đang tới lượt" với email (notifyPendingApprovers) — xem
@@ -164,7 +173,7 @@ export async function hpcorePendingApprovers(
 }
 
 export async function hpcoreSubmitterResult(
-  request: Pick<RequestInstance, "id" | "groupNameSnapshot" | "code" | "status" | "submittedBy"> & MetaExtras,
+  request: Pick<RequestInstance, "id" | "groupId" | "groupNameSnapshot" | "code" | "status" | "submittedBy"> & MetaExtras,
   opts?: PushOptions,
 ): Promise<void> {
   if (request.status !== "approved" && request.status !== "rejected") return;
@@ -180,7 +189,7 @@ export async function hpcoreSubmitterResult(
 }
 
 export async function hpcoreSubmitterReturned(
-  request: Pick<RequestInstance, "id" | "groupNameSnapshot" | "code" | "submittedBy"> & MetaExtras,
+  request: Pick<RequestInstance, "id" | "groupId" | "groupNameSnapshot" | "code" | "submittedBy"> & MetaExtras,
   reason: string | undefined,
   opts?: PushOptions,
 ): Promise<void> {
@@ -197,7 +206,7 @@ export async function hpcoreSubmitterReturned(
 
 export async function hpcoreFollowersSubmitted(
   followers: TaggedUser[],
-  request: Pick<RequestInstance, "id" | "groupNameSnapshot" | "code" | "submittedBy"> & MetaExtras,
+  request: Pick<RequestInstance, "id" | "groupId" | "groupNameSnapshot" | "code" | "submittedBy"> & MetaExtras,
 ): Promise<void> {
   if (followers.length === 0) return;
   const link = requestDetailUrl(request.id);
@@ -214,7 +223,7 @@ export async function hpcoreFollowersSubmitted(
 }
 
 export async function hpcoreFollowersFullyApproved(
-  request: Pick<RequestInstance, "id" | "groupNameSnapshot" | "code" | "status" | "followers"> & MetaExtras,
+  request: Pick<RequestInstance, "id" | "groupId" | "groupNameSnapshot" | "code" | "status" | "followers"> & MetaExtras,
 ): Promise<void> {
   if (request.status !== "approved" || request.followers.length === 0) return;
   const link = requestDetailUrl(request.id);
@@ -231,7 +240,7 @@ export async function hpcoreFollowersFullyApproved(
 }
 
 export async function hpcoreCommentOnMine(
-  request: Pick<RequestInstance, "id" | "groupNameSnapshot" | "code" | "submittedBy"> & MetaExtras,
+  request: Pick<RequestInstance, "id" | "groupId" | "groupNameSnapshot" | "code" | "submittedBy"> & MetaExtras,
   commenterUid: string,
   commenterName: string,
   /** Nội dung bình luận — chỉ dùng cho `meta` (headline/excerpt), `body` giữ câu cũ. */
@@ -250,7 +259,7 @@ export async function hpcoreCommentOnMine(
 }
 
 export async function hpcoreMentioned(
-  request: Pick<RequestInstance, "id" | "groupNameSnapshot" | "code"> & MetaExtras,
+  request: Pick<RequestInstance, "id" | "groupId" | "groupNameSnapshot" | "code"> & MetaExtras,
   mentionedUids: string[],
   commenterName: string,
   commentText?: string,
@@ -271,7 +280,7 @@ export async function hpcoreMentioned(
 }
 
 export async function hpcoreAdjustmentPending(
-  request: Pick<RequestInstance, "id" | "groupNameSnapshot" | "code"> & MetaExtras,
+  request: Pick<RequestInstance, "id" | "groupId" | "groupNameSnapshot" | "code"> & MetaExtras,
   uids: string[],
   opts?: PushOptions,
 ): Promise<void> {
@@ -291,7 +300,7 @@ export async function hpcoreAdjustmentPending(
 }
 
 export async function hpcoreAdjustmentResult(
-  request: Pick<RequestInstance, "id" | "groupNameSnapshot" | "code"> & MetaExtras,
+  request: Pick<RequestInstance, "id" | "groupId" | "groupNameSnapshot" | "code"> & MetaExtras,
   requesterUid: string,
   outcome: "approved" | "rejected",
   /** Người vừa bấm quyết định (người từ chối) — chỉ dùng cho `meta`. */

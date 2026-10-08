@@ -327,6 +327,18 @@ describe("Web Push (cấp 3) — đi kèm đúng 3 nhóm sự kiện, nội dung
     expect(mockSet.mock.calls[0][1].meta.groupName).toBe("Mua thép 987.654.321 đồng");
   });
 
+  it("đề xuất TRỰC TIẾP (groupId null): tên tự gõ nằm trong groupNameSnapshot → KHÔNG lên màn hình khoá", async () => {
+    const direct = baseRequest({ groupId: null, groupNameSnapshot: "Tạm ứng 50.000.000 cho anh B" });
+    await hpcorePendingApprovers(direct, { actorUid: "submitter" });
+    await hpcoreMentioned(direct, ["uA"], "Người A", "x", { actorUid: "uX" });
+    await hpcoreSubmitterResult({ ...direct, status: "rejected" });
+    for (const { payload } of allPushed()) {
+      expect(`${payload.title} ${payload.body}`).not.toMatch(/Tạm ứng|50\.000/);
+    }
+    expect(allPushed()[0].payload.body).toBe("Người gửi gửi · Đề xuất trực tiếp");
+    expect(allPushed()[1].payload.body).toBe("Đề xuất trực tiếp");
+  });
+
   it("theo dõi / bình luận thường KHÔNG đẩy ra màn hình (chỉ có trên chuông)", async () => {
     await hpcoreFollowersSubmitted([user("f1")], baseRequest());
     await hpcoreFollowersFullyApproved(baseRequest({ status: "approved", followers: [user("f1")] }));

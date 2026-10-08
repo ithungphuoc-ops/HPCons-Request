@@ -37,12 +37,30 @@ const { store, fakeDb } = vi.hoisted(() => {
       },
     };
   }
-  return { store, fakeDb: { collection: (name: string) => colRef(name) } };
+  type Ref = { get: () => Promise<unknown>; set: (d: Record<string, unknown>) => Promise<void>; delete: () => Promise<void> };
+  const fakeDb = {
+    collection: (name: string) => colRef(name),
+    // Transaction giả: đọc thẳng, gom ghi chạy cuối — đủ kiểm logic; tính nguyên tử do Firestore thật lo.
+    async runTransaction<T>(fn: (tx: unknown) => Promise<T>): Promise<T> {
+      const writes: (() => Promise<void>)[] = [];
+      const tx = {
+        get: (ref: Ref) => ref.get(),
+        set: (ref: Ref, d: Record<string, unknown>) => void writes.push(() => ref.set(d)),
+        delete: (ref: Ref) => void writes.push(() => ref.delete()),
+      };
+      const out = await fn(tx);
+      for (const w of writes) await w();
+      return out;
+    },
+  };
+  return { store, fakeDb };
 });
 
 vi.mock("@/lib/firebase/admin", () => ({ adminDb: fakeDb }));
 
 const {
+  allowTestPush,
+  isDeviceRegisteredTo,
   endpointId,
   getWebPushConfig,
   isAllowedPushEndpoint,
@@ -69,6 +87,8 @@ function addDevice(uid: string, endpoint: string) {
     keys: browserKeys(),
     lastUsedAt: new Date().toISOString(),
   });
+  // Như saveSubscription thật: kèm chỉ mục endpoint -> người.
+  store.set(`push-endpoints/${endpointId(endpoint)}`, { uid });
 }
 
 const payload = (kind: Parameters<typeof buildPushPayload>[0]["kind"]) =>
@@ -207,5 +227,48 @@ describe("đăng ký", () => {
     expect(await sendTestPush("uB", FCM("a"), buildTestPushPayload())).toBe("not_found");
     expect(await sendTestPush("uA", FCM("a"), buildTestPushPayload())).toBe("ok");
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("vá sau review bảo mật (PR #95)", () => {
+  it("WEB_PUSH_SUBJECT sai định dạng → tắt hẳn + cảnh báo đúng 1 lần", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.stubEnv("WEB_PUSH_SUBJECT", "admin@hpcons.example");
+    expect(getWebPushConfig()).toBeNull();
+    expect(getWebPushConfig()).toBeNull();
+    expect(warn).toHaveBeenCalledTimes(1);
+    vi.stubEnv("WEB_PUSH_SUBJECT", "https://request.hpcore.vn");
+    expect(getWebPushConfig()).not.toBeNull();
+  });
+
+  it("gọi dịch vụ đẩy với redirect: manual; 3xx = lỗi, không xoá đăng ký", async () => {
+    addDevice("uA", FCM("a"));
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 302, headers: { Location: "https://evil.example" } }));
+    await sendWebPushItems([{ uid: "uA", payload: payload("approved") }]);
+    expect(fetchMock.mock.calls[0][1].redirect).toBe("manual");
+    expect(store.has(`push-subscriptions/uA/devices/${endpointId(FCM("a"))}`)).toBe(true);
+    expect(console.error).toHaveBeenCalled();
+  });
+
+  it("bỏ bản ghi máy mà chỉ mục nói nay thuộc người khác", async () => {
+    addDevice("uOld", FCM("shared"));
+    store.set(`push-endpoints/${endpointId(FCM("shared"))}`, { uid: "uNew" });
+    await sendWebPushItems([{ uid: "uOld", payload: payload("approved") }]);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(await isDeviceRegisteredTo("uOld", FCM("shared"))).toBe(false);
+    expect(await sendTestPush("uOld", FCM("shared"), buildTestPushPayload())).toBe("not_found");
+  });
+
+  it("isDeviceRegisteredTo: đúng người + có chỉ mục mới tính là đã bật", async () => {
+    await saveSubscription("uA", { endpoint: FCM("a"), keys: browserKeys() }, "UA");
+    expect(await isDeviceRegisteredTo("uA", FCM("a"))).toBe(true);
+    expect(await isDeviceRegisteredTo("uB", FCM("a"))).toBe(false);
+  });
+
+  it("Gửi thử giới hạn 1 lần / 10 giây / người", () => {
+    expect(allowTestPush("rl-1", 1_000)).toBe(true);
+    expect(allowTestPush("rl-1", 5_000)).toBe(false);
+    expect(allowTestPush("rl-2", 5_000)).toBe(true);
+    expect(allowTestPush("rl-1", 11_000)).toBe(true);
   });
 });

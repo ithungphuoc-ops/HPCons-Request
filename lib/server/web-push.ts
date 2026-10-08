@@ -37,8 +37,19 @@ export function getWebPushConfig(): VapidConfig | null {
   const privateKey = process.env.WEB_PUSH_VAPID_PRIVATE_KEY?.trim();
   const subject = process.env.WEB_PUSH_SUBJECT?.trim();
   if (!publicKey || !privateKey || !subject) return null;
+  // Apple/Google đòi `sub` là mailto: hoặc https: — sai định dạng thì mọi thư bị từ chối,
+  // nên coi như CHƯA cấu hình (tắt hẳn) và cảnh báo 1 lần cho người vận hành thấy trong log.
+  if (!/^(mailto:|https:)/i.test(subject)) {
+    if (!warnedBadSubject) {
+      warnedBadSubject = true;
+      console.warn("WEB_PUSH_SUBJECT phải bắt đầu bằng mailto: hoặc https: — tạm TẮT thông báo ra màn hình.");
+    }
+    return null;
+  }
   return { publicKey, privateKey, subject };
 }
+
+let warnedBadSubject = false;
 
 export function endpointId(endpoint: string): string {
   return createHash("sha256").update(endpoint).digest("hex");
@@ -103,28 +114,41 @@ function deviceDoc(uid: string, id: string) {
   return userDoc(uid).collection("devices").doc(id);
 }
 
+/**
+ * Gắn trình duyệt này cho `uid` — CHỈ gọi từ cú bấm "Bật" của chính người đó (POST). Chạy
+ * trong transaction: 2 người cùng bấm trên 1 máy dùng chung không thể để lại 2 bản ghi
+ * cùng endpoint (cả 2 cùng nhận thông báo của nhau).
+ */
 export async function saveSubscription(uid: string, sub: SubscriptionInput, userAgent: string): Promise<void> {
   const id = endpointId(sub.endpoint);
   const nowIso = new Date().toISOString();
   const indexRef = adminDb.collection(ENDPOINT_INDEX).doc(id);
-  const [indexSnap, existing] = await Promise.all([indexRef.get(), deviceDoc(uid, id).get()]);
-  const previousUid = indexSnap.exists ? (indexSnap.data()?.uid as string | undefined) : undefined;
-  if (previousUid && previousUid !== uid) {
-    await deviceDoc(previousUid, id).delete();
-  }
-  const prev = existing.exists ? (existing.data() as StoredDevice) : undefined;
-  // Đã có y hệt (mở lại trang Cài đặt) → không ghi lại, đỡ lượt ghi.
-  if (prev && prev.keys?.p256dh === sub.keys.p256dh && prev.keys?.auth === sub.keys.auth && previousUid === uid) return;
-  await Promise.all([
-    deviceDoc(uid, id).set({
+  const myRef = deviceDoc(uid, id);
+  await adminDb.runTransaction(async (tx) => {
+    const [indexSnap, existing] = await Promise.all([tx.get(indexRef), tx.get(myRef)]);
+    const previousUid = indexSnap.exists ? (indexSnap.data()?.uid as string | undefined) : undefined;
+    const prev = existing.exists ? (existing.data() as StoredDevice) : undefined;
+    // Đã có y hệt → không ghi lại, đỡ lượt ghi.
+    if (prev && prev.keys?.p256dh === sub.keys.p256dh && prev.keys?.auth === sub.keys.auth && previousUid === uid) return;
+    if (previousUid && previousUid !== uid) tx.delete(deviceDoc(previousUid, id));
+    tx.set(myRef, {
       endpoint: sub.endpoint,
       keys: sub.keys,
       userAgent: userAgent.slice(0, 300),
       createdAt: prev?.createdAt ?? nowIso,
       lastUsedAt: nowIso,
-    }),
-    indexRef.set({ uid, updatedAt: nowIso }),
-  ]);
+    });
+    tx.set(indexRef, { uid, updatedAt: nowIso });
+  });
+}
+
+/** Trình duyệt này có đang được gắn cho ĐÚNG `uid` không — trang tải lại thấy máy đã có
+ * đăng ký nhưng thuộc người khác (máy dùng chung) thì phải hiện "Bật trên máy này", KHÔNG
+ * tự gắn lại ngầm. */
+export async function isDeviceRegisteredTo(uid: string, endpoint: string): Promise<boolean> {
+  const id = endpointId(endpoint);
+  const [indexSnap, mine] = await Promise.all([adminDb.collection(ENDPOINT_INDEX).doc(id).get(), deviceDoc(uid, id).get()]);
+  return mine.exists && indexSnap.exists && indexSnap.data()?.uid === uid;
 }
 
 export async function removeSubscription(uid: string, endpoint: string): Promise<void> {
@@ -142,7 +166,7 @@ export async function getPushPreferences(uid: string): Promise<PushPreferences> 
   return normalizePushPreferences(snap.exists ? snap.data()?.prefs : undefined);
 }
 
-export async function updatePushPreferences(uid: string, patch: Record<string, unknown>): Promise<PushPreferences> {
+export async function updatePushPreferences(uid: string, patch: Partial<Record<string, unknown>>): Promise<PushPreferences> {
   const current = await getPushPreferences(uid);
   const next = { ...current };
   for (const key of PUSH_CATEGORIES) {
@@ -170,9 +194,14 @@ export async function sendToDevice(device: Pick<StoredDevice, "endpoint" | "keys
       },
       body: new Uint8Array(body),
       signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
+      // Dịch vụ đẩy thật không chuyển hướng — gặp 3xx là bất thường, KHÔNG đi theo (tránh
+      // bị dẫn sang địa chỉ khác), coi như lỗi.
+      redirect: "manual",
     });
+    // Không đọc nội dung trả về → huỷ luồng để giải phóng kết nối ngay.
+    await res.body?.cancel().catch(() => {});
     if (res.status === 404 || res.status === 410) return "gone";
-    if (!res.ok) {
+    if (!res.ok || res.status >= 300) {
       console.error(`Web Push bị dịch vụ đẩy từ chối (HTTP ${res.status}) — bỏ qua thư này.`);
       return "error";
     }
@@ -239,12 +268,16 @@ export async function sendWebPushItems(items: PushItem[], opts: { actorUid?: str
         // Đọc danh sách máy TRƯỚC: đa số người chưa bật → dừng ở 1 lượt đọc, khỏi đọc công tắc.
         const devices = await userDoc(uid).collection("devices").get();
         if (devices.empty) return;
+        // Bỏ bản ghi "mồ côi": chỉ mục nói trình duyệt này nay thuộc NGƯỜI KHÁC (máy dùng chung).
+        const owners = await Promise.all(devices.docs.map((d) => adminDb.collection(ENDPOINT_INDEX).doc(d.id).get()));
+        const ownDocs = devices.docs.filter((_, i) => !owners[i].exists || owners[i].data()?.uid === uid);
+        if (ownDocs.length === 0) return;
         if (payload.kind !== "test") {
           const prefs = await getPushPreferences(uid);
           if (!prefs[PUSH_CATEGORY_OF[payload.kind]]) return;
         }
         await Promise.all(
-          devices.docs.map(async (d) => {
+          ownDocs.map(async (d) => {
             if (sentDevices.has(d.id)) return;
             sentDevices.add(d.id);
             await deliver(uid, d.id, d.data() as StoredDevice, payload, config);
@@ -259,11 +292,28 @@ export async function sendWebPushItems(items: PushItem[], opts: { actorUid?: str
   }
 }
 
+/** "Gửi thử" giới hạn 1 lần / 10 giây / người — chặn bấm liên tục làm phiền dịch vụ đẩy.
+ * Lưu trong bộ nhớ từng máy chủ (Vercel có thể nhiều phiên bản) — đủ cho mục đích chống bấm nhầm. */
+const TEST_INTERVAL_MS = 10_000;
+const lastTestAt = new Map<string, number>();
+
+export function allowTestPush(uid: string, now = Date.now()): boolean {
+  const last = lastTestAt.get(uid);
+  if (last !== undefined && now - last < TEST_INTERVAL_MS) return false;
+  lastTestAt.set(uid, now);
+  // Dọn bớt để Map không phình mãi.
+  if (lastTestAt.size > 1000) {
+    for (const [k, t] of lastTestAt) if (now - t >= TEST_INTERVAL_MS) lastTestAt.delete(k);
+  }
+  return true;
+}
+
 /** "Gửi thử" — chỉ tới ĐÚNG trình duyệt đang bấm, của đúng người đang đăng nhập. */
 export async function sendTestPush(uid: string, endpoint: string, payload: PushPayload): Promise<SendResult | "not_found" | "disabled"> {
   const config = getWebPushConfig();
   if (!config) return "disabled";
   const id = endpointId(endpoint);
+  if (!(await isDeviceRegisteredTo(uid, endpoint))) return "not_found";
   const snap = await deviceDoc(uid, id).get();
   if (!snap.exists) return "not_found";
   return deliver(uid, id, snap.data() as StoredDevice, payload, config);

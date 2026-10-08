@@ -63,7 +63,17 @@ export async function getDeviceStatus(): Promise<{ status: PushDeviceStatus; sub
   if (Notification.permission === "denied") return { status: "denied", subscription: null };
   try {
     const sub = Notification.permission === "granted" ? await existingSubscription() : null;
-    return { status: sub ? "subscribed" : "not_subscribed", subscription: sub };
+    if (!sub) return { status: "not_subscribed", subscription: null };
+    // Trình duyệt có đăng ký, nhưng có thể là của NGƯỜI KHÁC (máy dùng chung) hoặc máy chủ đã
+    // xoá → chỉ coi là "đã bật" khi máy chủ xác nhận đúng người này; ngược lại người dùng phải
+    // tự bấm "Bật trên máy này" (KHÔNG tự gắn lại ngầm).
+    const res = await fetch("/api/push/device-status", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ endpoint: sub.endpoint }),
+    });
+    const json = res.ok ? ((await res.json()) as { registered?: boolean }) : null;
+    return json?.registered ? { status: "subscribed", subscription: sub } : { status: "not_subscribed", subscription: null };
   } catch {
     return { status: "not_subscribed", subscription: null };
   }
@@ -110,12 +120,6 @@ export async function enablePushOnThisDevice(publicKey: string): Promise<PushDev
   return "subscribed";
 }
 
-/** Máy đã bật từ trước → báo lại máy chủ (phòng khi máy chủ đã xoá do hết hạn). Máy chủ
- * bỏ qua nếu đã có y hệt, nên gần như không tốn lượt ghi. */
-export async function resyncSubscription(sub: PushSubscription): Promise<void> {
-  await postSubscription(sub).catch(() => {});
-}
-
 export async function disablePushOnThisDevice(sub: PushSubscription): Promise<void> {
   await fetch("/api/push/subscription", {
     method: "DELETE",
@@ -123,6 +127,20 @@ export async function disablePushOnThisDevice(sub: PushSubscription): Promise<vo
     body: JSON.stringify({ endpoint: sub.endpoint }),
   }).catch(() => {});
   await sub.unsubscribe().catch(() => false);
+}
+
+/**
+ * Đăng xuất trên máy dùng chung: gỡ đăng ký của máy này (máy chủ + trình duyệt) TRƯỚC khi
+ * xoá phiên, để người sau ngồi vào máy không nhận thông báo của người trước. Tối đa 3 giây —
+ * mạng chậm cũng không được giữ chân nút Đăng xuất.
+ */
+export async function disablePushBeforeLogout(): Promise<void> {
+  if (!isPushSupported()) return;
+  const work = (async () => {
+    const sub = await existingSubscription();
+    if (sub) await disablePushOnThisDevice(sub);
+  })().catch(() => {});
+  await Promise.race([work, new Promise((resolve) => setTimeout(resolve, 3000))]);
 }
 
 export async function sendTestPushToThisDevice(sub: PushSubscription): Promise<string | null> {

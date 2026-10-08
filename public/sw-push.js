@@ -38,24 +38,45 @@ self.addEventListener("push", (event) => {
   event.waitUntil(self.registration.showNotification(title, options));
 });
 
+/** Chỉ mở đường dẫn CÙNG tên miền app — thư lạ/hỏng thì về trang chính của app. */
+function safeTarget(raw) {
+  try {
+    const url = new URL(raw || "/request", self.location.origin);
+    if (url.origin === self.location.origin) return url;
+  } catch {
+    // Đường dẫn hỏng → dùng mặc định bên dưới.
+  }
+  return new URL("/request", self.location.origin);
+}
+
+function samePage(a, b) {
+  return a.origin === b.origin && a.pathname.replace(/\/$/, "") === b.pathname.replace(/\/$/, "") && a.search === b.search;
+}
+
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const target = new URL((event.notification.data && event.notification.data.url) || "/request", self.location.origin).href;
+  const target = safeTarget(event.notification.data && event.notification.data.url);
   event.waitUntil(
     (async () => {
       const list = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-      // Ưu tiên tab app đang mở cùng tên miền: đưa lên trước rồi chuyển tới đúng đề xuất.
-      for (const client of list) {
-        if (new URL(client.url).origin !== self.location.origin) continue;
+      // CHỈ dùng lại tab ĐANG MỞ ĐÚNG đề xuất đó (đưa lên trước). KHÔNG điều hướng tab khác —
+      // tab đó có thể đang gõ dở bình luận/đề xuất, chuyển trang là mất chữ.
+      const existing = list.find((client) => {
         try {
-          const focused = await client.focus();
-          if (focused && "navigate" in focused) await focused.navigate(target);
+          return samePage(new URL(client.url), target);
+        } catch {
+          return false;
+        }
+      });
+      if (existing) {
+        try {
+          await existing.focus();
           return;
         } catch {
-          // Tab không cho điều khiển (vd chưa do SW này quản) → thử tab khác / mở cửa sổ mới.
+          // Không đưa lên được (trình duyệt chặn) → mở cửa sổ mới bên dưới, đúng 1 lần.
         }
       }
-      await self.clients.openWindow(target);
+      await self.clients.openWindow(target.href);
     })(),
   );
 });

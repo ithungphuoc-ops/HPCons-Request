@@ -7,7 +7,6 @@ import {
   enablePushOnThisDevice,
   fetchPushServerState,
   getDeviceStatus,
-  resyncSubscription,
   savePushPreferences,
   sendTestPushToThisDevice,
   type PushDeviceStatus,
@@ -78,8 +77,6 @@ export default function WebPushSettings() {
       if (cancelled) return;
       setStatus(device.status);
       setSubscription(device.subscription);
-      // Máy đã bật từ trước: báo lại máy chủ phòng khi đăng ký đã bị xoá phía máy chủ.
-      if (device.subscription) void resyncSubscription(device.subscription);
     })();
     return () => {
       cancelled = true;
