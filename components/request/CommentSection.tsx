@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { doc, onSnapshot } from "firebase/firestore";
 import { Check, Lock, Paperclip, Pencil, Send, Trash2, X } from "lucide-react";
 import { ensureFirebaseSignedIn, getFirebaseFirestore } from "@/lib/firebase/client";
 import { useRequestContext } from "@/context/RequestContext";
@@ -160,10 +159,13 @@ export default function CommentSection({
 
     (async () => {
       try {
-        await ensureFirebaseSignedIn();
+        const [, db, { doc, onSnapshot }] = await Promise.all([
+          ensureFirebaseSignedIn(),
+          getFirebaseFirestore(),
+          import("firebase/firestore"),
+        ]);
         if (cancelled) return;
 
-        const db = getFirebaseFirestore();
         unsubscribe = onSnapshot(doc(db, "requests", requestId), (snap) => {
           const data = snap.data() as { comments?: RequestComment[] } | undefined;
           if (data?.comments) setComments(data.comments);

@@ -1,7 +1,5 @@
 "use client";
 
-import { signInWithCustomToken } from "firebase/auth";
-import { doc, onSnapshot } from "firebase/firestore";
 import { getFirebaseAuth, getFirebaseFirestore } from "@/lib/firebase/client";
 import { NOTIFICATION_FEED_COLLECTION, type StoredNotificationFeed } from "@/lib/notification-feed";
 
@@ -29,7 +27,7 @@ export function listenMyNotificationFeed(
   let stopped = false;
   (async () => {
     try {
-      const auth = getFirebaseAuth();
+      const [auth, { signInWithCustomToken }] = await Promise.all([getFirebaseAuth(), import("firebase/auth")]);
       // Chờ Firebase khôi phục phiên đã nhớ (IndexedDB) rồi mới so uid — so ngay thì
       // `currentUser` luôn null lúc mới tải trang, mỗi lần mở trang lại xin token mới.
       await auth.authStateReady();
@@ -43,7 +41,8 @@ export function listenMyNotificationFeed(
         if (auth.currentUser?.uid !== uid) throw new Error("uid");
       }
       if (stopped) return;
-      const ref = doc(getFirebaseFirestore(), NOTIFICATION_FEED_COLLECTION, uid);
+      const [db, { doc, onSnapshot }] = await Promise.all([getFirebaseFirestore(), import("firebase/firestore")]);
+      const ref = doc(db, NOTIFICATION_FEED_COLLECTION, uid);
       unsubscribe = onSnapshot(
         ref,
         (snap) => onData(snap.exists() ? (snap.data() as StoredNotificationFeed) : null),
