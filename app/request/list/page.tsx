@@ -69,6 +69,8 @@ function RequestListPageInner() {
   // và `id` luôn được ưu tiên để không mở nhầm (QA 05/10/2026).
   const selectedCode = searchParams.get("ma");
   const { getGroupById } = useRequestContext();
+  // Cơ sở tính "Trễ …" = cách tính hạn của nhóm (lib/request-overdue.ts).
+  const isWorkCalendarGroup = (gid: string | null) => (gid ? getGroupById(gid)?.slaByWorkCalendar === true : false);
   const group = scope === "group" && groupId ? getGroupById(groupId) : undefined;
   const { isAdmin } = useCurrentSession();
 
@@ -426,7 +428,7 @@ function RequestListPageInner() {
                       <th className="w-[10%] px-4 py-2.5 font-semibold">Nhóm</th>
                       <th className="px-4 py-2.5 font-semibold">Thông tin</th>
                       <th className="w-[12%] px-4 py-2.5 font-semibold">Người gửi</th>
-                      <th className="w-[230px] px-4 py-2.5 font-semibold">Người duyệt</th>
+                      <th className="w-[160px] px-4 py-2.5 font-semibold">Người duyệt</th>
                       <th className="w-[150px] px-4 py-2.5 font-semibold">Trạng thái</th>
                       <th className="w-[104px] px-4 py-2.5 text-right font-semibold">Ngày</th>
                     </tr>
@@ -520,10 +522,11 @@ function RequestListPageInner() {
                           <td className="px-4 py-2.5">
                             {!isDraft && r.approversSnapshot.length > 0 ? (
                               // Nhãn "⏰ Trễ …" ngay sau cụm avatar (demo
-                              // tre-han-va-hang-muc 09/10/2026); hẹp thì xuống dòng.
+                              // tre-han-va-hang-muc 09/10/2026). Cột giữ 160px như
+                              // cũ (không ép cột "Thông tin") → nhãn xuống dòng dưới avatar.
                               <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                                 <ApproverCluster request={r} avatars={avatars} />
-                                <OverduePill request={r} now={now} />
+                                <OverduePill request={r} now={now} workCalendar={isWorkCalendarGroup(r.groupId)} />
                               </span>
                             ) : (
                               <span className="text-gray-300">—</span>

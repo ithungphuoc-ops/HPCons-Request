@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { externalCodeRowMatches, filterExternalCodeRows } from "./external-code-search";
+import { contractSecondLine, externalCodeRowMatches, filterExternalCodeRows } from "./external-code-search";
 
 const contract = (code: string, cdt: string, work: string, project: string) => ({
   code,
@@ -59,5 +59,24 @@ describe("Nguồn khác giữ nguyên cách lọc cũ", () => {
   });
   it("khớp theo cột phụ", () => {
     expect(filterExternalCodeRows("congno_subcontractors", [ntp], "031234")).toHaveLength(1);
+  });
+});
+
+describe("contractSecondLine — dòng 2 Hạng mục · Công trình", () => {
+  const f = { code: "01/2026", work: "Phụ lục 02", project: "Nhà máy A", customerNameShort: "A" };
+  it("khớp theo mã: hiện cả hạng mục và công trình", () => {
+    expect(contractSecondLine(f, "code")).toEqual({ work: "Phụ lục 02", missingWork: false, project: "Nhà máy A" });
+  });
+  it("chưa có hạng mục → missingWork", () => {
+    expect(contractSecondLine({ ...f, work: "" }, "code")).toEqual({ work: null, missingWork: true, project: "Nhà máy A" });
+  });
+  it("matchField = work → không lặp hạng mục (kể cả 'Chưa có hạng mục')", () => {
+    expect(contractSecondLine(f, "work")).toEqual({ work: null, missingWork: false, project: "Nhà máy A" });
+  });
+  it("matchField = project → không lặp công trình", () => {
+    expect(contractSecondLine(f, "project")).toEqual({ work: "Phụ lục 02", missingWork: false, project: null });
+  });
+  it("không còn gì để hiện → null", () => {
+    expect(contractSecondLine({ ...f, project: "" }, "work")).toBeNull();
   });
 });

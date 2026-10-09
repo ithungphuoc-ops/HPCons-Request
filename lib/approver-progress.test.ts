@@ -97,7 +97,8 @@ describe("buildApproverProgress — luồng Lần lượt", () => {
     expect(rows[2].actualHours).toBeCloseTo(19.5, 5);
     expect(rows[2].late).toBe(true);
     expect(progressTimeLabel(rows[2])).toBe("Quá hạn");
-    expect(formatOverdue(rows[2].deadlineAt!, new Date(at(26)).getTime())).toBe("Quá hạn 3 giờ 30 phút");
+    // Từ 09/10/2026 dùng chung cách hiện với nhãn danh sách: bỏ phút lẻ khi >= 1 giờ.
+    expect(formatOverdue(rows[2].deadlineAt!, new Date(at(26)).getTime())).toBe("Quá hạn 3 giờ");
     expect(rows[3].status).toBe("waiting");
   });
 

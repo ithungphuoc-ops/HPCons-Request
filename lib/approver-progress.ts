@@ -18,6 +18,7 @@
  */
 import { canApproverAct } from "./approval-logic";
 import { businessHoursBetween } from "./business-hours";
+import { formatLatenessDuration, latenessMinutes } from "./request-overdue";
 import type { ApproverStepDef, ProposalGroup, RequestInstance } from "./types";
 
 /** Nhãn `RequestHistoryEntry.action` — PHẢI khớp đúng chuỗi các route đang ghi. */
@@ -309,14 +310,17 @@ export function formatCountdown(deadlineAt: string, now: number): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-/** "Quá hạn 3 giờ 30 phút" (giờ đồng hồ kể từ hạn). */
-export function formatOverdue(deadlineAt: string, now: number): string {
-  const minutes = Math.max(0, Math.floor((now - new Date(deadlineAt).getTime()) / 60000));
-  const days = Math.floor(minutes / 1440);
-  const hours = Math.floor((minutes % 1440) / 60);
-  const mins = minutes % 60;
-  const parts = [days ? `${days} ngày` : "", hours ? `${hours} giờ` : "", `${mins} phút`].filter(Boolean);
-  return `Quá hạn ${parts.join(" ")}`;
+/**
+ * "Quá hạn 1 ngày 3 giờ" — từ 09/10/2026 (review PR #98) dùng CHUNG
+ * `latenessMinutes`/`formatLatenessDuration` với nhãn "⏰ Trễ …" ở danh sách
+ * (lib/request-overdue.ts) để popup và dòng danh sách luôn cùng con số:
+ * `workCalendar` = nhóm bật SLA theo lịch làm việc → phút làm việc (1 ngày =
+ * 8,5 giờ), ngược lại giờ đồng hồ (1 ngày = 24 giờ). Bỏ phút lẻ khi >= 1 giờ.
+ * Chưa đủ 1 phút → "Vừa quá hạn".
+ */
+export function formatOverdue(deadlineAt: string, now: number, workCalendar = false): string {
+  const d = formatLatenessDuration(latenessMinutes(deadlineAt, now, workCalendar), workCalendar);
+  return d ? `Quá hạn ${d}` : "Vừa quá hạn";
 }
 
 /** "09:13 06/10/2026" theo giờ máy người xem. */

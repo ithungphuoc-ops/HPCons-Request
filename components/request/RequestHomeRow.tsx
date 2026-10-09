@@ -49,6 +49,7 @@ export default function RequestHomeRow({
   currentUid,
   searchText,
   now,
+  workCalendar,
   bookmarked,
   bookmarking,
   onToggleBookmark,
@@ -59,6 +60,8 @@ export default function RequestHomeRow({
   currentUid: string | null;
   searchText: string;
   now: number;
+  /** Nhóm bật "SLA theo lịch làm việc" — cơ sở tính nhãn "⏰ Trễ …". */
+  workCalendar: boolean;
   bookmarked: boolean;
   bookmarking: boolean;
   onToggleBookmark: () => void;
@@ -195,7 +198,7 @@ export default function RequestHomeRow({
                 </>
               )}
             </span>
-            <OverduePill request={r} now={now} />
+            <OverduePill request={r} now={now} workCalendar={workCalendar} />
           </>
         )}
       </div>

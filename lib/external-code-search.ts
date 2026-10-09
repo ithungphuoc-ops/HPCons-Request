@@ -62,3 +62,24 @@ export function filterExternalCodeRows<T extends ExternalCodeSearchRow>(
     })
     .slice(0, limit);
 }
+
+/**
+ * Dòng 2 của gợi ý Số Hợp Đồng CĐT: "Hạng mục: … · Công trình". Field nào
+ * đang là `matchField` (đã hiện to ở dòng 1 làm "mã") thì KHÔNG lặp lại ở
+ * đây (review PR #98). `missingWork` = hợp đồng chưa điền hạng mục → in
+ * nghiêng "Chưa có hạng mục". null = không còn gì để hiện.
+ */
+export interface ContractSecondLine {
+  work: string | null;
+  missingWork: boolean;
+  project: string | null;
+}
+
+export function contractSecondLine(fields: Record<string, string>, matchField: string): ContractSecondLine | null {
+  const showWork = matchField !== "work";
+  const work = showWork && fields.work ? fields.work : null;
+  const missingWork = showWork && !fields.work;
+  const project = matchField !== "project" && fields.project ? fields.project : null;
+  if (!work && !missingWork && !project) return null;
+  return { work, missingWork, project };
+}

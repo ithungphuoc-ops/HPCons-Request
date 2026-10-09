@@ -56,7 +56,7 @@ import TagUserInput from "@/components/shared/TagUserInput";
 import Avatar from "@/components/request/Avatar";
 import { useAvatarsByUids } from "@/lib/useAvatarsByUids";
 import { resolveExternalCodeLookup } from "@/lib/external-code-source-labels";
-import { filterExternalCodeRows } from "@/lib/external-code-search";
+import { contractSecondLine, filterExternalCodeRows } from "@/lib/external-code-search";
 import HighlightMatch from "@/components/shared/HighlightMatch";
 import { ntpVietTat } from "@/lib/ntp-viet-tat";
 import DatePicker from "@/components/ui/DatePicker";
@@ -2073,6 +2073,66 @@ function computeMatchedNote(sourceId: ExternalCodeSourceId, matchField: string, 
   return parts.length > 0 ? parts.join(" · ") : null;
 }
 
+/**
+ * Nội dung 1 dòng gợi ý Số Hợp Đồng CĐT (demo tre-han-va-hang-muc, Sếp duyệt
+ * 09/10/2026): dòng 1 mã + CĐT (mã khoá: ổ khoá + "Đã khóa" như cũ), dòng 2
+ * xám "Hạng mục · Công trình" — CẢ với mã khoá, để người dùng thấy vì sao
+ * dòng đó khớp. Field đang là `matchField` không lặp lại ở dòng 2.
+ */
+function ContractSuggestionBody({
+  row,
+  matchField,
+  query,
+}: {
+  row: ExternalCodeSuggestionRow;
+  matchField: string;
+  query: string;
+}) {
+  const line2 = contractSecondLine(row.rawFields, matchField);
+  return (
+    <>
+      <span className="flex min-w-0 items-center justify-between gap-3">
+        {row.khoa ? (
+          <span className="flex min-w-0 items-center gap-1.5 break-words text-gray-400">
+            <LockIcon className="h-3 w-3 shrink-0" />
+            <HighlightMatch text={row.code} query={query} />
+          </span>
+        ) : (
+          <span className="min-w-0 break-words font-medium text-gray-800">
+            <HighlightMatch text={row.code} query={query} />
+          </span>
+        )}
+        {row.khoa ? (
+          <span className="shrink-0 text-[12px] text-gray-400">Đã khóa</span>
+        ) : (
+          <span className="max-w-[45%] shrink-0 truncate text-[12px] uppercase text-gray-400" title={row.displayText}>
+            <HighlightMatch text={row.displayText} query={query} />
+          </span>
+        )}
+      </span>
+      {line2 && (
+        <span className={`mt-0.5 block break-words text-[12.5px] leading-[18px] ${row.khoa ? "text-gray-400" : "text-gray-500"}`}>
+          {line2.work && (
+            <>
+              Hạng mục:{" "}
+              <b className={`font-semibold ${row.khoa ? "text-gray-400" : "text-gray-800"}`}>
+                <HighlightMatch text={line2.work} query={query} />
+              </b>
+            </>
+          )}
+          {line2.missingWork && <i>Chưa có hạng mục</i>}
+          {line2.project && (
+            <>
+              {line2.work || line2.missingWork ? " · " : ""}
+              <HighlightMatch text={line2.project} query={query} />
+            </>
+          )}
+        </span>
+      )}
+    </>
+  );
+}
+
 function ShortTextWithExternalCodeLookup({
   groupId,
   fieldId,
@@ -2315,43 +2375,15 @@ function ShortTextWithExternalCodeLookup({
                 setOpen(false);
               }}
               className={
-                r.khoa
-                  ? "flex cursor-not-allowed items-center justify-between gap-3 px-3 py-1.5 text-[14px] text-gray-400"
-                  : isContractSource
-                    ? "cursor-pointer border-b border-gray-100 px-3 py-1.5 text-[14px] last:border-b-0 hover:bg-gray-50"
+                isContractSource
+                  ? `${r.khoa ? "cursor-not-allowed text-gray-400" : "cursor-pointer hover:bg-gray-50"} border-b border-gray-100 px-3 py-1.5 text-[14px] last:border-b-0`
+                  : r.khoa
+                    ? "flex cursor-not-allowed items-center justify-between gap-3 px-3 py-1.5 text-[14px] text-gray-400"
                     : "flex cursor-pointer items-center justify-between gap-3 px-3 py-1.5 text-[14px] hover:bg-gray-50"
               }
             >
-              {/* Mã khoá: hiển thị Y NGUYÊN như cũ (1 dòng, "Đã khóa"). */}
-              {isContractSource && !r.khoa ? (
-                <>
-                  <span className="flex min-w-0 items-center justify-between gap-3">
-                    <span className="min-w-0 break-words font-medium text-gray-800">
-                      <HighlightMatch text={r.code} query={highlightQuery} />
-                    </span>
-                    <span className="max-w-[45%] shrink-0 truncate text-[12px] uppercase text-gray-400" title={r.displayText}>
-                      <HighlightMatch text={r.displayText} query={highlightQuery} />
-                    </span>
-                  </span>
-                  <span className="mt-0.5 block break-words text-[12.5px] leading-[18px] text-gray-500">
-                    {r.rawFields.work ? (
-                      <>
-                        Hạng mục:{" "}
-                        <b className="font-semibold text-gray-800">
-                          <HighlightMatch text={r.rawFields.work} query={highlightQuery} />
-                        </b>
-                      </>
-                    ) : (
-                      <i>Chưa có hạng mục</i>
-                    )}
-                    {r.rawFields.project && (
-                      <>
-                        {" · "}
-                        <HighlightMatch text={r.rawFields.project} query={highlightQuery} />
-                      </>
-                    )}
-                  </span>
-                </>
+              {isContractSource ? (
+                <ContractSuggestionBody row={r} matchField={matchField} query={highlightQuery} />
               ) : (
                 <>
                   <span className={r.khoa ? "flex items-center gap-1.5 text-gray-400" : "flex items-center gap-1.5 text-gray-800"}>

@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { BUSINESS_DAY_MINUTES } from "./business-hours";
 import {
-  businessLatenessMinutes,
   currentApproverNames,
-  formatBusinessLateness,
+  formatLatenessLabel,
   formatVnDeadlineShort,
+  latenessMinutes,
   overduePillInfo,
 } from "./request-overdue";
+import { formatOverdue } from "./approver-progress";
+
+const businessLatenessMinutes = (deadlineAt: string, now: number) => latenessMinutes(deadlineAt, now, true);
+const formatBusinessLateness = (minutes: number) => formatLatenessLabel(minutes, true);
 import type { RequestInstance } from "./types";
 
 /** Mốc viết theo GIỜ VIỆT NAM tường minh — kết quả như nhau dù máy chạy test ở múi nào. */
@@ -119,10 +123,10 @@ describe("currentApproverNames", () => {
   });
 });
 
-describe("overduePillInfo — khi nào hiện nhãn", () => {
+describe("overduePillInfo — khi nào hiện nhãn (nhóm giờ làm việc)", () => {
   it("đang chờ duyệt + đã quá hạn → có nhãn đủ 3 thông tin", () => {
     // Hạn 9:00 T2, xem lúc 13:00 T3: T2 180' + 255' + T3 sáng 255' = 690' = 1 ngày 3 giờ.
-    const info = overduePillInfo(makeRequest(), TUE(13));
+    const info = overduePillInfo(makeRequest(), TUE(13), true);
     expect(info).toEqual({
       label: "Trễ 1 ngày 3 giờ",
       deadlineText: "Hạn duyệt: 05/10 09:00",
@@ -130,18 +134,57 @@ describe("overduePillInfo — khi nào hiện nhãn", () => {
     });
   });
   it("chưa tới hạn → không có nhãn", () => {
-    expect(overduePillInfo(makeRequest(), MON(8))).toBeNull();
+    expect(overduePillInfo(makeRequest(), MON(8), true)).toBeNull();
   });
   it("đã xử lý xong / nháp / bị trả lại → không có nhãn dù quá hạn", () => {
     for (const status of ["approved", "rejected", "returned", "draft"]) {
-      expect(overduePillInfo(makeRequest({ status } as Partial<RequestInstance>), TUE(13))).toBeNull();
+      expect(overduePillInfo(makeRequest({ status } as Partial<RequestInstance>), TUE(13), true)).toBeNull();
     }
   });
   it("không có hạn → không có nhãn", () => {
-    expect(overduePillInfo(makeRequest({ deadlineAt: null }), TUE(13))).toBeNull();
+    expect(overduePillInfo(makeRequest({ deadlineAt: null }), TUE(13), true)).toBeNull();
   });
   it("quá hạn ngoài giờ làm việc (chưa trôi phút làm việc nào) → 'Vừa trễ hạn'", () => {
-    const info = overduePillInfo(makeRequest({ deadlineAt: iso(MON(17, 15)) }), MON(20));
+    const info = overduePillInfo(makeRequest({ deadlineAt: iso(MON(17, 15)) }), MON(20), true);
     expect(info?.label).toBe("Vừa trễ hạn");
+  });
+});
+
+describe("nhóm SLA giờ đồng hồ — tính theo giờ đồng hồ", () => {
+  it("đếm cả đêm và Chủ nhật, 1 ngày = 24 giờ", () => {
+    // Hạn 9:00 T2 → 13:00 T3 = 28 giờ đồng hồ.
+    expect(latenessMinutes(iso(MON(9)), TUE(13), false)).toBe(28 * 60);
+    expect(formatLatenessLabel(28 * 60, false)).toBe("Trễ 1 ngày 4 giờ");
+    // Hạn 16:15 T7 → 8:45 T2 tuần sau = 40,5 giờ (nhóm giờ làm việc chỉ 120').
+    expect(latenessMinutes(iso(SAT(16, 15)), NEXT_MON(8, 45), false)).toBe(40 * 60 + 30);
+    expect(formatLatenessLabel(8 * 60 + 30, false)).toBe("Trễ 8 giờ");
+    expect(formatLatenessLabel(24 * 60, false)).toBe("Trễ 1 ngày");
+  });
+  it("buổi tối sau hạn 17:15 vẫn trễ theo giờ đồng hồ", () => {
+    const info = overduePillInfo(makeRequest({ deadlineAt: iso(MON(17, 15)) }), MON(20), false);
+    expect(info?.label).toBe("Trễ 2 giờ");
+  });
+  it("cùng đề xuất, khác cơ sở tính → khác con số", () => {
+    expect(overduePillInfo(makeRequest(), TUE(13), false)?.label).toBe("Trễ 1 ngày 4 giờ");
+    expect(overduePillInfo(makeRequest(), TUE(13), true)?.label).toBe("Trễ 1 ngày 3 giờ");
+  });
+  it("chưa đủ 1 phút → 'Vừa trễ hạn'", () => {
+    expect(overduePillInfo(makeRequest(), MON(9) + 30_000, false)?.label).toBe("Vừa trễ hạn");
+  });
+});
+
+describe("popup Tiến trình (formatOverdue) khớp nhãn danh sách", () => {
+  it.each([
+    [true, TUE(13)],
+    [false, TUE(13)],
+    [true, NEXT_MON(10)],
+    [false, NEXT_MON(10)],
+    [true, MON(9, 40)],
+  ])("workCalendar=%s", (workCalendar, now) => {
+    const label = overduePillInfo(makeRequest(), now, workCalendar)!.label;
+    expect(formatOverdue(iso(MON(9)), now, workCalendar)).toBe(label.replace(/^Trễ /, "Quá hạn "));
+  });
+  it("0 phút làm việc → 'Vừa quá hạn'", () => {
+    expect(formatOverdue(iso(MON(17, 15)), MON(20), true)).toBe("Vừa quá hạn");
   });
 });

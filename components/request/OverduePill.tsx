@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { overduePillInfo } from "@/lib/request-overdue";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { latenessMinutes, overduePillInfo } from "@/lib/request-overdue";
 import type { RequestInstance } from "@/lib/types";
 
 /**
@@ -9,15 +9,33 @@ import type { RequestInstance } from "@/lib/types";
  * lib/request-overdue.ts). Rê chuột / focus bàn phím / chạm (điện thoại) hiện
  * hộp nhỏ: hạn duyệt (giờ VN) + người đang giữ.
  *
+ * `workCalendar` = nhóm của đề xuất bật "SLA theo lịch làm việc" — nơi gọi tra
+ * qua getGroupById(); không tìm thấy nhóm → false (giờ đồng hồ), giống popup
+ * "Tiến trình của người duyệt".
+ *
  * Hộp chi tiết dùng `position: fixed` theo toạ độ nhãn — vì cả bảng danh sách
  * (overflow-x-auto) lẫn khung Trang chủ (overflow-hidden) đều cắt mất phần
  * tử `absolute` tràn ra ngoài khung.
  *
- * Nhãn nằm TRONG dòng có thể bấm để mở đề xuất → chặn click/phím nổi bọt lên
- * dòng (Enter/Space trên nhãn chỉ bật/tắt hộp chi tiết, không mở đề xuất).
+ * Nhãn nằm TRONG dòng có thể bấm để mở đề xuất → chặn click và Enter/Space
+ * nổi bọt lên dòng (Enter/Space trên nhãn chỉ mở hộp chi tiết, không mở đề xuất).
  */
-export default function OverduePill({ request, now }: { request: RequestInstance; now: number }) {
-  const info = overduePillInfo(request, now);
+export default function OverduePill({
+  request,
+  now,
+  workCalendar,
+}: {
+  request: RequestInstance;
+  now: number;
+  workCalendar: boolean;
+}) {
+  const overdue = request.status === "pending" && !!request.deadlineAt;
+  // Memo theo đúng [hạn, now, cơ sở tính] — phần nặng nhất (đi lịch làm việc).
+  const minutes = useMemo(
+    () => (overdue && request.deadlineAt ? latenessMinutes(request.deadlineAt, now, workCalendar) : 0),
+    [overdue, request.deadlineAt, now, workCalendar],
+  );
+  const info = overduePillInfo(request, now, workCalendar, minutes);
   const ref = useRef<HTMLButtonElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
 
@@ -31,15 +49,22 @@ export default function OverduePill({ request, now }: { request: RequestInstance
   };
   const hide = () => setPos(null);
 
-  // Cuộn/đổi cỡ cửa sổ thì toạ độ fixed không còn đúng → đóng hộp.
+  // Đang mở: cuộn/đổi cỡ cửa sổ (toạ độ fixed không còn đúng) hoặc chạm/bấm
+  // RA NGOÀI nhãn → đóng. pointerdown cần cho iPhone: Safari không phải lúc
+  // nào cũng blur nút khi chạm vào vùng không focus được.
   useEffect(() => {
     if (!pos) return;
     const close = () => setPos(null);
+    const onPointerDown = (e: PointerEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setPos(null);
+    };
     window.addEventListener("scroll", close, true);
     window.addEventListener("resize", close);
+    document.addEventListener("pointerdown", onPointerDown);
     return () => {
       window.removeEventListener("scroll", close, true);
       window.removeEventListener("resize", close);
+      document.removeEventListener("pointerdown", onPointerDown);
     };
   }, [pos]);
 
@@ -53,7 +78,6 @@ export default function OverduePill({ request, now }: { request: RequestInstance
         type="button"
         aria-label={fullText}
         title={fullText}
-        aria-expanded={pos !== null}
         onMouseEnter={show}
         onMouseLeave={hide}
         onFocus={show}
@@ -61,13 +85,13 @@ export default function OverduePill({ request, now }: { request: RequestInstance
         onClick={(e) => {
           // Chỉ MỞ, không bật/tắt: trên điện thoại 1 lần chạm sinh liền
           // mouseenter → focus → click, bật/tắt sẽ đóng ngay hộp vừa mở.
-          // Đóng bằng chạm ra ngoài (blur), rời chuột, cuộn hoặc Esc.
+          // Đóng bằng chạm ra ngoài, rời chuột, cuộn hoặc Esc.
           e.stopPropagation();
           show();
         }}
         onKeyDown={(e) => {
-          e.stopPropagation();
-          if (e.key === "Escape") hide();
+          if (e.key === "Enter" || e.key === " ") e.stopPropagation();
+          else if (e.key === "Escape") hide();
         }}
         className="inline-flex shrink-0 cursor-default items-center gap-1 whitespace-nowrap rounded-full bg-red-50 px-2 py-0.5 text-[12px] font-bold leading-[18px] text-[var(--color-danger-red)] dark:bg-red-500/10"
       >

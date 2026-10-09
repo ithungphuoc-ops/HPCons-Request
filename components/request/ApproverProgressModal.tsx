@@ -66,7 +66,7 @@ function TimePill({ row }: { row: ApproverProgressRow }) {
   );
 }
 
-function Deadline({ row, now }: { row: ApproverProgressRow; now: number }) {
+function Deadline({ row, now, workCalendar }: { row: ApproverProgressRow; now: number; workCalendar: boolean }) {
   if (row.status !== "current" || !row.deadlineAt) return <span className="text-gray-400">—</span>;
   const late = new Date(row.deadlineAt).getTime() <= now;
   return (
@@ -77,7 +77,7 @@ function Deadline({ row, now }: { row: ApproverProgressRow; now: number }) {
           late ? "text-[var(--color-danger-red)]" : "text-[var(--color-action-blue)]"
         }`}
       >
-        {late ? formatOverdue(row.deadlineAt, now) : `Còn ${formatCountdown(row.deadlineAt, now)}`}
+        {late ? formatOverdue(row.deadlineAt, now, workCalendar) : `Còn ${formatCountdown(row.deadlineAt, now)}`}
       </div>
     </div>
   );
@@ -180,7 +180,7 @@ export default function ApproverProgressModal({
                   </td>
                   <td className="px-2 py-3 pt-3.5">{hoursCell(row)}</td>
                   <td className="px-2 py-3 pt-3.5">
-                    <Deadline row={row} now={now} />
+                    <Deadline row={row} now={now} workCalendar={workCalendar} />
                   </td>
                 </tr>
               ))}
@@ -202,7 +202,7 @@ export default function ApproverProgressModal({
                   <div className="mt-2 flex items-start justify-between gap-2 text-[13px]">
                     <span className="text-gray-500">Thời hạn</span>
                     <span className="text-right">
-                      <Deadline row={row} now={now} />
+                      <Deadline row={row} now={now} workCalendar={workCalendar} />
                     </span>
                   </div>
                 )}
