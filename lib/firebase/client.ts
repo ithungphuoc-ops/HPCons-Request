@@ -1,13 +1,6 @@
-import { initializeApp, getApps, getApp, type FirebaseOptions } from "firebase/app";
-import {
-  getAuth,
-  initializeAuth,
-  indexedDBLocalPersistence,
-  browserLocalPersistence,
-  signInWithCustomToken,
-  type Auth,
-} from "firebase/auth";
-import { getFirestore, type Firestore } from "firebase/firestore";
+import type { FirebaseApp, FirebaseOptions } from "firebase/app";
+import type { Auth } from "firebase/auth";
+import type { Firestore } from "firebase/firestore";
 
 /**
  * Firebase Client SDK cho project riêng của base-request-app ("hpcons-request")
@@ -20,9 +13,16 @@ import { getFirestore, type Firestore } from "firebase/firestore";
  * undefined` vì app này KHÔNG BAO GIỜ dùng signInWithPopup/signInWithRedirect
  * (đã rà toàn repo, không có chỗ nào gọi) — bỏ được việc SDK tự tải iframe
  * "ẩn" (~93KB script + 1 vòng round-trip xác thực iframe) mà `getAuth()` mặc
- * định khởi tạo cho popup/redirect resolver dù không dùng tới. Đo Lighthouse
- * mobile trên lần vào đầu tiên (chưa có phiên lưu sẵn): LCP 5.6s -> xem demo
- * tong-quan-demo/base-request-app/an-chuoi-xac-thuc-mobile-2026-10-09.
+ * định khởi tạo cho popup/redirect resolver dù không dùng tới.
+ *
+ * TOÀN BỘ module `firebase/app`, `firebase/auth`, `firebase/firestore` được
+ * tải bằng `import()` ĐỘNG (không `import` tĩnh ở đầu file) — đo thật trên
+ * production 09/10/2026 cho thấy dù đã bỏ iframe thừa, riêng việc Firebase
+ * SDK (~100KB) nằm trong gói JS tải ngay từ đầu (cùng lúc với React/Next.js)
+ * vẫn chiếm phần lớn trong ~4.5s đầu trước khi trang hiện được gì — real-time
+ * (chuông, bình luận) vốn đã là "có thì tốt, lỗi thì thôi" (xem comment ở
+ * ensureFirebaseSignedIn), nên tải SAU khi trang chính đã hiện xong là hợp
+ * lý. Xem demo tong-quan-demo/base-request-app/an-chuoi-xac-thuc-mobile-2026-10-09.
  */
 
 const firebaseConfig: FirebaseOptions = {
@@ -34,34 +34,42 @@ const firebaseConfig: FirebaseOptions = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
-let authInstance: Auth | undefined;
-let dbInstance: Firestore | undefined;
-
-function getFirebaseApp() {
-  return getApps().length ? getApp() : initializeApp(firebaseConfig);
-}
-
-export function getFirebaseAuth(): Auth {
-  if (authInstance) return authInstance;
-  const app = getFirebaseApp();
-  try {
-    authInstance = initializeAuth(app, {
-      persistence: [indexedDBLocalPersistence, browserLocalPersistence],
-      popupRedirectResolver: undefined,
-    });
-  } catch {
-    // Da duoc khoi tao truoc do (vd Fast Refresh, nhieu lan import) -> dung lai instance co san
-    authInstance = getAuth(app);
-  }
-  return authInstance;
-}
-
-export function getFirebaseFirestore(): Firestore {
-  dbInstance ??= getFirestore(getFirebaseApp());
-  return dbInstance;
-}
-
+let appPromise: Promise<FirebaseApp> | undefined;
+let authPromise: Promise<Auth> | undefined;
+let dbPromise: Promise<Firestore> | undefined;
 let signInPromise: Promise<void> | undefined;
+
+function getFirebaseApp(): Promise<FirebaseApp> {
+  appPromise ??= import("firebase/app").then(({ initializeApp, getApps, getApp }) =>
+    getApps().length ? getApp() : initializeApp(firebaseConfig),
+  );
+  return appPromise;
+}
+
+export function getFirebaseAuth(): Promise<Auth> {
+  authPromise ??= (async () => {
+    const [app, { getAuth, initializeAuth, indexedDBLocalPersistence, browserLocalPersistence }] =
+      await Promise.all([getFirebaseApp(), import("firebase/auth")]);
+    try {
+      return initializeAuth(app, {
+        persistence: [indexedDBLocalPersistence, browserLocalPersistence],
+        popupRedirectResolver: undefined,
+      });
+    } catch {
+      // Da duoc khoi tao truoc do (vd Fast Refresh, nhieu lan import) -> dung lai instance co san
+      return getAuth(app);
+    }
+  })();
+  return authPromise;
+}
+
+export function getFirebaseFirestore(): Promise<Firestore> {
+  dbPromise ??= (async () => {
+    const [app, { getFirestore }] = await Promise.all([getFirebaseApp(), import("firebase/firestore")]);
+    return getFirestore(app);
+  })();
+  return dbPromise;
+}
 
 /**
  * Đăng nhập Firebase "ẩn" bằng custom token (server xác minh session SSO) —
@@ -72,7 +80,7 @@ let signInPromise: Promise<void> | undefined;
 export function ensureFirebaseSignedIn(): Promise<void> {
   signInPromise ??= (async () => {
     try {
-      const auth = getFirebaseAuth();
+      const [auth, { signInWithCustomToken }] = await Promise.all([getFirebaseAuth(), import("firebase/auth")]);
       // Chờ Firebase khôi phục phiên đã nhớ (IndexedDB) rồi mới kiểm tra —
       // kiểm tra ngay thì `currentUser` luôn null lúc mới tải trang, mỗi lần
       // mở trang lại xin token mới dù đã đăng nhập từ trước (cùng cách vá ở
