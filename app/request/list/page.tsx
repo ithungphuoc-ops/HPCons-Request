@@ -8,6 +8,7 @@ import RequestStatusBadge, { STATUS_LABEL } from "@/components/request/RequestSt
 import RequestDetailView from "@/components/request/RequestDetailView";
 import Avatar from "@/components/request/Avatar";
 import ApproverCluster from "@/components/request/ApproverCluster";
+import OverduePill from "@/components/request/OverduePill";
 import { useRequestContext } from "@/context/RequestContext";
 import { canAdjustAfterApproval } from "@/lib/adjustment-settings";
 import { primaryButtonClass } from "@/components/shared/form-styles";
@@ -425,7 +426,7 @@ function RequestListPageInner() {
                       <th className="w-[10%] px-4 py-2.5 font-semibold">Nhóm</th>
                       <th className="px-4 py-2.5 font-semibold">Thông tin</th>
                       <th className="w-[12%] px-4 py-2.5 font-semibold">Người gửi</th>
-                      <th className="w-[160px] px-4 py-2.5 font-semibold">Người duyệt</th>
+                      <th className="w-[230px] px-4 py-2.5 font-semibold">Người duyệt</th>
                       <th className="w-[150px] px-4 py-2.5 font-semibold">Trạng thái</th>
                       <th className="w-[104px] px-4 py-2.5 text-right font-semibold">Ngày</th>
                     </tr>
@@ -518,7 +519,12 @@ function RequestListPageInner() {
                           </td>
                           <td className="px-4 py-2.5">
                             {!isDraft && r.approversSnapshot.length > 0 ? (
-                              <ApproverCluster request={r} avatars={avatars} />
+                              // Nhãn "⏰ Trễ …" ngay sau cụm avatar (demo
+                              // tre-han-va-hang-muc 09/10/2026); hẹp thì xuống dòng.
+                              <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                <ApproverCluster request={r} avatars={avatars} />
+                                <OverduePill request={r} now={now} />
+                              </span>
                             ) : (
                               <span className="text-gray-300">—</span>
                             )}

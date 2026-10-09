@@ -56,6 +56,8 @@ import TagUserInput from "@/components/shared/TagUserInput";
 import Avatar from "@/components/request/Avatar";
 import { useAvatarsByUids } from "@/lib/useAvatarsByUids";
 import { resolveExternalCodeLookup } from "@/lib/external-code-source-labels";
+import { filterExternalCodeRows } from "@/lib/external-code-search";
+import HighlightMatch from "@/components/shared/HighlightMatch";
 import { ntpVietTat } from "@/lib/ntp-viet-tat";
 import DatePicker from "@/components/ui/DatePicker";
 import Modal from "@/components/shared/Modal";
@@ -2177,22 +2179,13 @@ function ShortTextWithExternalCodeLookup({
   // (Chrome/Edge coi khớp nếu chứa từng phần bất kỳ đâu, không ưu tiên khớp
   // đầu chuỗi) — Sếp phản hồi thật: gõ "02/2026" vẫn thấy "01-05/2026/..."
   // hiện lên. Tự lọc + sắp xếp để kiểm soát đúng, ưu tiên mã BẮT ĐẦU bằng
-  // đúng những gì đang gõ lên trước.
-  const query = value.trim().toLowerCase();
-  const filtered = (query
-    ? rows.filter(
-        (r) => r.code.toLowerCase().includes(query) || r.displayText.toLowerCase().includes(query),
-      )
-    : rows
-  )
-    .slice()
-    .sort((a, b) => {
-      const aStarts = a.code.toLowerCase().startsWith(query) ? 0 : 1;
-      const bStarts = b.code.toLowerCase().startsWith(query) ? 0 : 1;
-      if (aStarts !== bStarts) return aStarts - bStarts;
-      return a.code.localeCompare(b.code);
-    })
-    .slice(0, 30);
+  // đúng những gì đang gõ lên trước. Logic lọc ở lib/external-code-search.ts
+  // (Số Hợp Đồng CĐT tìm thêm theo hạng mục/công trình, không dấu — 09/10/2026).
+  const filtered = filterExternalCodeRows(sourceId, rows, value);
+  // Số Hợp Đồng CĐT: dòng 2 "Hạng mục · Công trình" + tô phần khớp (demo
+  // tre-han-va-hang-muc, Sếp duyệt 09/10/2026). Nguồn khác giữ 1 dòng như cũ.
+  const isContractSource = sourceId === "congno_contracts";
+  const highlightQuery = isContractSource ? value.trim() : "";
 
   const canAddNew = sourceId === "congno_subcontractors";
   const trimmedQuery = value.trim();
@@ -2306,7 +2299,9 @@ function ShortTextWithExternalCodeLookup({
         }}
       />
       {open && (filtered.length > 0 || (canAddNew && trimmedQuery)) && (
-        <ul className="absolute left-0 right-0 top-full z-20 mt-1 max-h-56 overflow-y-auto rounded-[3px] border border-gray-200 bg-white py-1 shadow-lg">
+        <ul
+          className={`absolute left-0 right-0 top-full z-20 mt-1 ${isContractSource ? "max-h-80" : "max-h-56"} overflow-y-auto rounded-[3px] border border-gray-200 bg-white py-1 shadow-lg`}
+        >
           {filtered.map((r) => (
             <li
               key={r.code}
@@ -2322,14 +2317,50 @@ function ShortTextWithExternalCodeLookup({
               className={
                 r.khoa
                   ? "flex cursor-not-allowed items-center justify-between gap-3 px-3 py-1.5 text-[14px] text-gray-400"
-                  : "flex cursor-pointer items-center justify-between gap-3 px-3 py-1.5 text-[14px] hover:bg-gray-50"
+                  : isContractSource
+                    ? "cursor-pointer border-b border-gray-100 px-3 py-1.5 text-[14px] last:border-b-0 hover:bg-gray-50"
+                    : "flex cursor-pointer items-center justify-between gap-3 px-3 py-1.5 text-[14px] hover:bg-gray-50"
               }
             >
-              <span className={r.khoa ? "flex items-center gap-1.5 text-gray-400" : "flex items-center gap-1.5 text-gray-800"}>
-                {r.khoa && <LockIcon className="h-3 w-3 shrink-0" />}
-                {r.code}
-              </span>
-              <span className="text-[12px] text-gray-400">{r.khoa ? "Đã khóa" : r.displayText}</span>
+              {/* Mã khoá: hiển thị Y NGUYÊN như cũ (1 dòng, "Đã khóa"). */}
+              {isContractSource && !r.khoa ? (
+                <>
+                  <span className="flex min-w-0 items-center justify-between gap-3">
+                    <span className="min-w-0 break-words font-medium text-gray-800">
+                      <HighlightMatch text={r.code} query={highlightQuery} />
+                    </span>
+                    <span className="max-w-[45%] shrink-0 truncate text-[12px] uppercase text-gray-400" title={r.displayText}>
+                      <HighlightMatch text={r.displayText} query={highlightQuery} />
+                    </span>
+                  </span>
+                  <span className="mt-0.5 block break-words text-[12.5px] leading-[18px] text-gray-500">
+                    {r.rawFields.work ? (
+                      <>
+                        Hạng mục:{" "}
+                        <b className="font-semibold text-gray-800">
+                          <HighlightMatch text={r.rawFields.work} query={highlightQuery} />
+                        </b>
+                      </>
+                    ) : (
+                      <i>Chưa có hạng mục</i>
+                    )}
+                    {r.rawFields.project && (
+                      <>
+                        {" · "}
+                        <HighlightMatch text={r.rawFields.project} query={highlightQuery} />
+                      </>
+                    )}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className={r.khoa ? "flex items-center gap-1.5 text-gray-400" : "flex items-center gap-1.5 text-gray-800"}>
+                    {r.khoa && <LockIcon className="h-3 w-3 shrink-0" />}
+                    {r.code}
+                  </span>
+                  <span className="text-[12px] text-gray-400">{r.khoa ? "Đã khóa" : r.displayText}</span>
+                </>
+              )}
             </li>
           ))}
           {canAddNew && trimmedQuery && (

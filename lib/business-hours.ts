@@ -15,6 +15,14 @@ const AFTERNOON_END = 17 * 60 + 15; // 17:15
 const SUNDAY = 0;
 
 /**
+ * Số PHÚT làm việc của 1 ngày hành chính theo đúng khung trên (4h15 sáng +
+ * 4h15 chiều = 510 phút = 8,5 giờ). Dùng để quy đổi "1 ngày" khi hiện thời
+ * gian trễ hạn theo giờ làm việc (lib/request-overdue.ts) — đổi khung giờ ở
+ * đây thì "1 ngày" tự đổi theo.
+ */
+export const BUSINESS_DAY_MINUTES = MORNING_END - MORNING_START + (AFTERNOON_END - AFTERNOON_START);
+
+/**
  * Mọi phép tính giờ hành chính đi theo GIỜ VIỆT NAM cố định (UTC+7, VN không
  * đổi giờ mùa hè) — KHÔNG dùng getHours()/setHours() vì đó là giờ của MÁY
  * ĐANG CHẠY: máy chủ Vercel chạy UTC nên trước 05/10/2026 khung 7:45–17:15 bị
