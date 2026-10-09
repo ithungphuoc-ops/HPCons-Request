@@ -96,3 +96,39 @@ describe("giờ Việt Nam cố định, không phụ thuộc múi giờ máy ch
     expect(businessHoursBetween(from, addBusinessHours(from, 8))).toBeCloseTo(8, 5);
   });
 });
+
+/**
+ * Bản tham chiếu = cách tính CŨ (đi từng phút trong khung giờ VN) — để chứng
+ * minh phần nhảy cóc nguyên tuần (review PR #98) không đổi kết quả.
+ */
+function naiveBusinessMinutes(from: Date, to: Date): number {
+  let total = 0;
+  for (let t = Math.ceil(from.getTime() / 60000) * 60000; t < to.getTime(); t += 60000) {
+    const wall = new Date(t + VN);
+    if (wall.getUTCDay() === 0) continue;
+    const m = wall.getUTCHours() * 60 + wall.getUTCMinutes();
+    if ((m >= 465 && m < 720) || (m >= 780 && m < 1035)) total += 1;
+  }
+  return total;
+}
+
+describe("businessHoursBetween — nhảy cóc nguyên tuần", () => {
+  it("trễ 1 năm cho đúng kết quả như đi từng phút", () => {
+    const from = at(MONDAY, 9, 17);
+    const to = new Date(from.getTime() + 365 * 24 * 3600_000 + 5 * 3600_000 + 7 * 60_000);
+    expect(Math.round(businessHoursBetween(from, to) * 60)).toBe(naiveBusinessMinutes(from, to));
+  });
+  it.each([
+    ["Thứ 7 chiều → 3 tuần sau Chủ nhật", () => at(SATURDAY, 16, 0), 21 * 24 + 23],
+    ["tối Thứ 6 → 10 tuần sau", () => at(FRIDAY, 20, 30), 70 * 24 + 13],
+    ["nghỉ trưa Thứ 2 → 2 tuần + 5 giờ", () => at(MONDAY, 12, 30), 14 * 24 + 5],
+  ])("%s", (_name, mkFrom, plusHours) => {
+    const from = (mkFrom as () => Date)();
+    const to = new Date(from.getTime() + (plusHours as number) * 3600_000);
+    expect(Math.round(businessHoursBetween(from, to) * 60)).toBe(naiveBusinessMinutes(from, to));
+  });
+  it("trọn 1 tuần = 6 ngày × 8,5 giờ", () => {
+    const from = at(MONDAY, 9, 0);
+    expect(businessHoursBetween(from, new Date(from.getTime() + 7 * 24 * 3600_000))).toBeCloseTo(51, 9);
+  });
+});

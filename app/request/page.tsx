@@ -6,6 +6,7 @@ import { Download, ListFilter, Plus, Search } from "lucide-react";
 import GroupPickerModal from "@/components/request/GroupPickerModal";
 import RequestHomeRow from "@/components/request/RequestHomeRow";
 import { primaryButtonClass } from "@/components/shared/form-styles";
+import { useRequestContext } from "@/context/RequestContext";
 import { useCurrentSession } from "@/lib/useCurrentSession";
 import { useDirectoryAvatars } from "@/lib/useDirectoryAvatars";
 import { exportRequestsToExcel } from "@/lib/request-export-excel";
@@ -79,6 +80,8 @@ const PAGE_SIZE = 20;
 export default function RequestHomePage() {
   const router = useRouter();
   const { session } = useCurrentSession();
+  // Cơ sở tính nhãn "⏰ Trễ …" = cách tính hạn của nhóm (lib/request-overdue.ts).
+  const { getGroupById } = useRequestContext();
   const currentUid = session?.uid ?? null;
 
   const [requests, setRequests] = useState<RequestInstance[]>([]);
@@ -340,6 +343,7 @@ export default function RequestHomePage() {
                 currentUid={currentUid}
                 searchText={searchText}
                 now={now}
+                workCalendar={r.groupId ? getGroupById(r.groupId)?.slaByWorkCalendar === true : false}
                 bookmarked={currentUid !== null && (r.bookmarkedByUids ?? []).includes(currentUid)}
                 bookmarking={bookmarkingIds.has(r.id)}
                 onToggleBookmark={() => toggleBookmark(r.id)}

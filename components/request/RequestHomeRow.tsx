@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link2, MoreHorizontal, SquareArrowOutUpRight, Star } from "lucide-react";
 import Avatar from "@/components/request/Avatar";
 import ApproverCluster from "@/components/request/ApproverCluster";
+import OverduePill from "@/components/request/OverduePill";
 import RequestStatusBadge from "@/components/request/RequestStatusBadge";
 import HighlightMatch from "@/components/shared/HighlightMatch";
 import { draftLinkFor, matchedTableCell, notableFieldParts, submitterInitial } from "@/lib/request-list-format";
@@ -48,6 +49,7 @@ export default function RequestHomeRow({
   currentUid,
   searchText,
   now,
+  workCalendar,
   bookmarked,
   bookmarking,
   onToggleBookmark,
@@ -58,6 +60,8 @@ export default function RequestHomeRow({
   currentUid: string | null;
   searchText: string;
   now: number;
+  /** Nhóm bật "SLA theo lịch làm việc" — cơ sở tính nhãn "⏰ Trễ …". */
+  workCalendar: boolean;
   bookmarked: boolean;
   bookmarking: boolean;
   onToggleBookmark: () => void;
@@ -168,27 +172,33 @@ export default function RequestHomeRow({
       </div>
 
       {/* E+F. Người gửi › người duyệt */}
-      <div className="flex items-center gap-1.5 overflow-hidden">
+      {/* Nhãn "⏰ Trễ …" (demo tre-han-va-hang-muc 09/10/2026) nằm sau cụm
+          avatar; cột chỉ 196px nên khi không đủ chỗ nhãn tự xuống dòng dưới —
+          phần người gửi › người duyệt vẫn giữ 1 dòng như cũ (bọc riêng). */}
+      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 overflow-hidden">
         {isDraft ? (
           <span className="text-[12px] text-gray-400">— chưa gửi —</span>
         ) : (
           <>
-            <Avatar
-              url={avatars[r.submittedBy.uid]}
-              initial={submitterInitial(r)}
-              name={r.submittedBy.name}
-              size={22}
-              fallbackClassName="bg-blue-100 text-[var(--color-action-blue)]"
-            />
-            <span className="w-[76px] shrink-0 truncate text-[12.5px] text-gray-700">
-              {r.submittedBy.uid === currentUid ? "Bạn" : <HighlightMatch text={r.submittedBy.name} query={searchText} />}
+            <span className="flex min-w-0 items-center gap-1.5 overflow-hidden">
+              <Avatar
+                url={avatars[r.submittedBy.uid]}
+                initial={submitterInitial(r)}
+                name={r.submittedBy.name}
+                size={22}
+                fallbackClassName="bg-blue-100 text-[var(--color-action-blue)]"
+              />
+              <span className="w-[76px] shrink-0 truncate text-[12.5px] text-gray-700">
+                {r.submittedBy.uid === currentUid ? "Bạn" : <HighlightMatch text={r.submittedBy.name} query={searchText} />}
+              </span>
+              {r.approversSnapshot.length > 0 && (
+                <>
+                  <span className="shrink-0 text-gray-300">›</span>
+                  <ApproverCluster request={r} avatars={avatars} />
+                </>
+              )}
             </span>
-            {r.approversSnapshot.length > 0 && (
-              <>
-                <span className="shrink-0 text-gray-300">›</span>
-                <ApproverCluster request={r} avatars={avatars} />
-              </>
-            )}
+            <OverduePill request={r} now={now} workCalendar={workCalendar} />
           </>
         )}
       </div>

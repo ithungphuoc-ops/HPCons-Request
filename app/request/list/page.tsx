@@ -8,6 +8,7 @@ import RequestStatusBadge, { STATUS_LABEL } from "@/components/request/RequestSt
 import RequestDetailView from "@/components/request/RequestDetailView";
 import Avatar from "@/components/request/Avatar";
 import ApproverCluster from "@/components/request/ApproverCluster";
+import OverduePill from "@/components/request/OverduePill";
 import { useRequestContext } from "@/context/RequestContext";
 import { canAdjustAfterApproval } from "@/lib/adjustment-settings";
 import { primaryButtonClass } from "@/components/shared/form-styles";
@@ -68,6 +69,8 @@ function RequestListPageInner() {
   // và `id` luôn được ưu tiên để không mở nhầm (QA 05/10/2026).
   const selectedCode = searchParams.get("ma");
   const { getGroupById } = useRequestContext();
+  // Cơ sở tính "Trễ …" = cách tính hạn của nhóm (lib/request-overdue.ts).
+  const isWorkCalendarGroup = (gid: string | null) => (gid ? getGroupById(gid)?.slaByWorkCalendar === true : false);
   const group = scope === "group" && groupId ? getGroupById(groupId) : undefined;
   const { isAdmin } = useCurrentSession();
 
@@ -518,7 +521,13 @@ function RequestListPageInner() {
                           </td>
                           <td className="px-4 py-2.5">
                             {!isDraft && r.approversSnapshot.length > 0 ? (
-                              <ApproverCluster request={r} avatars={avatars} />
+                              // Nhãn "⏰ Trễ …" ngay sau cụm avatar (demo
+                              // tre-han-va-hang-muc 09/10/2026). Cột giữ 160px như
+                              // cũ (không ép cột "Thông tin") → nhãn xuống dòng dưới avatar.
+                              <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                <ApproverCluster request={r} avatars={avatars} />
+                                <OverduePill request={r} now={now} workCalendar={isWorkCalendarGroup(r.groupId)} />
+                              </span>
                             ) : (
                               <span className="text-gray-300">—</span>
                             )}

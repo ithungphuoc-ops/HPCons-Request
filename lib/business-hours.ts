@@ -15,6 +15,14 @@ const AFTERNOON_END = 17 * 60 + 15; // 17:15
 const SUNDAY = 0;
 
 /**
+ * Số PHÚT làm việc của 1 ngày hành chính theo đúng khung trên (4h15 sáng +
+ * 4h15 chiều = 510 phút = 8,5 giờ). Dùng để quy đổi "1 ngày" khi hiện thời
+ * gian trễ hạn theo giờ làm việc (lib/request-overdue.ts) — đổi khung giờ ở
+ * đây thì "1 ngày" tự đổi theo.
+ */
+export const BUSINESS_DAY_MINUTES = MORNING_END - MORNING_START + (AFTERNOON_END - AFTERNOON_START);
+
+/**
  * Mọi phép tính giờ hành chính đi theo GIỜ VIỆT NAM cố định (UTC+7, VN không
  * đổi giờ mùa hè) — KHÔNG dùng getHours()/setHours() vì đó là giờ của MÁY
  * ĐANG CHẠY: máy chủ Vercel chạy UTC nên trước 05/10/2026 khung 7:45–17:15 bị
@@ -22,6 +30,10 @@ const SUNDAY = 0;
  * Cách làm: dời mốc +7h rồi đọc/ghi bằng getUTC*()/setUTC*().
  */
 const VN_OFFSET_MS = 7 * 60 * 60 * 1000;
+
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+/** 6 ngày làm việc (Thứ 2–Thứ 7) mỗi tuần, tính bằng mili-giây. */
+const BUSINESS_WEEK_MS = 6 * BUSINESS_DAY_MINUTES * 60 * 1000;
 
 function vnWall(date: Date): Date {
   return new Date(date.getTime() + VN_OFFSET_MS);
@@ -110,8 +122,17 @@ export function businessHoursBetween(from: Date, to: Date): number {
   if (!(to.getTime() > from.getTime())) return 0;
   let cursor = toNextBusinessMoment(from);
   let totalMs = 0;
-  // Mỗi vòng đi hết 1 khung giờ (sáng/chiều) — giới hạn ~10 năm khung giờ để
-  // không treo nếu dữ liệu ngày giờ lỗi.
+  // Nhảy cóc NGUYÊN TUẦN trước (09/10/2026, review PR #98): mỗi 7 ngày lịch
+  // luôn có đúng 6 ngày làm việc × BUSINESS_DAY_MINUTES, và cursor + 7 ngày
+  // vẫn là cùng thứ/cùng giờ VN (VN không đổi giờ mùa hè) — nên đề xuất trễ
+  // cả năm không phải đi từng khung giờ. Phần lẻ < 1 tuần đi bình thường.
+  const wholeWeeks = Math.floor((to.getTime() - cursor.getTime()) / WEEK_MS);
+  if (wholeWeeks > 0) {
+    totalMs += wholeWeeks * BUSINESS_WEEK_MS;
+    cursor = new Date(cursor.getTime() + wholeWeeks * WEEK_MS);
+  }
+  // Mỗi vòng đi hết 1 khung giờ (sáng/chiều) — phần còn lại < 1 tuần nên
+  // tối đa ~14 vòng; giới hạn vẫn giữ để không treo nếu dữ liệu ngày giờ lỗi.
   for (let guard = 0; guard < 8000 && cursor.getTime() < to.getTime(); guard += 1) {
     const m = minutesOfDay(cursor);
     const windowEnd = atMinutesOfDay(cursor, m < MORNING_END ? MORNING_END : AFTERNOON_END);
