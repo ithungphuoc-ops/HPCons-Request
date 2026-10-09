@@ -2,9 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { doc, onSnapshot } from "firebase/firestore";
-import { signInWithCustomToken } from "firebase/auth";
 import { Check, Lock, Paperclip, Pencil, Send, Trash2, X } from "lucide-react";
-import { getFirebaseAuth, getFirebaseFirestore } from "@/lib/firebase/client";
+import { ensureFirebaseSignedIn, getFirebaseFirestore } from "@/lib/firebase/client";
 import { useRequestContext } from "@/context/RequestContext";
 import FilePreviewModal from "@/components/request/FilePreviewModal";
 import type { RequestAttachment, RequestComment, TaggedUser } from "@/lib/types";
@@ -161,13 +160,7 @@ export default function CommentSection({
 
     (async () => {
       try {
-        const auth = getFirebaseAuth();
-        if (!auth.currentUser) {
-          const res = await fetch("/api/auth/firebase-token", { method: "POST" });
-          if (!res.ok) return;
-          const { token } = (await res.json()) as { token: string };
-          await signInWithCustomToken(auth, token);
-        }
+        await ensureFirebaseSignedIn();
         if (cancelled) return;
 
         const db = getFirebaseFirestore();

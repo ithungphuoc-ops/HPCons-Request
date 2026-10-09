@@ -4,6 +4,7 @@ import {
   initializeAuth,
   indexedDBLocalPersistence,
   browserLocalPersistence,
+  signInWithCustomToken,
   type Auth,
 } from "firebase/auth";
 import { getFirestore, type Firestore } from "firebase/firestore";
@@ -58,4 +59,33 @@ export function getFirebaseAuth(): Auth {
 export function getFirebaseFirestore(): Firestore {
   dbInstance ??= getFirestore(getFirebaseApp());
   return dbInstance;
+}
+
+let signInPromise: Promise<void> | undefined;
+
+/**
+ * Đăng nhập Firebase "ẩn" bằng custom token (server xác minh session SSO) —
+ * dùng chung cho mọi nơi cần nghe real-time (chuông thông báo, bình luận).
+ * Gom 1 chỗ để tránh lặp code + tránh 2 nơi cùng mint token/sign-in song song
+ * nếu cả hai mount gần như cùng lúc (vd mở thẳng trang chi tiết đề xuất).
+ */
+export function ensureFirebaseSignedIn(): Promise<void> {
+  signInPromise ??= (async () => {
+    try {
+      const auth = getFirebaseAuth();
+      // Chờ Firebase khôi phục phiên đã nhớ (IndexedDB) rồi mới kiểm tra —
+      // kiểm tra ngay thì `currentUser` luôn null lúc mới tải trang, mỗi lần
+      // mở trang lại xin token mới dù đã đăng nhập từ trước (cùng cách vá ở
+      // notification-feed-listener.ts).
+      await auth.authStateReady();
+      if (auth.currentUser) return;
+      const res = await fetch("/api/auth/firebase-token", { method: "POST" });
+      if (!res.ok) throw new Error("token");
+      const { token } = (await res.json()) as { token: string };
+      await signInWithCustomToken(auth, token);
+    } finally {
+      signInPromise = undefined;
+    }
+  })();
+  return signInPromise;
 }
