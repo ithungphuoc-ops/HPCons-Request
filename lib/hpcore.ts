@@ -95,6 +95,18 @@ function isFresh(entry: CachedVerification, nowMs: number): boolean {
   return nowMs < entry.cacheExpiresAtMs && nowMs < entry.tokenExpiresAtMs;
 }
 
+/**
+ * Dọn các mục đã hết hạn (cửa sổ 60s HOẶC hạn thật token) trước khi thêm
+ * mục mới — nếu không, cookie hết hạn/đăng xuất mà không bao giờ bị gọi lại
+ * sẽ nằm mãi trong Map tới khi instance khởi động lại (góp ý CodeRabbit,
+ * review PR #101).
+ */
+function pruneExpired(nowMs: number): void {
+  for (const [key, entry] of verifyCache) {
+    if (!isFresh(entry, nowMs)) verifyCache.delete(key);
+  }
+}
+
 async function verifyHpcoreLive(cookie: string): Promise<HpcoreIdentity | null> {
   try {
     const decoded = await getHpcoreAuth().verifySessionCookie(cookie, true);
@@ -105,6 +117,7 @@ async function verifyHpcoreLive(cookie: string): Promise<HpcoreIdentity | null> 
     }
     const identity: HpcoreIdentity = { uid: decoded.uid, email };
     const now = Date.now();
+    pruneExpired(now);
     verifyCache.set(cookie, {
       identity,
       tokenExpiresAtMs: decoded.exp * 1000,
@@ -153,4 +166,9 @@ export async function verifyHpcore(
   const promise = verifyHpcoreLive(cookie).finally(() => inFlight.delete(cookie));
   if (!fresh) inFlight.set(cookie, promise);
   return promise;
+}
+
+/** CHỈ dùng trong test (lib/hpcore.test.ts) để xác nhận cache không rò bộ nhớ. */
+export function __debugCacheSize(): number {
+  return verifyCache.size;
 }

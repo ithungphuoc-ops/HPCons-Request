@@ -154,6 +154,23 @@ describe("Tài khoản bị khoá/thu hồi (checkRevoked)", () => {
   });
 });
 
+describe("Dọn cache hết hạn (góp ý CodeRabbit PR #101 — tránh rò bộ nhớ theo thời gian)", () => {
+  it("cookie cũ hết hạn, không ai hỏi lại -> bị dọn khi có cookie khác xác minh mới", async () => {
+    const hpcore = await napLai();
+    verifySessionCookieMock.mockImplementation(async (cookie: string) =>
+      decoded({ uid: cookie, exp: Math.floor(Date.now() / 1000) + 30 }), // het han that sau 30s
+    );
+
+    await hpcore.verifyHpcore("cookie-cu", { fresh: false });
+    expect(hpcore.__debugCacheSize()).toBe(1);
+
+    vi.advanceTimersByTime(31_000); // cookie-cu da het han that, khong ai goi lai no
+
+    await hpcore.verifyHpcore("cookie-moi", { fresh: false }); // xac minh song -> kich hoat don don
+    expect(hpcore.__debugCacheSize()).toBe(1); // cookie-cu da bi don, chi con cookie-moi
+  });
+});
+
 describe("Chống gọi trùng đồng thời (request coalescing) — chỉ áp dụng fresh:false", () => {
   it("5 lượt gọi CÙNG LÚC (fresh:false, cùng cookie) -> chỉ 1 lượt xác minh mạng thật", async () => {
     const { verifyHpcore } = await napLai();
