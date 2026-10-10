@@ -88,20 +88,32 @@ interface CachedVerification {
 }
 
 const CACHE_TTL_MS = 60_000;
+// Chỉ quét dọn tối đa 1 lần mỗi 60s — route fresh:true (duyệt/đổi quyền...)
+// cũng đi qua verifyHpcoreLive mỗi lần gọi, nếu dọn ở MỌI lần ghi thì mỗi
+// request kiểu đó phải quét hết cache dù không hề dùng tới nó (góp ý
+// CodeRabbit, review PR #101, lần 2).
+const PRUNE_INTERVAL_MS = 60_000;
 const verifyCache = new Map<string, CachedVerification>();
 const inFlight = new Map<string, Promise<HpcoreIdentity | null>>();
+let lastPruneAtMs = 0;
 
 function isFresh(entry: CachedVerification, nowMs: number): boolean {
   return nowMs < entry.cacheExpiresAtMs && nowMs < entry.tokenExpiresAtMs;
 }
 
 /**
- * Dọn các mục đã hết hạn (cửa sổ 60s HOẶC hạn thật token) trước khi thêm
- * mục mới — nếu không, cookie hết hạn/đăng xuất mà không bao giờ bị gọi lại
- * sẽ nằm mãi trong Map tới khi instance khởi động lại (góp ý CodeRabbit,
- * review PR #101).
+ * Dọn các mục đã hết hạn (cửa sổ 60s HOẶC hạn thật token) — nếu không, cookie
+ * hết hạn/đăng xuất mà không bao giờ bị gọi lại sẽ nằm mãi trong Map tới khi
+ * instance khởi động lại (góp ý CodeRabbit, review PR #101). Tự giới hạn tần
+ * suất quét (tối đa 1 lần/60s) để route fresh:true không phải trả giá quét
+ * toàn bộ cache cho mỗi lần gọi.
  */
+let debugPruneRunCount = 0;
+
 function pruneExpired(nowMs: number): void {
+  if (nowMs - lastPruneAtMs < PRUNE_INTERVAL_MS) return;
+  lastPruneAtMs = nowMs;
+  debugPruneRunCount += 1;
   for (const [key, entry] of verifyCache) {
     if (!isFresh(entry, nowMs)) verifyCache.delete(key);
   }
@@ -171,4 +183,9 @@ export async function verifyHpcore(
 /** CHỈ dùng trong test (lib/hpcore.test.ts) để xác nhận cache không rò bộ nhớ. */
 export function __debugCacheSize(): number {
   return verifyCache.size;
+}
+
+/** CHỈ dùng trong test — đếm số lần THỰC SỰ quét dọn (bỏ qua các lần bị throttle). */
+export function __debugPruneRunCount(): number {
+  return debugPruneRunCount;
 }

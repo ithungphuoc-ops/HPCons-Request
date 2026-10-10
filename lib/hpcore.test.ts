@@ -164,10 +164,33 @@ describe("Dọn cache hết hạn (góp ý CodeRabbit PR #101 — tránh rò b�
     await hpcore.verifyHpcore("cookie-cu", { fresh: false });
     expect(hpcore.__debugCacheSize()).toBe(1);
 
-    vi.advanceTimersByTime(31_000); // cookie-cu da het han that, khong ai goi lai no
+    // Qua ca han that cua token (30s) LAN qua khoang gian doi quet toi thieu
+    // (60s, xem pruneExpired) de lan xac minh sau chac chan kich hoat don.
+    vi.advanceTimersByTime(61_000);
 
     await hpcore.verifyHpcore("cookie-moi", { fresh: false }); // xac minh song -> kich hoat don don
     expect(hpcore.__debugCacheSize()).toBe(1); // cookie-cu da bi don, chi con cookie-moi
+  });
+
+  it("nhiều lần xác minh mới (kể cả fresh:true, vd route duyệt) cách nhau DƯỚI 60s -> chỉ thực sự quét dọn 1 lần, không quét mọi lần ghi (góp ý CodeRabbit, review PR #101 lần 2)", async () => {
+    const hpcore = await napLai();
+    verifySessionCookieMock.mockResolvedValue(decoded());
+
+    await hpcore.verifyHpcore("cookie-1", { fresh: false });
+    expect(hpcore.__debugPruneRunCount()).toBe(1);
+
+    vi.advanceTimersByTime(5_000);
+    await hpcore.verifyHpcore("cookie-2", { fresh: true }); // route "duyệt" — vẫn đi qua verifyHpcoreLive
+    vi.advanceTimersByTime(5_000);
+    await hpcore.verifyHpcore("cookie-3", { fresh: true });
+
+    // Cả 2 lần ghi sau (cách lần quét trước chỉ 5s và 10s, đều < 60s) KHÔNG
+    // kích hoạt quét thêm.
+    expect(hpcore.__debugPruneRunCount()).toBe(1);
+
+    vi.advanceTimersByTime(55_000); // tổng cộng đã hơn 60s kể từ lần quét đầu
+    await hpcore.verifyHpcore("cookie-4", { fresh: true });
+    expect(hpcore.__debugPruneRunCount()).toBe(2);
   });
 });
 
