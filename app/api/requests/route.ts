@@ -67,9 +67,13 @@ const toRequest = (summary: boolean) => (doc: QueryDocumentSnapshot<DocumentData
 
 export async function GET(request: Request) {
   try {
-    const session = await requireSession();
     const params = new URL(request.url).searchParams;
     const scope = params.get("scope") ?? "mine";
+    // `scope=system` đọc TOÀN BỘ đề xuất kể cả đã xoá mềm (chỉ admin/owner) —
+    // coi là dữ liệu nhạy cảm, luôn xác minh thu hồi mới. Các scope còn lại
+    // là danh sách đọc hàng ngày (mine/sent-to-me/following/all/inbox...) —
+    // cho phép cache 60s xác minh phiên (xem lib/hpcore.ts).
+    const session = await requireSession({ fresh: scope === "system" });
     // Chỉ nhận bản gọn cho scope=all (Trang chủ): bản gọn bỏ `viewedAt`, scope khác như
     // following-unseen cần nó (hasUnseenUpdate) — gọi nhầm cũng không ra kết quả sai.
     const summary = scope === "all" && params.get("view") === "summary";

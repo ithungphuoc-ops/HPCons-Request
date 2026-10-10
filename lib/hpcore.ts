@@ -56,17 +56,136 @@ export interface HpcoreIdentity {
   email: string;
 }
 
-/** Xác minh cookie phiên app tổng → { uid, email } hoặc null */
-export async function verifyHpcore(
-  cookie: string | undefined,
-): Promise<HpcoreIdentity | null> {
-  if (!cookie) return null;
+/**
+ * Cache ngắn hạn cho kết quả xác minh phiên — chỉ dùng cho những nơi ĐỌC dữ
+ * liệu thông thường (xem `verifyHpcore`). Đo thật 10/10/2026 trên production:
+ * `verifySessionCookie(cookie, true)` (checkRevoked) một mình tốn ~0.43s mỗi
+ * lần — gọi mạng thật sang Google (Identity Toolkit `accounts:lookup`),
+ * KHÔNG đụng Firestore, không ảnh hưởng lượt đọc/ghi dữ liệu đề xuất.
+ *
+ * QUAN TRỌNG — cache KHÔNG được kéo dài hạn cookie thật: mỗi mục cache lưu
+ * kèm `exp` thật lấy từ JWT đã giải mã; `isFresh()` luôn kiểm tra cả cửa sổ
+ * 60s LẪN hạn thật, dùng số nhỏ hơn — token hết hạn giữa cửa sổ 60s thì bị
+ * coi là hết hạn ngay, không "ăn theo" cache.
+ *
+ * Giới hạn đã biết (Sếp cần biết trước khi đánh giá hiệu quả): cache này
+ * nằm trong bộ nhớ của 1 tiến trình (instance) Next.js — đo thật cho thấy
+ * nhiều request gửi ĐỒNG THỜI (vd lúc tải 1 trang) thường rơi vào NHIỀU
+ * instance Vercel khác nhau (xác nhận qua header `x-vercel-id` khác nhau ở
+ * 5/5 request đồng thời), nên cache này không gom được các lượt gọi đồng
+ * thời đó — nó giúp cho các lượt gọi TUẦN TỰ (vd chuyển trang sau đó, hoặc
+ * nhiều component tái render) rơi vào lại đúng instance vừa xác minh xong.
+ * Phần "gọi trùng cùng lúc" được xử lý ở phía trình duyệt (xem
+ * lib/useCurrentSession.ts — gộp 8 nơi gọi độc lập thành 1 Context dùng
+ * chung) vì đó mới là chỗ chặn được tận gốc.
+ */
+interface CachedVerification {
+  identity: HpcoreIdentity;
+  /** Mốc hết hạn THẬT của cookie (ms, từ decoded.exp) — không bao giờ phục vụ cache qua mốc này. */
+  tokenExpiresAtMs: number;
+  /** Mốc cache hết hạn theo cửa sổ 60s. */
+  cacheExpiresAtMs: number;
+}
+
+const CACHE_TTL_MS = 60_000;
+// Chỉ quét dọn tối đa 1 lần mỗi 60s — route fresh:true (duyệt/đổi quyền...)
+// cũng đi qua verifyHpcoreLive mỗi lần gọi, nếu dọn ở MỌI lần ghi thì mỗi
+// request kiểu đó phải quét hết cache dù không hề dùng tới nó (góp ý
+// CodeRabbit, review PR #101, lần 2).
+const PRUNE_INTERVAL_MS = 60_000;
+const verifyCache = new Map<string, CachedVerification>();
+const inFlight = new Map<string, Promise<HpcoreIdentity | null>>();
+let lastPruneAtMs = 0;
+
+function isFresh(entry: CachedVerification, nowMs: number): boolean {
+  return nowMs < entry.cacheExpiresAtMs && nowMs < entry.tokenExpiresAtMs;
+}
+
+/**
+ * Dọn các mục đã hết hạn (cửa sổ 60s HOẶC hạn thật token) — nếu không, cookie
+ * hết hạn/đăng xuất mà không bao giờ bị gọi lại sẽ nằm mãi trong Map tới khi
+ * instance khởi động lại (góp ý CodeRabbit, review PR #101). Tự giới hạn tần
+ * suất quét (tối đa 1 lần/60s) để route fresh:true không phải trả giá quét
+ * toàn bộ cache cho mỗi lần gọi.
+ */
+let debugPruneRunCount = 0;
+
+function pruneExpired(nowMs: number): void {
+  if (nowMs - lastPruneAtMs < PRUNE_INTERVAL_MS) return;
+  lastPruneAtMs = nowMs;
+  debugPruneRunCount += 1;
+  for (const [key, entry] of verifyCache) {
+    if (!isFresh(entry, nowMs)) verifyCache.delete(key);
+  }
+}
+
+async function verifyHpcoreLive(cookie: string): Promise<HpcoreIdentity | null> {
   try {
     const decoded = await getHpcoreAuth().verifySessionCookie(cookie, true);
     const email = (decoded.email ?? "").trim().toLowerCase();
-    if (!email) return null;
-    return { uid: decoded.uid, email };
+    if (!email) {
+      verifyCache.delete(cookie);
+      return null;
+    }
+    const identity: HpcoreIdentity = { uid: decoded.uid, email };
+    const now = Date.now();
+    pruneExpired(now);
+    verifyCache.set(cookie, {
+      identity,
+      tokenExpiresAtMs: decoded.exp * 1000,
+      cacheExpiresAtMs: now + CACHE_TTL_MS,
+    });
+    return identity;
   } catch {
+    verifyCache.delete(cookie);
     return null;
   }
+}
+
+export interface VerifyHpcoreOptions {
+  /**
+   * `true` (mặc định) — LUÔN xác minh thu hồi mới, không dùng cache. Dùng
+   * cho MỌI thao tác duyệt/từ chối, đổi quyền, cấu hình nhóm, hoặc đọc dữ
+   * liệu nhạy cảm (vd `scope=system` — toàn bộ đề xuất kể cả đã xoá).
+   *
+   * `false` — cho phép dùng cache tới 60s, chỉ dùng cho những route ĐỌC
+   * thông thường, tần suất cao (vd `/api/session`, danh sách đề xuất hàng
+   * ngày, danh sách nhóm) — xem các route đã bật cờ này để biết danh sách
+   * đầy đủ, KHÔNG tự ý thêm route mới vào danh sách "đọc thường" mà không
+   * cân nhắc lại.
+   */
+  fresh?: boolean;
+}
+
+/** Xác minh cookie phiên app tổng → { uid, email } hoặc null */
+export async function verifyHpcore(
+  cookie: string | undefined,
+  options: VerifyHpcoreOptions = {},
+): Promise<HpcoreIdentity | null> {
+  if (!cookie) return null;
+  const fresh = options.fresh ?? true;
+
+  if (!fresh) {
+    const cached = verifyCache.get(cookie);
+    if (cached && isFresh(cached, Date.now())) return cached.identity;
+  }
+
+  if (!fresh) {
+    const existing = inFlight.get(cookie);
+    if (existing) return existing;
+  }
+
+  const promise = verifyHpcoreLive(cookie).finally(() => inFlight.delete(cookie));
+  if (!fresh) inFlight.set(cookie, promise);
+  return promise;
+}
+
+/** CHỈ dùng trong test (lib/hpcore.test.ts) để xác nhận cache không rò bộ nhớ. */
+export function __debugCacheSize(): number {
+  return verifyCache.size;
+}
+
+/** CHỈ dùng trong test — đếm số lần THỰC SỰ quét dọn (bỏ qua các lần bị throttle). */
+export function __debugPruneRunCount(): number {
+  return debugPruneRunCount;
 }
