@@ -13,7 +13,9 @@ import type { CategoryGroup, ProposalGroup } from "@/lib/types";
 
 export async function GET() {
   try {
-    const session = await requireSession();
+    // Danh sách nhóm đề xuất để hiện UI (vd sidebar "Tạo đề xuất") — đọc
+    // thông thường, không duyệt/đổi quyền → cho phép cache 60s (lib/hpcore.ts).
+    const session = await requireSession({ fresh: false });
 
     const [categoriesSnap, groupsSnap] = await Promise.all([
       adminDb.collection("categories").orderBy("code").get(),

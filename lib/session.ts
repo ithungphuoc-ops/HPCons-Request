@@ -2,7 +2,7 @@ import "server-only";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { unstable_cache } from "next/cache";
-import { SSO_COOKIE_NAME, getHpcoreDb, hpcoreLoginUrl, verifyHpcore } from "@/lib/hpcore";
+import { SSO_COOKIE_NAME, getHpcoreDb, hpcoreLoginUrl, verifyHpcore, type VerifyHpcoreOptions } from "@/lib/hpcore";
 import { canManageGroupsAtAppScope, type Role } from "@/lib/permissions";
 
 export interface Session {
@@ -62,10 +62,17 @@ const DEV_FALLBACK_USER: Session = {
   avatarUrl: null,
 };
 
-/** Phiên hiện tại, hoặc null nếu chưa đăng nhập. Không tự chuyển hướng. */
-export async function getSession(): Promise<Session | null> {
+/**
+ * Phiên hiện tại, hoặc null nếu chưa đăng nhập. Không tự chuyển hướng.
+ *
+ * `options.fresh` chuyển thẳng xuống `verifyHpcore` — mặc định `true` (luôn
+ * xác minh thu hồi mới). Chỉ truyền `{ fresh: false }` ở route ĐỌC dữ liệu
+ * thông thường, tần suất cao — xem comment đầy đủ ở `VerifyHpcoreOptions`
+ * trong lib/hpcore.ts trước khi thêm route mới vào danh sách này.
+ */
+export async function getSession(options: VerifyHpcoreOptions = {}): Promise<Session | null> {
   const jar = await cookies();
-  const identity = await verifyHpcore(jar.get(SSO_COOKIE_NAME)?.value);
+  const identity = await verifyHpcore(jar.get(SSO_COOKIE_NAME)?.value, options);
 
   if (!identity) {
     // Local dev chưa có SSO thật → dùng user giả (owner) để phát triển được.
@@ -81,8 +88,8 @@ export class AuthError extends Error {}
 export class ForbiddenError extends Error {}
 
 /** Dùng trong API route: ném lỗi thay vì chuyển hướng, route tự map ra HTTP status. */
-export async function requireSession(): Promise<Session> {
-  const session = await getSession();
+export async function requireSession(options: VerifyHpcoreOptions = {}): Promise<Session> {
+  const session = await getSession(options);
   if (!session) throw new AuthError("Chưa đăng nhập.");
   return session;
 }
