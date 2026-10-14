@@ -289,6 +289,29 @@ async function layTaiLieuDinhKem(request: RequestInstance): Promise<ThuMuaTaiLie
  * 🔴 KHÔNG gate theo công trình — đề xuất phòng ban (không có field "Tên đề xuất" hoặc field
  * đó rỗng) VẪN gửi, chỉ để `congTrinhChuoi` rỗng.
  */
+/**
+ * Ô "Bộ phận" của đề xuất. Chuẩn là ô kiểu `department_select` ("Chọn bộ phận", tự lấy từ phòng ban App Tổng).
+ *
+ * ★ NGOẠI LỆ CHO NHÓM EQUI (14/10/2026): biểu mẫu các nhóm "03 - EQUI" khai ô "Bộ phận" là ô chọn thường
+ * (`single_choice`), không phải `department_select`. Không có ô chuẩn thì `phongBan` rỗng → đề xuất bị coi là
+ * "không đủ dữ liệu gửi Thu mua" dù đã có bảng vật tư (đo thật: 000000246, 000000247). Với nhóm có đuôi "(EQUI)"
+ * thì nhận ô chọn thường có tên đúng là "Bộ phận" / "Chọn bộ phận" (cho phép đánh số đầu tên).
+ *
+ * 🔴 CHỈ NHÓM "(EQUI)" — mọi nhóm khác giữ nguyên hành vi cũ (chỉ nhận `department_select`). Nới cho cả hệ thống
+ * là cho đề xuất của các nhóm khác (vốn không muốn sang Thu mua) tự chảy sang. Muốn bỏ ngoại lệ này: đổi ô
+ * thành "Chọn bộ phận" ở biểu mẫu rồi xoá hàm này.
+ */
+export function timOBoPhan(
+  request: Pick<RequestInstance, "fieldsSnapshot" | "groupNameSnapshot">,
+): ProposalField | undefined {
+  const chuan = request.fieldsSnapshot.find((f) => f.dataType === "department_select");
+  if (chuan) return chuan;
+  if (!/\(\s*equi\s*\)\s*$/i.test((request.groupNameSnapshot ?? "").trim())) return undefined;
+  return request.fieldsSnapshot.find(
+    (f) => f.dataType === "single_choice" && /^\s*(\d+\.?\s*)?(chọn\s+)?bộ\s+phận\s*$/i.test(f.name ?? ""),
+  );
+}
+
 export async function trichXuatPayloadThuMua(request: RequestInstance): Promise<ThuMuaPayload | null> {
   if (!request.code) return null;
 
@@ -318,7 +341,7 @@ export async function trichXuatPayloadThuMua(request: RequestInstance): Promise<
     .filter((v) => v.tenVatTu && v.soLuong > 0);
   if (vatTu.length === 0) return null;
 
-  const departmentField = request.fieldsSnapshot.find((f) => f.dataType === "department_select");
+  const departmentField = timOBoPhan(request);
   const phongBan = departmentField ? String(request.values[departmentField.id] ?? "").trim() : "";
   if (!phongBan) return null;
 
