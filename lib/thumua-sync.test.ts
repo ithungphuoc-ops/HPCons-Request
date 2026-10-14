@@ -356,6 +356,41 @@ describe("nhomDeXuat — gửi tên nhóm để Thu mua rẽ kho EQUI (14/10/202
   });
 });
 
+describe("ô Bộ phận kiểu chọn thường — chỉ cho nhóm (EQUI) (14/10/2026, ca 000000246/000000247)", () => {
+  const boPhanChon = { id: "f_bp_chon", code: null, name: "Bộ phận", dataType: "single_choice" } as unknown as ProposalField;
+  const lopKhac = { id: "f_nhom", code: null, name: "Nhóm đề xuất", dataType: "single_choice" } as unknown as ProposalField;
+  const req = (groupName: string, fields: ProposalField[], values: Record<string, unknown>) =>
+    baseRequest({
+      groupNameSnapshot: groupName,
+      fieldsSnapshot: fields,
+      values: { f_ct: [["Hàng A", "Loại B", "Cái", "199", "Test"]], ...values },
+    });
+  it("nhóm (EQUI) + ô 'Bộ phận' kiểu chọn thường → vẫn gửi, phòng ban lấy từ ô đó", async () => {
+    const p = await trichXuatPayloadThuMua(req("1.0. Phiếu đề nghị (EQUI)", [boPhanChon, detailField], { f_bp_chon: "Bộ phận sản xuất" }));
+    expect(p?.phongBan).toBe("Bộ phận sản xuất");
+    expect(p?.nhomDeXuat).toBe("1.0. Phiếu đề nghị (EQUI)");
+  });
+  it("tên ô có đánh số đầu hoặc 'Chọn bộ phận' vẫn nhận", async () => {
+    for (const ten of ["05. Bộ phận", "Chọn bộ phận", "  bộ  phận "]) {
+      const f = { ...boPhanChon, name: ten } as ProposalField;
+      expect((await trichXuatPayloadThuMua(req("0. Đề xuất trực tiếp (EQUI)", [f, detailField], { f_bp_chon: "Kho" })))?.phongBan).toBe("Kho");
+    }
+  });
+  it("nhóm KHÔNG phải EQUI + ô chọn thường → như cũ: không gửi (null)", async () => {
+    expect(await trichXuatPayloadThuMua(req("1.0. Phiếu đề nghị", [boPhanChon, detailField], { f_bp_chon: "Bộ phận sản xuất" }))).toBeNull();
+  });
+  it("nhóm (EQUI) nhưng ô chọn thường tên khác 'Bộ phận' → không đoán, null", async () => {
+    expect(await trichXuatPayloadThuMua(req("1.0. Phiếu đề nghị (EQUI)", [lopKhac, detailField], { f_nhom: "Vật tư" }))).toBeNull();
+  });
+  it("có ô 'Chọn bộ phận' chuẩn thì ưu tiên ô chuẩn, kể cả nhóm EQUI", async () => {
+    const p = await trichXuatPayloadThuMua(req("1.0. Phiếu đề nghị (EQUI)", [boPhanChon, deptField, detailField], { f_bp_chon: "Sai", f_bp: "Phòng Kế toán" }));
+    expect(p?.phongBan).toBe("Phòng Kế toán");
+  });
+  it("nhóm (EQUI) nhưng ô Bộ phận để trống → null (không gửi phòng ban rỗng)", async () => {
+    expect(await trichXuatPayloadThuMua(req("1.0. Phiếu đề nghị (EQUI)", [boPhanChon, detailField], { f_bp_chon: "" }))).toBeNull();
+  });
+});
+
 describe("layLoaiDeNghiGuiSangThuMua", () => {
   /* Nhãn lấy đúng như biểu mẫu thật; mã trường cố ý là UUID khác nhau ở mỗi ca để chứng minh
      hàm KHÔNG dựa vào mã. Phía Thu mua đã đo ba mã khác nhau cho cùng một ô. */
