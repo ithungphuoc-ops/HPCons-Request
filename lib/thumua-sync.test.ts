@@ -328,6 +328,34 @@ describe("xacDinhLoaiDeNghi — L02 luôn gửi loại đề nghị (03/10/2026)
   });
 });
 
+describe("nhomDeXuat — gửi tên nhóm để Thu mua rẽ kho EQUI (14/10/2026)", () => {
+  const reqCoNhom = (ten: string, groupId: string | null = "g1") =>
+    baseRequest({
+      groupId,
+      groupNameSnapshot: ten,
+      fieldsSnapshot: [deptField, detailField],
+      values: { f_bp: "Phòng Kế toán", f_ct: [["Máy in", "", "cái", "1", ""]] },
+    });
+  it("gửi nguyên văn tên nhóm", async () => {
+    expect((await trichXuatPayloadThuMua(reqCoNhom("1.0. Phiếu đề nghị (EQUI)")))?.nhomDeXuat).toBe(
+      "1.0. Phiếu đề nghị (EQUI)",
+    );
+  });
+  it("bỏ khoảng trắng hai đầu nhưng không đổi nội dung", async () => {
+    expect((await trichXuatPayloadThuMua(reqCoNhom("  0. Đề xuất trực tiếp (EQUI) ")))?.nhomDeXuat).toBe(
+      "0. Đề xuất trực tiếp (EQUI)",
+    );
+  });
+  it("đề xuất trực tiếp (groupId null) vẫn gửi tên đang có; tên trống thì vắng mặt", async () => {
+    expect((await trichXuatPayloadThuMua(reqCoNhom("0. Đề xuất trực tiếp (EQUI)", null)))?.nhomDeXuat).toBe(
+      "0. Đề xuất trực tiếp (EQUI)",
+    );
+    const trong = await trichXuatPayloadThuMua(reqCoNhom("   "));
+    expect(trong).not.toBeNull();
+    expect(trong && "nhomDeXuat" in trong).toBe(false);
+  });
+});
+
 describe("layLoaiDeNghiGuiSangThuMua", () => {
   /* Nhãn lấy đúng như biểu mẫu thật; mã trường cố ý là UUID khác nhau ở mỗi ca để chứng minh
      hàm KHÔNG dựa vào mã. Phía Thu mua đã đo ba mã khác nhau cho cùng một ô. */

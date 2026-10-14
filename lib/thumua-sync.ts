@@ -105,6 +105,18 @@ export type ThuMuaPayload = {
    * phép suy dự phòng — ĐỪNG đoán bừa rồi gửi sang.
    */
   loaiDeNghi?: "cong_trinh" | "phong_ban";
+  /**
+   * TÊN NHÓM đề xuất lúc gửi (`groupNameSnapshot`), vd `"1.0. Phiếu đề nghị (EQUI)"`. Thêm 14/10/2026.
+   *
+   * 🔴 VÌ SAO THÊM: Thu mua có "Quy trình mua hàng EQUI" chạy trên kho riêng, và đề xuất thuộc các nhóm
+   * "03 - EQUI" liên quan mua hàng phải tự chảy sang đó (Sếp duyệt demo 14/10/2026). Thu mua KHÔNG đọc
+   * chéo được app này (không có khoá `hpcons-request`) nên phải được nói thẳng ở đây — cùng lý do với
+   * `loaiDeNghi` và `nguoiTheoDoi` phía trên. Thu mua tự quyết nhóm nào thuộc EQUI, app này chỉ báo tên.
+   *
+   * ⚠️ Gửi NGUYÊN VĂN, không tự cắt/đổi. "Đề xuất trực tiếp" (`groupId = null`) cũng gửi tên đang có.
+   * Vắng mặt khi tên trống — Thu mua coi như không rõ nhóm và để vào kho thường, không đoán.
+   */
+  nhomDeXuat?: string;
 };
 
 /** Chuẩn hoá nhãn để so sánh: bỏ dấu cách thừa, không phân biệt hoa thường. */
@@ -317,6 +329,7 @@ export async function trichXuatPayloadThuMua(request: RequestInstance): Promise<
   const nguoiTheoDoi = layNguoiTheoDoiGuiSangThuMua(request.followers);
   /* L02 (03/10/2026): luôn có loại, trừ ca mâu thuẫn (null → không kèm, hàng chờ coi là lỗi dữ liệu). */
   const loaiDeNghi = xacDinhLoaiDeNghi(request.fieldsSnapshot, request.values, congTrinhChuoi);
+  const nhomDeXuat = typeof request.groupNameSnapshot === "string" ? request.groupNameSnapshot.trim() : "";
 
   return {
     requestCode: request.code,
@@ -334,6 +347,8 @@ export async function trichXuatPayloadThuMua(request: RequestInstance): Promise<
     /* Gửi cả khi rỗng — xem chú thích ở khai báo trường. */
     nguoiTheoDoi,
     ...(loaiDeNghi ? { loaiDeNghi } : {}),
+    /* 14/10/2026 — để Thu mua rẽ đề xuất nhóm EQUI sang kho riêng. Xem chú thích ở khai báo trường. */
+    ...(nhomDeXuat ? { nhomDeXuat } : {}),
   };
 }
 
