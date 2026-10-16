@@ -9,11 +9,14 @@ import { RefreshCw, Webhook } from "lucide-react";
  * Mỗi thao tác sau duyệt (duyệt xong, xoá, khôi phục, điều chỉnh, thêm tài liệu) sinh 1 việc cho mỗi
  * app đích trong hàng chờ (lib/dong-bo/hang-cho.ts). Khối này cho người xem đề xuất biết từng việc đã
  * tới nơi chưa; việc đã DỪNG thì Owner / Admin bấm "Gửi lại ngay" sau khi khắc phục.
+ *
+ * 16/10/2026: đề xuất nhóm "(EQUI)" gửi App EQUI + Thu mua (không gửi Kho) → khối đổi tiêu đề thành
+ * "Đồng bộ sang EQUI / Thu mua" khi đề xuất có việc của App EQUI.
  */
 
 type Viec = {
   id: string;
-  dich: "kho" | "thumua";
+  dich: "kho" | "thumua" | "equi";
   loai: "duyet" | "xoa" | "khoi_phuc" | "dieu_chinh" | "them_file";
   trangThai: "cho" | "da_gui" | "dung" | "huy";
   soLanThu: number;
@@ -30,7 +33,7 @@ const NHAN_LOAI: Record<Viec["loai"], string> = {
   dieu_chinh: "Điều chỉnh sau duyệt",
   them_file: "Thêm tài liệu",
 };
-const NHAN_DICH: Record<Viec["dich"], string> = { kho: "App Kho", thumua: "App Thu mua" };
+const NHAN_DICH: Record<Viec["dich"], string> = { kho: "App Kho", thumua: "App Thu mua", equi: "App EQUI" };
 
 function gio(ms: number | null): string {
   return ms ? new Date(ms).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" }) : "—";
@@ -106,7 +109,7 @@ export default function KhoiDongBo({ requestId, lamMoiKhi }: { requestId: string
 
   // Việc gần nhất của từng app đích lên trên cùng, CỘNG mọi việc đã dừng (QA 03/10: việc "gửi đề nghị"
   // đã dừng không được bị việc sau che mất nút "Gửi lại ngay"); còn lại gấp trong "Xem tất cả".
-  const ganNhatMoiApp = (["kho", "thumua"] as const)
+  const ganNhatMoiApp = (["kho", "equi", "thumua"] as const)
     .map((d) => viec.filter((v) => v.dich === d && v.trangThai !== "huy").at(-1))
     .filter((v): v is Viec => !!v);
   const ganNhat = [
@@ -114,11 +117,13 @@ export default function KhoiDongBo({ requestId, lamMoiKhi }: { requestId: string
     ...ganNhatMoiApp,
   ];
   const coDung = viec.some((v) => v.trangThai === "dung");
+  // Đề xuất nhóm "(EQUI)" có việc của App EQUI (không có việc Kho) → gọi đúng tên app nhận.
+  const tenApp = viec.some((v) => v.dich === "equi") ? "EQUI / Thu mua" : "Kho / Thu mua";
 
   return (
     <div id="khoi-dong-bo" className="rounded-[3px] border border-[var(--color-border)] bg-white p-4">
       <h3 className="mb-3 flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide text-gray-500">
-        <Webhook size={13} /> Đồng bộ sang Kho / Thu mua
+        <Webhook size={13} /> Đồng bộ sang {tenApp}
         <button
           type="button"
           onClick={() => void tai()}
@@ -137,7 +142,7 @@ export default function KhoiDongBo({ requestId, lamMoiKhi }: { requestId: string
       )}
 
       <div className="flex flex-col gap-2">
-        {ganNhat.length === 0 && <p className="text-[12px] text-gray-400">Đề xuất này không thuộc diện gửi sang Kho / Thu mua.</p>}
+        {ganNhat.length === 0 && <p className="text-[12px] text-gray-400">Đề xuất này không thuộc diện gửi sang {tenApp}.</p>}
         {ganNhat.map((v) => (
           <div key={v.id} className="text-[12px]">
             <p className="flex flex-wrap items-center gap-1.5">

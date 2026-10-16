@@ -1,12 +1,60 @@
 import { describe, expect, it } from "vitest";
 import {
   biChanBoiViecTruoc,
+  chonDichMacDinh,
   denHanGui,
   HAN_DUNG_MS,
   khoangChoThuLai,
+  laNhomEqui,
+  NHAN_DICH,
   phanLoaiLoi,
   quyetDinhSauLoi,
 } from "./luat";
+
+describe("laNhomEqui — nhận diện nhóm (EQUI) (16/10/2026)", () => {
+  it("tên nhóm kết thúc bằng (EQUI) → đúng", () => {
+    expect(laNhomEqui("1.0. Phiếu đề nghị (EQUI)")).toBe(true);
+    expect(laNhomEqui("0. Đề xuất trực tiếp (EQUI)")).toBe(true);
+  });
+  it("không phân biệt hoa thường, bỏ khoảng trắng thừa (cả trong ngoặc)", () => {
+    expect(laNhomEqui("  1.0. Phiếu đề nghị (equi)  ")).toBe(true);
+    expect(laNhomEqui("1.0.  Phiếu   đề nghị ( Equi )")).toBe(true);
+    expect(laNhomEqui("Phiếu\tđề nghị\n(EQUI)\n")).toBe(true);
+  });
+  it("chuẩn hoá NFC — tên gõ kiểu dựng sẵn hay tổ hợp đều nhận", () => {
+    expect(laNhomEqui("1.0. Phiếu đề nghị (EQUI)".normalize("NFD"))).toBe(true);
+  });
+  it("EQUI không nằm ở CUỐI, hoặc không trong ngoặc → sai", () => {
+    expect(laNhomEqui("(EQUI) 1.0. Phiếu đề nghị")).toBe(false);
+    expect(laNhomEqui("1.0. Phiếu đề nghị (EQUI) cũ")).toBe(false);
+    expect(laNhomEqui("1.0. Phiếu đề nghị EQUI")).toBe(false);
+    expect(laNhomEqui("1.0. Phiếu đề nghị (EQUIP)")).toBe(false);
+    expect(laNhomEqui("2. Phiếu đề nghị")).toBe(false);
+  });
+  it("rỗng / null / undefined / kiểu lạ → sai, không ném lỗi", () => {
+    expect(laNhomEqui("")).toBe(false);
+    expect(laNhomEqui(null)).toBe(false);
+    expect(laNhomEqui(undefined)).toBe(false);
+    expect(laNhomEqui(42 as unknown as string)).toBe(false);
+  });
+});
+
+describe("chonDichMacDinh — chọn app đích theo nhóm (16/10/2026)", () => {
+  it("nhóm (EQUI) → App EQUI + Thu mua, KHÔNG BAO GIỜ Kho công trình", () => {
+    const d = chonDichMacDinh("1.0. Phiếu đề nghị (EQUI)");
+    expect(d).toEqual(["equi", "thumua"]);
+    expect(d).not.toContain("kho");
+  });
+  it("đề xuất trực tiếp nhóm EQUI (groupId null, vẫn có tên chụp) → equi + thumua", () => {
+    expect(chonDichMacDinh("0. Đề xuất trực tiếp (EQUI)")).toEqual(["equi", "thumua"]);
+  });
+  it("nhóm thường → Kho + Thu mua y như cũ", () => {
+    expect(chonDichMacDinh("2. Phiếu đề nghị")).toEqual(["kho", "thumua"]);
+    expect(chonDichMacDinh(null)).toEqual(["kho", "thumua"]);
+    expect(chonDichMacDinh(undefined)).toEqual(["kho", "thumua"]);
+  });
+  it("có nhãn hiển thị cho App EQUI", () => expect(NHAN_DICH.equi).toBe("App EQUI"));
+});
 
 describe("khoangChoThuLai", () => {
   it("chưa thử lần nào thì gửi ngay", () => expect(khoangChoThuLai(0)).toBe(0));

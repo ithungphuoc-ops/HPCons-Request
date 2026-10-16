@@ -5,10 +5,12 @@ import { adminDb } from "@/lib/firebase/admin";
 import { createSignedReadUrl } from "@/lib/r2";
 import { loadRequest } from "@/lib/server/requests";
 import { cauNhatKyQlkCtr, daTaoDeNghiThat, guiSangQlkCtr, trichXuatPayload } from "@/lib/qlkctr-sync";
+import { daToiEqui, guiSangEqui, trichXuatPayloadEqui } from "@/lib/equi-sync";
 import { guiSangThuMua, trichXuatPayloadThuMua } from "@/lib/thumua-sync";
 import { guiCapNhatSuKien } from "@/lib/dong-bo/gui";
 import {
   biChanBoiViecTruoc,
+  chonDichMacDinh,
   denHanGui,
   HAN_DUNG_MS,
   NHAN_DICH,
@@ -24,11 +26,15 @@ import {
 import type { RequestHistoryEntry } from "@/lib/types";
 
 /**
- * ★★ HÀNG CHỜ ĐỒNG BỘ App Request → Kho / Thu mua — đợt 1 "liên kết 4 app" (Sếp chốt 03/10/2026).
+ * ★★ HÀNG CHỜ ĐỒNG BỘ App Request → Kho / Thu mua / EQUI — đợt 1 "liên kết 4 app" (Sếp chốt 03/10/2026);
+ * thêm App EQUI 16/10/2026 ("Liên kết mua hàng EQUI").
  *
  * Mỗi sự kiện (duyệt xong · xoá · khôi phục · điều chỉnh sau duyệt · thêm tài liệu) sinh 1 VIỆC cho
  * MỖI app đích, lưu ở collection `hang_cho_dong_bo`. Việc được gửi NGAY (sau khi trả response, qua
  * `after()`), lỗi thì hẹn lại theo luật ở `luat.ts`.
+ *
+ * App đích chọn theo NHÓM đề xuất (`chonDichMacDinh` ở luat.ts): nhóm "(EQUI)" → App EQUI + Thu mua (không
+ * bao giờ Kho công trình); nhóm khác → App Kho + Thu mua như cũ.
  *
  * 🔴 GỬI LẠI KHÔNG DÙNG HẸN GIỜ DÀY (gói Vercel miễn phí chỉ cho cron 1 lần/ngày):
  *   · `quetViecToiHan()` — gọi kèm các API người dùng hay mở (danh sách / chi tiết đề xuất), tối đa
@@ -81,6 +87,16 @@ function docViec(snap: FirebaseFirestore.DocumentSnapshot): ViecDongBo {
 // TẠO VIỆC
 // ------------------------------------------------------------------------------------------------
 
+/**
+ * Tên nhóm đang chụp trên đề xuất (`groupNameSnapshot` — đề xuất trực tiếp `groupId = null` vẫn có).
+ * Đề xuất đã xoá mềm vẫn còn tài liệu nên vẫn đọc được. Không có đề xuất → null (→ đích như nhóm thường).
+ */
+async function docTenNhom(requestId: string): Promise<string | null> {
+  const snap = await adminDb.collection("requests").doc(requestId).get();
+  const ten = snap.exists ? snap.get("groupNameSnapshot") : null;
+  return typeof ten === "string" ? ten : null;
+}
+
 export async function taoViecDongBo(input: {
   requestId: string;
   requestCode: string | null;
@@ -91,7 +107,9 @@ export async function taoViecDongBo(input: {
   dichs?: DichDongBo[];
 }): Promise<string[]> {
   const bayGio = Date.now();
-  const dichs = input.dichs ?? ["kho", "thumua"];
+  // ★ 16/10/2026 — chọn app đích theo NHÓM (đọc đề xuất 1 lần): "(EQUI)" → equi + thumua (KHÔNG BAO GIỜ
+  // kho); nhóm khác → kho + thumua như cũ. Áp dụng cho mọi loại việc.
+  const dichs = input.dichs ?? chonDichMacDinh(await docTenNhom(input.requestId));
   const batch = adminDb.batch();
   const ids: string[] = [];
 
@@ -249,6 +267,30 @@ async function thucHien(viec: ViecDongBo): Promise<KetQuaThucHien> {
       };
     }
 
+    // ★ 16/10/2026 — App EQUI (vai "App Kho" của nhóm "(EQUI)"), hợp đồng "Liên kết mua hàng EQUI" mục 1.
+    if (viec.dich === "equi") {
+      const payload = await trichXuatPayloadEqui(request);
+      if (!payload) {
+        return {
+          loai: "huy",
+          lyDo: "Không thuộc diện gửi App EQUI (không phải Đề nghị lô hàng SX, hoặc thiếu bảng vật tư).",
+        };
+      }
+      const kq = await guiSangEqui(payload);
+      if (daToiEqui(kq) && kq.ok) {
+        return {
+          loai: "thanh_cong",
+          ketQua: kq.trangThai,
+          nhatKy: { action: "Đã đồng bộ sang App EQUI", note: `Mã đề nghị: ${kq.maDeNghi ?? "—"}` },
+        };
+      }
+      // `ok: true` mà trạng thái lạ → CHƯA coi là tới nơi (bài học `daTaoDeNghiThat` bên Kho), thử lại.
+      if (kq.ok) {
+        return { loai: "loi", error: `App EQUI trả trạng thái lạ: "${kq.trangThai || "(trống)"}"`, loaiLoiBenNhan: "tam_thoi" };
+      }
+      return { loai: "loi", error: kq.error, httpStatus: kq.httpStatus, loaiLoiBenNhan: kq.loaiLoi };
+    }
+
     const payload = await trichXuatPayloadThuMua(request);
     if (!payload) return { loai: "huy", lyDo: "Không đủ dữ liệu gửi Thu mua (thiếu bộ phận hoặc bảng vật tư)." };
     if (!payload.loaiDeNghi) {
@@ -303,6 +345,7 @@ async function thucHien(viec: ViecDongBo): Promise<KetQuaThucHien> {
   return { loai: "loi", error: kq.error, httpStatus: kq.httpStatus, loaiLoiBenNhan: kq.loaiLoi };
 }
 
+/** Bộ trạng thái bên nhận trả về — App EQUI dùng CHUNG bộ của App Kho (hợp đồng mục 2). */
 function moTaKetQua(trangThai: string): string {
   const m: Record<string, string> = {
     da_an: "đề nghị chưa có PO / chưa nhập kho nên đã ẩn",
@@ -319,8 +362,15 @@ function moTaKetQua(trangThai: string): string {
   return m[trangThai] ?? trangThai;
 }
 
-function coDongBo(viec: ViecDongBo): "qlkCtrSyncStatus" | "thuMuaSyncStatus" {
-  return viec.dich === "kho" ? "qlkCtrSyncStatus" : "thuMuaSyncStatus";
+/** Cờ trạng thái trên đề xuất ứng với từng app đích (lib/types.ts). */
+const CO_DONG_BO: Record<DichDongBo, "qlkCtrSyncStatus" | "thuMuaSyncStatus" | "equiSyncStatus"> = {
+  kho: "qlkCtrSyncStatus",
+  thumua: "thuMuaSyncStatus",
+  equi: "equiSyncStatus",
+};
+
+function coDongBo(viec: ViecDongBo): "qlkCtrSyncStatus" | "thuMuaSyncStatus" | "equiSyncStatus" {
+  return CO_DONG_BO[viec.dich];
 }
 
 async function ghiLichSuDeXuat(requestId: string, entry: RequestHistoryEntry, them: Record<string, unknown> = {}) {
@@ -552,17 +602,28 @@ export async function layViecCuaDeXuat(requestId: string): Promise<ViecDongBo[]>
  *   · "da_gui" / "huy" / tất cả: nhiều dần theo thời gian → lấy N việc cập nhật GẦN NHẤT rồi lọc
  *     (lọc bằng + sắp theo trường khác cần chỉ mục ghép, tránh — QA 03/10).
  */
-export async function layViecGanDay(trangThai?: TrangThaiViec, gioiHan = 100): Promise<ViecDongBo[]> {
+export async function layViecGanDay(
+  trangThai?: TrangThaiViec,
+  gioiHan = 100,
+  /** Lọc theo app đích (16/10/2026 — thêm App EQUI). Lọc trong bộ nhớ, không cần chỉ mục ghép. */
+  dich?: DichDongBo,
+): Promise<ViecDongBo[]> {
+  const dungDich = (v: ViecDongBo) => !dich || v.dich === dich;
   if (trangThai === "dung" || trangThai === "cho") {
     const snap = await adminDb.collection(COL).where("trangThai", "==", trangThai).limit(500).get();
     return snap.docs
       .map(docViec)
+      .filter(dungDich)
       .sort((a, b) => b.capNhatLuc - a.capNhatLuc)
       .slice(0, gioiHan);
   }
-  const snap = await adminDb.collection(COL).orderBy("capNhatLuc", "desc").limit(trangThai ? gioiHan * 3 : gioiHan).get();
+  const snap = await adminDb
+    .collection(COL)
+    .orderBy("capNhatLuc", "desc")
+    .limit(trangThai || dich ? gioiHan * 3 : gioiHan)
+    .get();
   return snap.docs
     .map(docViec)
-    .filter((v) => !trangThai || v.trangThai === trangThai)
+    .filter((v) => (!trangThai || v.trangThai === trangThai) && dungDich(v))
     .slice(0, gioiHan);
 }

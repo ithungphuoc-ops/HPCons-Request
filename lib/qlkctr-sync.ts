@@ -15,11 +15,12 @@ import type { ProposalField, RequestAttachment, RequestInstance } from "@/lib/ty
  * TÊN cột (field.tableColumns) chứ không theo số thứ tự cố định.
  */
 
-const DETAIL_FIELD_CODES = new Set(["chi_tiet", "vat_tu", "vat_tu_de_nghi", "danh_sach_vat_tu"]);
-const LUA_CHON_DE_NGHI_FIELD_CODES = new Set(["lua_chon_de_nghi"]);
-const NGAY_CAN_CAP_FIELD_CODES = new Set(["ngay_de_nghi_cap", "ngay_can_cap", "ngay_can_giao"]);
+// Các helper dưới đây được `lib/equi-sync.ts` dùng lại (16/10/2026) — chỉ thêm `export`, không đổi hành vi.
+export const DETAIL_FIELD_CODES = new Set(["chi_tiet", "vat_tu", "vat_tu_de_nghi", "danh_sach_vat_tu"]);
+export const LUA_CHON_DE_NGHI_FIELD_CODES = new Set(["lua_chon_de_nghi"]);
+export const NGAY_CAN_CAP_FIELD_CODES = new Set(["ngay_de_nghi_cap", "ngay_can_cap", "ngay_can_giao"]);
 
-function chuanHoaSoSanh(s: string): string {
+export function chuanHoaSoSanh(s: string): string {
   return s
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
@@ -27,14 +28,14 @@ function chuanHoaSoSanh(s: string): string {
     .trim();
 }
 
-function timField(fields: ProposalField[], codes: Set<string>, tenGanDung: string[]): ProposalField | null {
+export function timField(fields: ProposalField[], codes: Set<string>, tenGanDung: string[]): ProposalField | null {
   const theoCode = fields.find((f) => f.code && codes.has(f.code));
   if (theoCode) return theoCode;
   const theoTen = fields.find((f) => tenGanDung.some((t) => chuanHoaSoSanh(f.name) === chuanHoaSoSanh(t)));
   return theoTen ?? null;
 }
 
-function timCotBang(cot: string[], ...tenGanDung: string[]): number {
+export function timCotBang(cot: string[], ...tenGanDung: string[]): number {
   return cot.findIndex((c) => tenGanDung.some((t) => chuanHoaSoSanh(c).includes(chuanHoaSoSanh(t))));
 }
 
@@ -69,7 +70,7 @@ export type QlkCtrPayload = {
  * duyệt này, xem lib/r2.ts::createSignedReadUrl). QLK CTR chỉ lưu lại để xem sau, không đọc dữ
  * liệu vật tư từ các file này (vật tư luôn lấy từ bảng "Chi tiết" như cũ).
  */
-async function layTaiLieuDinhKem(request: RequestInstance): Promise<QlkCtrTaiLieuDinhKem[]> {
+export async function layTaiLieuDinhKem(request: RequestInstance): Promise<QlkCtrTaiLieuDinhKem[]> {
   const files: RequestAttachment[] = [];
   for (const field of request.fieldsSnapshot) {
     if (field.dataType !== "file") continue;

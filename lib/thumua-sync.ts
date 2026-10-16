@@ -1,4 +1,5 @@
 import { createSignedReadUrl } from "@/lib/r2";
+import { laNhomEqui } from "@/lib/dong-bo/luat";
 import { TITLE_FIELD_CODES } from "@/lib/request-title";
 import { deserializeTableRows, flattenLineBreaks } from "@/lib/table-field";
 import { duocThuLai, giuChoThuLai, nhaChoThuLai, trungKetQuaLanTruoc } from "@/lib/sync-retry-guard";
@@ -119,10 +120,25 @@ export type ThuMuaPayload = {
   nhomDeXuat?: string;
 };
 
-/** Chuẩn hoá nhãn để so sánh: bỏ dấu cách thừa, không phân biệt hoa thường. */
+/** Chuẩn hoá nhãn để so sánh: NFC, bỏ dấu cách thừa, không phân biệt hoa thường. */
 function chuanNhan(x: string): string {
-  return x.trim().replace(/\s+/g, " ").toLowerCase();
+  return x.normalize("NFC").trim().replace(/\s+/g, " ").toLowerCase();
 }
+
+/**
+ * Nhãn nghĩa là "đề nghị CÔNG TRÌNH" trên ô "Lựa chọn đề nghị" (so sau `chuanNhan`). `chuan` = khớp đúng
+ * nhãn, `re` = rơi về "bắt đầu bằng" (neo `^` để loại nhãn phủ định).
+ *
+ * ★ 16/10/2026 — thêm "Đề nghị lô hàng SX": biểu mẫu các nhóm "(EQUI)" dùng cặp "Đề nghị lô hàng SX" /
+ * "Đề nghị phòng ban" (lô hàng SX tương đương công trình — hợp đồng "Liên kết mua hàng EQUI"). Trước đó ô này
+ * KHÔNG được nhận là ô loại → rơi về phép suy theo "Tên đề xuất" → phiếu PHÒNG BAN 000000250 bị gửi là công
+ * trình (Thu mua đặt mã "Bộ phận sản xuất Equi-001"). Chỉ MỞ RỘNG tập nhãn công trình, mọi luật khác giữ nguyên.
+ */
+const NHAN_CONG_TRINH: readonly { chuan: string; re: RegExp }[] = [
+  { chuan: "đề nghị công trình", re: /^đề nghị\s*công trình/ },
+  { chuan: "đề nghị lô hàng sx", re: /^đề nghị\s*lô hàng\s*sx/ },
+];
+const NHAN_PHONG_BAN = { chuan: "đề nghị phòng ban", re: /^đề nghị\s*phòng ban/ };
 
 /**
  * Đọc ô "Lựa chọn đề nghị" trên biểu mẫu → `"cong_trinh"` | `"phong_ban"`.
@@ -158,15 +174,16 @@ export function layLoaiDeNghiGuiSangThuMua(
        giải thích. Neo `^` loại được nhãn phủ định kiểu "Không phải đề nghị công trình". */
     const timNhan = (re: RegExp, chuan: string) =>
       ops.find((x) => chuanNhan(x) === chuan) ?? ops.find((x) => re.test(chuanNhan(x)));
-    const nhanCT = timNhan(/^đề nghị\s*công trình/, "đề nghị công trình");
-    const nhanPB = timNhan(/^đề nghị\s*phòng ban/, "đề nghị phòng ban");
-    if (!nhanCT || !nhanPB) continue; // không phải ô cần tìm
+    // "Công trình" có thể là "Đề nghị công trình" hoặc "Đề nghị lô hàng SX" (nhóm EQUI) — xem NHAN_CONG_TRINH.
+    const nhanCTs = NHAN_CONG_TRINH.map((n) => timNhan(n.re, n.chuan)).filter((x): x is string => !!x);
+    const nhanPB = timNhan(NHAN_PHONG_BAN.re, NHAN_PHONG_BAN.chuan);
+    if (nhanCTs.length === 0 || !nhanPB) continue; // không phải ô cần tìm
 
     const v = values[f.id];
     if (typeof v !== "string" || !v.trim()) continue; // người dùng bỏ trống → bỏ qua ô này
 
     const chon = chuanNhan(v);
-    if (chon === chuanNhan(nhanCT)) daThay.add("cong_trinh");
+    if (nhanCTs.some((n) => chon === chuanNhan(n))) daThay.add("cong_trinh");
     else if (chon === chuanNhan(nhanPB)) daThay.add("phong_ban");
     else return undefined; // chọn một lựa chọn khác trong cùng ô → không suy diễn
   }
@@ -200,7 +217,7 @@ export function xacDinhLoaiDeNghi(
   const coOChonCoGiaTri = fields.some((f) => {
     const ops = Array.isArray(f.options) ? f.options.map((x) => chuanNhan(String(x))) : [];
     const laOLoai =
-      ops.some((x) => /^đề nghị\s*công trình/.test(x)) && ops.some((x) => /^đề nghị\s*phòng ban/.test(x));
+      ops.some((x) => NHAN_CONG_TRINH.some((n) => n.re.test(x))) && ops.some((x) => NHAN_PHONG_BAN.re.test(x));
     const v = values[f.id];
     return laOLoai && typeof v === "string" && v.trim() !== "";
   });
@@ -306,7 +323,8 @@ export function timOBoPhan(
 ): ProposalField | undefined {
   const chuan = request.fieldsSnapshot.find((f) => f.dataType === "department_select");
   if (chuan) return chuan;
-  if (!/\(\s*equi\s*\)\s*$/i.test((request.groupNameSnapshot ?? "").trim())) return undefined;
+  // Cùng 1 luật nhận diện nhóm EQUI với hàng chờ đồng bộ (lib/dong-bo/luat.ts — 16/10/2026).
+  if (!laNhomEqui(request.groupNameSnapshot)) return undefined;
   return request.fieldsSnapshot.find(
     (f) => f.dataType === "single_choice" && /^\s*(\d+\.?\s*)?(chọn\s+)?bộ\s+phận\s*$/i.test(f.name ?? ""),
   );

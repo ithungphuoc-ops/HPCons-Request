@@ -951,6 +951,13 @@ export interface RequestInstance {
    * (lib/sync-retry-guard.ts, 08/10/2026). */
   qlkCtrRetryAt?: string;
   /**
+   * Kết quả việc "gửi đề nghị" sang App EQUI (16/10/2026, "Liên kết mua hàng EQUI") — chỉ đề xuất nhóm
+   * "(EQUI)" là "Đề nghị lô hàng SX" mới có. Do hàng chờ đồng bộ ghi (lib/dong-bo/hang-cho.ts):
+   * `"synced"` = App EQUI đã có đề nghị · `"dung"` = thử hết lượt / lỗi vĩnh viễn, chờ Admin gửi lại tay.
+   * Vắng mặt = chưa gửi xong hoặc không thuộc diện gửi.
+   */
+  equiSyncStatus?: "synced" | "dung";
+  /**
    * "Chỉ huy trưởng" — `approversSnapshot[0]` tại ĐÚNG thời điểm `approversSnapshot`
    * được dựng lần đầu (gửi chính thức từ nháp, hoặc tạo không phải nháp), TRƯỚC
    * khi "Chuyển tiếp và Duyệt" có cơ hội chèn người vào đầu mảng. Ghi 1 LẦN DUY

@@ -1028,7 +1028,7 @@ export default function RequestDetailView({
                   <button
                     type="button"
                     disabled={request.status !== "approved"}
-                    title={request.status === "approved" ? undefined : "Chỉ đề xuất đã duyệt mới gửi sang Kho / Thu mua"}
+                    title={request.status === "approved" ? undefined : "Chỉ đề xuất đã duyệt mới gửi sang Kho / EQUI / Thu mua"}
                     onClick={() => {
                       setMoreMenuOpen(false);
                       document.getElementById("khoi-dong-bo")?.scrollIntoView({ behavior: "smooth", block: "center" });

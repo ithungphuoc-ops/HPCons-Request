@@ -9,16 +9,17 @@ import type { ListLoadStatus } from "@/lib/types";
 /**
  * ★ Lịch sử Webhook — đợt 1 "liên kết 4 app" (Sếp chốt 03/10/2026). Trước đây là trang trống.
  *
- * Mọi việc App Request tự báo sang App Kho / App Thu mua (duyệt xong, xoá, khôi phục, điều chỉnh sau
- * duyệt, thêm tài liệu) — đang chờ, đã gửi, đã dừng. Việc ĐÃ DỪNG là chỗ "báo người phụ trách": Admin
- * khắc phục nguyên nhân (vd thêm công trình bên Kho) rồi bấm "Gửi lại ngay".
+ * Mọi việc App Request tự báo sang App Kho / App Thu mua / App EQUI (duyệt xong, xoá, khôi phục, điều
+ * chỉnh sau duyệt, thêm tài liệu) — đang chờ, đã gửi, đã dừng. Việc ĐÃ DỪNG là chỗ "báo người phụ trách":
+ * Admin khắc phục nguyên nhân (vd thêm công trình bên Kho) rồi bấm "Gửi lại ngay".
+ * 16/10/2026: thêm App EQUI (đích của nhóm "(EQUI)") + lọc theo app đích.
  */
 
 type Viec = {
   id: string;
   requestId: string;
   requestCode: string | null;
-  dich: "kho" | "thumua";
+  dich: "kho" | "thumua" | "equi";
   loai: "duyet" | "xoa" | "khoi_phuc" | "dieu_chinh" | "them_file";
   nguoi: string | null;
   trangThai: "cho" | "da_gui" | "dung" | "huy";
@@ -37,7 +38,13 @@ const NHAN_LOAI: Record<Viec["loai"], string> = {
   dieu_chinh: "Điều chỉnh sau duyệt",
   them_file: "Thêm tài liệu",
 };
-const NHAN_DICH: Record<Viec["dich"], string> = { kho: "App Kho", thumua: "App Thu mua" };
+const NHAN_DICH: Record<Viec["dich"], string> = { kho: "App Kho", thumua: "App Thu mua", equi: "App EQUI" };
+const LOC_DICH: { v: "" | Viec["dich"]; nhan: string }[] = [
+  { v: "", nhan: "Mọi app" },
+  { v: "kho", nhan: NHAN_DICH.kho },
+  { v: "thumua", nhan: NHAN_DICH.thumua },
+  { v: "equi", nhan: NHAN_DICH.equi },
+];
 const BO_LOC: { v: "" | Viec["trangThai"]; nhan: string }[] = [
   { v: "dung", nhan: "Đã dừng — cần xử lý" },
   { v: "cho", nhan: "Đang chờ gửi" },
@@ -73,6 +80,7 @@ export default function WebhookHistoryPage() {
 
 function WebhookHistoryInner() {
   const [loc, setLoc] = useState<"" | Viec["trangThai"]>("dung");
+  const [locDich, setLocDich] = useState<"" | Viec["dich"]>("");
   const [viec, setViec] = useState<Viec[]>([]);
   const [status, setStatus] = useState<ListLoadStatus>("loading");
   const [dangGui, setDangGui] = useState<string | null>(null);
@@ -80,14 +88,18 @@ function WebhookHistoryInner() {
 
   const tai = useCallback(() => {
     setStatus("loading");
-    fetch(`/api/dong-bo${loc ? `?trangThai=${loc}` : ""}`, { cache: "no-store" })
+    const qs = new URLSearchParams();
+    if (loc) qs.set("trangThai", loc);
+    if (locDich) qs.set("dich", locDich);
+    const chuoi = qs.toString();
+    fetch(`/api/dong-bo${chuoi ? `?${chuoi}` : ""}`, { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : Promise.reject(new Error("fetch failed"))))
       .then((data: { viec: Viec[] }) => {
         setViec(data.viec ?? []);
         setStatus(data.viec?.length ? "loaded" : "empty");
       })
       .catch(() => setStatus("error"));
-  }, [loc]);
+  }, [loc, locDich]);
 
   useEffect(tai, [tai]);
 
@@ -120,7 +132,7 @@ function WebhookHistoryInner() {
     <div className="px-8 py-6">
       <h1 className="text-[23px] font-bold text-gray-900">Lịch sử Webhook</h1>
       <p className="mt-1 max-w-3xl text-[14px] text-gray-500">
-        Những gì App Request tự báo sang App Kho và App Thu mua. Gửi lỗi thì tự gửi lại theo lịch 1 phút · 5 phút ·
+        Những gì App Request tự báo sang App Kho, App Thu mua và App EQUI. Gửi lỗi thì tự gửi lại theo lịch 1 phút · 5 phút ·
         30 phút · 2 giờ; quá 5 lần hoặc quá 1 ngày thì <b className="font-semibold text-gray-700">dừng</b> và nằm ở mục
         &quot;Đã dừng&quot; dưới đây — khắc phục xong bấm &quot;Gửi lại ngay&quot;.
       </p>
@@ -140,6 +152,18 @@ function WebhookHistoryInner() {
             {b.nhan}
           </button>
         ))}
+        <select
+          value={locDich}
+          onChange={(e) => setLocDich(e.target.value as "" | Viec["dich"])}
+          aria-label="Lọc theo app đích"
+          className="rounded-[3px] border border-[var(--color-border)] bg-white px-2 py-1.5 text-[13px] text-gray-700"
+        >
+          {LOC_DICH.map((d) => (
+            <option key={d.v || "all"} value={d.v}>
+              {d.nhan}
+            </option>
+          ))}
+        </select>
         <button
           type="button"
           onClick={tai}

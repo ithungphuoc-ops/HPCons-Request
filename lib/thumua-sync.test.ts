@@ -499,6 +499,69 @@ describe("layLoaiDeNghiGuiSangThuMua", () => {
   });
 });
 
+describe("ô loại 'Đề nghị lô hàng SX' / 'Đề nghị phòng ban' (nhóm EQUI) — sửa lỗi xếp loại 16/10/2026", () => {
+  /* Ca thật: phiếu PHÒNG BAN 000000250 (nhóm EQUI) bị gửi là công trình vì ô này không được nhận là ô
+     loại → rơi về phép suy theo "Tên đề xuất" (có giá trị) → "cong_trinh". */
+  const oEqui = { id: "f_lc", options: ["Đề nghị lô hàng SX", "Đề nghị phòng ban"] };
+
+  it("'Đề nghị lô hàng SX' → cong_trinh", () => {
+    expect(layLoaiDeNghiGuiSangThuMua([oEqui], { f_lc: "Đề nghị lô hàng SX" })).toBe("cong_trinh");
+    expect(xacDinhLoaiDeNghi([oEqui], { f_lc: "Đề nghị lô hàng SX" }, "")).toBe("cong_trinh");
+  });
+
+  it("'Đề nghị phòng ban' → phong_ban, KỂ CẢ khi có Tên đề xuất (ca 000000250)", () => {
+    expect(layLoaiDeNghiGuiSangThuMua([oEqui], { f_lc: "Đề nghị phòng ban" })).toBe("phong_ban");
+    expect(xacDinhLoaiDeNghi([oEqui], { f_lc: "Đề nghị phòng ban" }, "Bộ phận sản xuất Equi")).toBe("phong_ban");
+  });
+
+  it("không phân biệt hoa thường / khoảng trắng thừa / dạng Unicode", () => {
+    expect(layLoaiDeNghiGuiSangThuMua([oEqui], { f_lc: "  đề nghị  LÔ HÀNG sx " })).toBe("cong_trinh");
+    expect(layLoaiDeNghiGuiSangThuMua([oEqui], { f_lc: "Đề nghị phòng ban".normalize("NFD") })).toBe("phong_ban");
+  });
+
+  it("vẫn so ĐÚNG nhãn: lựa chọn lạ trong cùng ô → undefined / null (không đoán)", () => {
+    const o = { id: "f_lc", options: ["Đề nghị lô hàng SX", "Đề nghị phòng ban", "Khác"] };
+    expect(layLoaiDeNghiGuiSangThuMua([o], { f_lc: "Khác" })).toBeUndefined();
+    expect(xacDinhLoaiDeNghi([o], { f_lc: "Khác" }, "Có tên")).toBeNull();
+  });
+
+  it("vẫn xét hết mọi ô: lô hàng SX ở ô này + phòng ban ở ô kia = mâu thuẫn → undefined / null", () => {
+    const fields = [oEqui, { id: "f_lc2", options: ["Đề nghị công trình", "Đề nghị phòng ban"] }];
+    const values = { f_lc: "Đề nghị lô hàng SX", f_lc2: "Đề nghị phòng ban" };
+    expect(layLoaiDeNghiGuiSangThuMua(fields, values)).toBeUndefined();
+    expect(xacDinhLoaiDeNghi(fields, values, "x")).toBeNull();
+  });
+
+  it("ô bỏ trống → rơi về phép suy theo Tên đề xuất như cũ", () => {
+    expect(xacDinhLoaiDeNghi([oEqui], { f_lc: "" }, "Có tên")).toBe("cong_trinh");
+    expect(xacDinhLoaiDeNghi([oEqui], { f_lc: "" }, "")).toBe("phong_ban");
+  });
+
+  it("ô chỉ có 'Đề nghị lô hàng SX' mà không có 'Đề nghị phòng ban' → không phải ô loại (như luật cũ)", () => {
+    const o = { id: "f_x", options: ["Đề nghị lô hàng SX", "Khác"] };
+    expect(layLoaiDeNghiGuiSangThuMua([o], { f_x: "Đề nghị lô hàng SX" })).toBeUndefined();
+    expect(xacDinhLoaiDeNghi([o], { f_x: "Đề nghị lô hàng SX" }, "")).toBe("phong_ban");
+  });
+
+  it("payload Thu mua của phiếu phòng ban nhóm EQUI mang loaiDeNghi = phong_ban", async () => {
+    const oLc = { id: "f_lc", code: null, name: "Lựa chọn đề nghị", dataType: "single_choice", options: oEqui.options } as unknown as ProposalField;
+    const boPhan = { id: "f_bp_chon", code: null, name: "Bộ phận", dataType: "single_choice" } as unknown as ProposalField;
+    const p = await trichXuatPayloadThuMua(
+      baseRequest({
+        groupNameSnapshot: "1.0. Phiếu đề nghị (EQUI)",
+        fieldsSnapshot: [titleField, oLc, boPhan, detailField],
+        values: {
+          f_ten: "Bộ phận sản xuất Equi",
+          f_lc: "Đề nghị phòng ban",
+          f_bp_chon: "Bộ phận sản xuất",
+          f_ct: [["Găng tay", "", "đôi", "10", ""]],
+        },
+      }),
+    );
+    expect(p?.loaiDeNghi).toBe("phong_ban");
+  });
+});
+
 describe("ô bảng xuống dòng — gửi sang Thu mua gộp thành 1 dấu cách (07/10/2026)", () => {
   it("tenVatTu/quyCach/dvt/mucDichSuDung không còn ký tự xuống dòng, dữ liệu gốc giữ nguyên", async () => {
     const cells = ["Thép D10\nHòa Phát\r\n", "  Cây 11.7m \n\n mác CB300 ", "cây\n", "120", "Đổ móng\nnhà xưởng"];

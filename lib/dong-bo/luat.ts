@@ -12,7 +12,11 @@
  *   · Lỗi VĨNH VIỄN (dữ liệu sai, thiếu quyền — gửi lại y nguyên không bao giờ khác) → DỪNG NGAY.
  */
 
-export type DichDongBo = "kho" | "thumua";
+/**
+ * App đích. `"equi"` (16/10/2026, "Liên kết mua hàng EQUI" — Sếp duyệt 15/10): App EQUI (equi.hpcore.vn)
+ * đóng đúng vai "App Kho" cho đề xuất các nhóm "(EQUI)" — xem `chonDichMacDinh`.
+ */
+export type DichDongBo = "kho" | "thumua" | "equi";
 export type LoaiSuKien = "duyet" | "xoa" | "khoi_phuc" | "dieu_chinh" | "them_file";
 export type TrangThaiViec = "cho" | "da_gui" | "dung" | "huy";
 export type LoaiLoi = "tam_thoi" | "vinh_vien";
@@ -31,7 +35,29 @@ export const NHAN_LOAI: Record<LoaiSuKien, string> = {
   dieu_chinh: "Điều chỉnh sau duyệt",
   them_file: "Thêm tài liệu",
 };
-export const NHAN_DICH: Record<DichDongBo, string> = { kho: "App Kho", thumua: "App Thu mua" };
+export const NHAN_DICH: Record<DichDongBo, string> = { kho: "App Kho", thumua: "App Thu mua", equi: "App EQUI" };
+
+/**
+ * Nhóm đề xuất có thuộc EQUI không — tên nhóm (`groupNameSnapshot`) KẾT THÚC bằng "(EQUI)".
+ * Không phân biệt hoa thường, bỏ khoảng trắng thừa (cả trong ngoặc: "( EQUI )"), chuẩn hoá NFC.
+ * Vd "1.0. Phiếu đề nghị (EQUI)", "0. Đề xuất trực tiếp (EQUI)" (đề xuất trực tiếp `groupId = null`
+ * vẫn có tên nhóm đang chụp).
+ */
+export function laNhomEqui(tenNhom: string | null | undefined): boolean {
+  if (typeof tenNhom !== "string") return false;
+  const s = tenNhom.normalize("NFC").replace(/\s+/g, " ").trim().toLowerCase();
+  return /\(\s*equi\s*\)$/.test(s);
+}
+
+/**
+ * ★ App đích mặc định của 1 sự kiện, theo NHÓM đề xuất (16/10/2026, hợp đồng "Liên kết mua hàng EQUI"):
+ *   · Nhóm "(EQUI)" → App EQUI + App Thu mua. 🔴 KHÔNG BAO GIỜ gửi Kho công trình (QLK CTR) — Sếp chốt.
+ *   · Nhóm khác      → App Kho + App Thu mua, y như trước.
+ * Áp dụng cho MỌI loại việc (duyệt, xoá, khôi phục, điều chỉnh, thêm tệp).
+ */
+export function chonDichMacDinh(tenNhom: string | null | undefined): DichDongBo[] {
+  return laNhomEqui(tenNhom) ? ["equi", "thumua"] : ["kho", "thumua"];
+}
 
 /** Khoảng chờ trước lần thử kế tiếp khi đã thử `soLanThu` lần mà vẫn lỗi (trần 2 giờ). */
 export function khoangChoThuLai(soLanThu: number): number {
