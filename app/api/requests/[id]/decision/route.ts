@@ -29,7 +29,8 @@ import type {
   RequestInstance,
   TaggedUser,
 } from "@/lib/types";
-import { guiCacViec, taoViecDongBo } from "@/lib/dong-bo/hang-cho";
+import { daTungGuiKeToan, guiCacViec, taoViecDongBo } from "@/lib/dong-bo/hang-cho";
+import { suKienKeToanSauQuyetDinh, tachDanhSach } from "@/lib/dong-bo/luat";
 
 // Gửi sang Kho / Thu mua chạy trong after() của chính lần gọi này — cho đủ thời gian (gói miễn phí
 // cho tối đa 60 giây). Xem lib/dong-bo/hang-cho.ts.
@@ -323,6 +324,41 @@ export async function POST(
         } catch (syncError) {
           console.error("Tạo việc đồng bộ Kho / Thu mua lỗi (không ảnh hưởng thao tác duyệt):", syncError);
         }
+      }
+    }
+
+    // ★ (19/10/2026) App Kế toán — "Kế hoạch thanh toán". Gửi NGAY khi người được chỉ định (vd Phó TGĐ kỹ thuật
+    // thi công) duyệt, không đợi các bước sau; bị từ chối / trả lại sau đó thì báo "bị trả lại". Cấu hình bằng
+    // KETOAN_GROUP_IDS + KETOAN_NGUOI_DUYET_UIDS (xem lib/dong-bo/luat.ts). Bọc try/catch riêng: lỗi ở đây tuyệt
+    // đối không làm hỏng response duyệt chính.
+    {
+      try {
+        const cauHinh = {
+          nhomIds: tachDanhSach(process.env.KETOAN_GROUP_IDS),
+          nguoiDuyetUids: tachDanhSach(process.env.KETOAN_NGUOI_DUYET_UIDS),
+        };
+        if (cauHinh.nhomIds.length > 0 && pre.groupId && cauHinh.nhomIds.includes(pre.groupId)) {
+          const suKien = suKienKeToanSauQuyetDinh({
+            groupId: pre.groupId,
+            actorUid: session.uid,
+            decision: body.decision,
+            daTungGui: await daTungGuiKeToan(id),
+            cauHinh,
+          });
+          if (suKien) {
+            const ids = await taoViecDongBo({
+              requestId: id,
+              requestCode: updated.code ?? null,
+              loai: suKien,
+              nguoi: suKien === "duyet_buoc" ? session.name : undefined,
+              noiDung: suKien === "tra_lai" ? note || null : null,
+              dichs: ["ketoan"],
+            });
+            after(() => guiCacViec(ids));
+          }
+        }
+      } catch (ketoanError) {
+        console.error("Tạo việc đồng bộ App Kế toán lỗi (không ảnh hưởng thao tác duyệt):", ketoanError);
       }
     }
 

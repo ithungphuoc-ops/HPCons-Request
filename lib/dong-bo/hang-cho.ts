@@ -8,6 +8,7 @@ import { cauNhatKyQlkCtr, daTaoDeNghiThat, guiSangQlkCtr, trichXuatPayload } fro
 import { daToiEqui, guiSangEqui, trichXuatPayloadEqui } from "@/lib/equi-sync";
 import { guiSangThuMua, trichXuatPayloadThuMua } from "@/lib/thumua-sync";
 import { guiCapNhatSuKien } from "@/lib/dong-bo/gui";
+import { dungBanChupKeToan, guiSangKeToan } from "@/lib/ketoan-sync";
 import {
   biChanBoiViecTruoc,
   chonDichMacDinh,
@@ -240,7 +241,53 @@ type KetQuaThucHien =
   | { loai: "huy"; lyDo: string; doXoa?: boolean }
   | { loai: "loi"; error: string; httpStatus?: number; loaiLoiBenNhan?: string };
 
+/**
+ * ★ App Kế toán (19/10/2026): chỉ nhận 2 loại sự kiện —
+ *   · `duyet_buoc` (người được chỉ định vừa duyệt) → dòng vào Kế hoạch thanh toán bên Kế toán;
+ *   · `tra_lai` / `xoa` → dòng chuyển "Bị trả lại".
+ * Các sự kiện khác (khôi phục, điều chỉnh, thêm tệp, duyệt xong toàn bộ) KHÔNG áp dụng — App Kế toán đã có
+ * dòng từ lúc bước kỹ thuật duyệt; coi là xong (huỷ có lý do) để khỏi gửi vô ích.
+ */
+async function thucHienKeToan(viec: ViecDongBo): Promise<KetQuaThucHien> {
+  const trangThaiDeXuat =
+    viec.loai === "duyet_buoc" ? "da_duyet_ky_thuat" : viec.loai === "tra_lai" || viec.loai === "xoa" ? "bi_tra_lai" : null;
+  if (!trangThaiDeXuat) return { loai: "huy", lyDo: `App Kế toán không dùng sự kiện "${NHAN_LOAI[viec.loai]}".` };
+
+  const request = await loadRequest(viec.requestId);
+  if (!request) return { loai: "huy", lyDo: "Không tìm thấy đề xuất." };
+  if (request.deletedAt && trangThaiDeXuat === "da_duyet_ky_thuat") {
+    return { loai: "huy", lyDo: "Đề xuất đã bị xoá trước khi gửi được.", doXoa: true };
+  }
+  const lyDo = viec.loai === "xoa" ? "Đề xuất bị xoá ở App Request" : (viec.noiDung ?? "");
+  const payload = dungBanChupKeToan(request, {
+    trangThaiDeXuat,
+    nguoiDuyet: viec.nguoi ?? "",
+    lyDoTraLai: lyDo,
+    baseUrl: process.env.APP_PUBLIC_URL || "https://request.hpcore.vn",
+    bayGioIso: new Date(viec.lucSuKien).toISOString(),
+  });
+  if (!payload) return { loai: "huy", lyDo: "Đề xuất chưa có mã, không gửi được." };
+  // Bên Kế toán bắt buộc có tên người duyệt (để Excel ghi "ai đã duyệt"); thiếu thì là lỗi dữ liệu, không thử lại.
+  if (trangThaiDeXuat === "da_duyet_ky_thuat" && !payload.nguoiDuyet.ten) {
+    return { loai: "loi", loaiLoiBenNhan: "vinh_vien", error: "Thiếu tên người duyệt để gửi App Kế toán." };
+  }
+  if (trangThaiDeXuat === "bi_tra_lai") payload.nguoiDuyet.ten = payload.nguoiDuyet.ten || "App Request";
+  const kq = await guiSangKeToan(payload);
+  if (kq.ok) {
+    return {
+      loai: "thanh_cong",
+      ketQua: kq.trangThai || "da_gui",
+      nhatKy: {
+        action: "Đã đồng bộ sang App Kế toán",
+        note: kq.keHoach ? `Đã vào Kế hoạch thanh toán (kỳ ${kq.keHoach})` : "Đã vào Kế hoạch thanh toán",
+      },
+    };
+  }
+  return { loai: "loi", error: kq.error, httpStatus: kq.httpStatus, loaiLoiBenNhan: kq.loaiLoi };
+}
+
 async function thucHien(viec: ViecDongBo): Promise<KetQuaThucHien> {
+  if (viec.dich === "ketoan") return thucHienKeToan(viec);
   if (viec.loai === "duyet") {
     const request = await loadRequest(viec.requestId);
     if (!request) return { loai: "huy", lyDo: "Không tìm thấy đề xuất." };
@@ -363,13 +410,14 @@ function moTaKetQua(trangThai: string): string {
 }
 
 /** Cờ trạng thái trên đề xuất ứng với từng app đích (lib/types.ts). */
-const CO_DONG_BO: Record<DichDongBo, "qlkCtrSyncStatus" | "thuMuaSyncStatus" | "equiSyncStatus"> = {
+const CO_DONG_BO: Record<DichDongBo, "qlkCtrSyncStatus" | "thuMuaSyncStatus" | "equiSyncStatus" | "ketoanSyncStatus"> = {
   kho: "qlkCtrSyncStatus",
   thumua: "thuMuaSyncStatus",
   equi: "equiSyncStatus",
+  ketoan: "ketoanSyncStatus",
 };
 
-function coDongBo(viec: ViecDongBo): "qlkCtrSyncStatus" | "thuMuaSyncStatus" | "equiSyncStatus" {
+function coDongBo(viec: ViecDongBo): "qlkCtrSyncStatus" | "thuMuaSyncStatus" | "equiSyncStatus" | "ketoanSyncStatus" {
   return CO_DONG_BO[viec.dich];
 }
 
@@ -468,7 +516,7 @@ export async function guiViec(id: string, opts: { boQuaHen?: boolean } = {}): Pr
         action: viec.soLanThu > 0 ? `${kq.nhatKy.action} (gửi lại lần ${viec.soLanThu + 1})` : kq.nhatKy.action,
         ...(kq.nhatKy.note ? { note: kq.nhatKy.note } : {}),
       },
-      viec.loai === "duyet" ? { [coDongBo(viec)]: "synced" } : {},
+      viec.loai === "duyet" || viec.loai === "duyet_buoc" ? { [coDongBo(viec)]: "synced" } : {},
     );
     return "da_gui";
   }
@@ -510,7 +558,7 @@ export async function guiViec(id: string, opts: { boQuaHen?: boolean } = {}): Pr
       action: `⚠ Đồng bộ ${NHAN_DICH[viec.dich]} thất bại — đã dừng (${NHAN_LOAI[viec.loai]})`,
       note: `${kq.error}. ${qd.lyDo}. Admin xem và bấm "Gửi lại ngay" ở trang Lịch sử Webhook sau khi khắc phục (${tenDeXuat}).`,
     },
-    viec.loai === "duyet" ? { [coDongBo(viec)]: "dung" } : {},
+    viec.loai === "duyet" || viec.loai === "duyet_buoc" ? { [coDongBo(viec)]: "dung" } : {},
   );
   return "dung";
 }
@@ -626,4 +674,16 @@ export async function layViecGanDay(
     .map(docViec)
     .filter((v) => (!trangThai || v.trangThai === trangThai) && dungDich(v))
     .slice(0, gioiHan);
+}
+
+/**
+ * Đề xuất này đã TỪNG được gửi (hoặc đang chờ gửi) sang App Kế toán chưa — để quyết định có cần báo
+ * "bị trả lại" không (xem `suKienKeToanSauQuyetDinh`). Chỉ tính việc `duyet_buoc` chưa bị huỷ.
+ */
+export async function daTungGuiKeToan(requestId: string): Promise<boolean> {
+  const snap = await adminDb.collection(COL).where("requestId", "==", requestId).get();
+  return snap.docs.some((d) => {
+    const v = d.data() as Partial<ViecDongBo>;
+    return v.dich === "ketoan" && v.loai === "duyet_buoc" && v.trangThai !== "huy";
+  });
 }

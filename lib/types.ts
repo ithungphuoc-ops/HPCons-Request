@@ -957,6 +957,8 @@ export interface RequestInstance {
    * Vắng mặt = chưa gửi xong hoặc không thuộc diện gửi.
    */
   equiSyncStatus?: "synced" | "dung";
+  /** App Kế toán (19/10/2026): `"synced"` = đã có dòng trong Kế hoạch thanh toán · `"dung"` = dừng, chờ gửi lại tay. */
+  ketoanSyncStatus?: "synced" | "dung";
   /**
    * "Chỉ huy trưởng" — `approversSnapshot[0]` tại ĐÚNG thời điểm `approversSnapshot`
    * được dựng lần đầu (gửi chính thức từ nháp, hoặc tạo không phải nháp), TRƯỚC
