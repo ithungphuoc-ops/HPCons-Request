@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * Test MỨC ROUTE cho "Điều chỉnh sau duyệt — tự chọn 2 người duyệt" (06/10/2026):
+ * Test MỨC ROUTE cho "Điều chỉnh sau duyệt — tự chọn người duyệt" (06/10/2026; từ 17/10/2026 chọn 1 hoặc 2 người):
  * POST /api/requests/[id]/adjustment và POST .../adjustment/decision.
  * Firestore thay bằng kho giả trong bộ nhớ (runTransaction + arrayUnion) —
  * không đụng Firestore thật. Người dùng "đang hoạt động ở App Tổng" giả lập
@@ -130,10 +130,9 @@ beforeEach(() => {
   taoViec.mockClear();
 });
 
-describe("POST adjustment — bắt buộc chọn đúng 2 người duyệt", () => {
+describe("POST adjustment — chọn 1 hoặc 2 người duyệt (Sếp 17/10/2026)", () => {
   it.each([
     ["0 người", []],
-    ["1 người", ["rv1"]],
     ["3 người", ["rv1", "rv2", "rv3"]],
     ["trùng người", ["rv1", "rv1"]],
     ["có chính mình", ["rv1", "owner"]],
@@ -177,6 +176,17 @@ describe("POST adjustment — bắt buộc chọn đúng 2 người duyệt", ()
     expect(store.doc.adjustmentReviewerUids).toEqual(["rv1", "rv2"]);
     expect((store.doc.history as unknown[]).length).toBe(1);
     expect(notify).toHaveBeenCalledWith(["rv1", "rv2"], expect.anything(), "Chủ đề xuất", expect.anything());
+    expect(taoViec).not.toHaveBeenCalled();
+  });
+
+  it("chọn 1 người (Sếp 17/10/2026) → hợp lệ, pendingAdjustment chỉ 1 người, báo đúng 1 người", async () => {
+    store.doc = approved();
+    const res = await call(postAdjustment, { noiDung: "đổi 120 xuống 90", approverIds: ["rv1"] });
+    expect(res.status).toBe(200);
+    const pa = store.doc.pendingAdjustment as NonNullable<RequestInstance["pendingAdjustment"]>;
+    expect(pa.approvers).toEqual([{ uid: "rv1", name: "Người duyệt 1", approvedAt: null }]);
+    expect(store.doc.adjustmentReviewerUids).toEqual(["rv1"]);
+    expect(notify).toHaveBeenCalledWith(["rv1"], expect.anything(), "Chủ đề xuất", expect.anything());
     expect(taoViec).not.toHaveBeenCalled();
   });
 
@@ -249,7 +259,7 @@ describe("POST adjustment/decision — chuyển tiếp", () => {
   });
 });
 
-describe("POST adjustment/decision — đủ 2 người mới có hiệu lực", () => {
+describe("POST adjustment/decision — tất cả người đã chọn duyệt xong mới có hiệu lực (ca 2 người)", () => {
   it("người 1 duyệt: chưa ghi; người 2 duyệt: ghi history + tệp (source adjustment) + báo Kho/Thu mua", async () => {
     const files = [
       { name: "a.pdf", path: "requests/owner/1-a.pdf", size: 5 },

@@ -7,9 +7,10 @@
  *   từ 06/10/2026 (Sếp chốt) MỖI NHÓM 1 nội dung riêng (`adjustmentGuide`),
  *   soạn ngay trong tab "Điều chỉnh sau duyệt" của nhóm (bỏ trang "Cài đặt
  *   chung"); xem `resolveAdjustmentGuide`.
- * - Người điều chỉnh BẮT BUỘC chọn ĐÚNG 2 người duyệt (khác nhau, không phải
- *   chính mình, đang hoạt động ở App Tổng) — duyệt cùng lúc, đủ cả 2 mới có
- *   hiệu lực (AND, giữ cơ chế `pendingAdjustment` sẵn có).
+ * - Người điều chỉnh chọn 1 HOẶC 2 người duyệt (Sếp 17/10/2026; 06/10 là đúng
+ *   2) — khác nhau, không phải chính mình, đang hoạt động ở App Tổng — duyệt
+ *   cùng lúc, tất cả người đã chọn duyệt xong mới có hiệu lực (AND, giữ cơ chế
+ *   `pendingAdjustment` sẵn có).
  * - Ô Ghi chú / Đính kèm tệp cài theo NHÓM (cùng kiểu bảng "Ý kiến khi phê
  *   duyệt"); luôn phải có ít nhất 1 trong 2 thì mới gửi được.
  *
@@ -20,8 +21,13 @@ import { HISTORY_ACTION, sameName } from "./approver-progress";
 import type { DecisionNoteMode, DecisionNoteRule } from "./decision-note";
 import type { AdjustmentApprovalRules, ProposalGroup, RequestAttachment, RequestInstance, TaggedUser } from "./types";
 
-/** Số người duyệt điều chỉnh người điều chỉnh PHẢI chọn (Sếp chốt: đúng 2). */
-export const ADJUSTMENT_APPROVER_COUNT = 2;
+/**
+ * Số người duyệt điều chỉnh người điều chỉnh được chọn — Sếp 17/10/2026: *"a
+ * muốn sửa chổ này lại thành 1 hay 2 người đều được k quan trọng"* (trước đó
+ * 06/10/2026 chốt đúng 2). Tất cả người đã chọn duyệt xong mới có hiệu lực.
+ */
+export const ADJUSTMENT_APPROVER_MIN = 1;
+export const ADJUSTMENT_APPROVER_MAX = 2;
 
 /** Tối đa số tệp mỗi lần điều chỉnh — bằng trần 1 lần xin link ký sẵn, cùng
  * con số với "Đính kèm tệp khi duyệt". */
@@ -166,30 +172,34 @@ export function checkAdjustmentContent(
   return { ok: true, noiDung, keepFiles: rules.attachment.enabled };
 }
 
-/* ------------------------------ Chọn 2 người ------------------------------ */
+/* --------------------------- Chọn 1 hoặc 2 người --------------------------- */
 
 /**
- * Kiểm danh sách uid người duyệt client gửi lên — ĐÚNG 2 người, khác nhau,
- * không phải chính người điều chỉnh. (Người đó còn hoạt động ở App Tổng hay
- * không do máy chủ tra riêng — xem lib/server/adjustment-reviewers.ts.)
+ * Kiểm danh sách uid người duyệt client gửi lên — 1 HOẶC 2 người (Sếp
+ * 17/10/2026; trước đó chốt 06/10/2026 là đúng 2), khác nhau, không phải
+ * chính người điều chỉnh. (Người đó còn hoạt động ở App Tổng hay không do máy
+ * chủ tra riêng — xem lib/server/adjustment-reviewers.ts.)
  */
 export function validateAdjustmentApproverPick(
   raw: unknown,
   requesterUid: string,
 ): { ok: true; uids: string[] } | { ok: false; error: string } {
   if (!Array.isArray(raw)) {
-    return { ok: false, error: `Chọn đúng ${ADJUSTMENT_APPROVER_COUNT} người duyệt điều chỉnh.` };
+    return { ok: false, error: `Chọn ${ADJUSTMENT_APPROVER_MIN} hoặc ${ADJUSTMENT_APPROVER_MAX} người duyệt điều chỉnh.` };
   }
   const uids = raw.map((v) => (typeof v === "string" ? v.trim() : ""));
   if (uids.some((u) => !u)) return { ok: false, error: "Người duyệt điều chỉnh không hợp lệ." };
-  if (uids.length !== ADJUSTMENT_APPROVER_COUNT) {
+  if (uids.length < ADJUSTMENT_APPROVER_MIN) {
+    return { ok: false, error: `Chọn ít nhất ${ADJUSTMENT_APPROVER_MIN} người duyệt điều chỉnh.` };
+  }
+  if (uids.length > ADJUSTMENT_APPROVER_MAX) {
     return {
       ok: false,
-      error: `Chọn đúng ${ADJUSTMENT_APPROVER_COUNT} người duyệt điều chỉnh (đang chọn ${uids.length}).`,
+      error: `Chọn tối đa ${ADJUSTMENT_APPROVER_MAX} người duyệt điều chỉnh (đang chọn ${uids.length}).`,
     };
   }
   if (new Set(uids).size !== uids.length) {
-    return { ok: false, error: "2 người duyệt điều chỉnh phải là 2 người khác nhau." };
+    return { ok: false, error: "Người duyệt điều chỉnh phải là những người khác nhau (đang chọn trùng)." };
   }
   if (uids.includes(requesterUid)) {
     return { ok: false, error: "Không tự chọn chính mình làm người duyệt điều chỉnh." };
@@ -290,8 +300,8 @@ export function isAdjustmentReviewer(
  * Ai được bấm "Điều chỉnh đề nghị sau duyệt".
  *
  * 06/10/2026 (Sếp duyệt demo dieu-chinh-tu-chon-nguoi-duyet): BỎ bảng "nhánh
- * theo phòng ban" của PR #68 — mọi điều chỉnh đều phải qua ĐÚNG 2 người duyệt
- * do người điều chỉnh tự chọn. Phần còn giữ là quyền BẤM, giữ như trước:
+ * theo phòng ban" của PR #68 — mọi điều chỉnh đều phải qua người duyệt (từ
+ * 17/10/2026: 1 hoặc 2 người) do người điều chỉnh tự chọn. Phần còn giữ là quyền BẤM, giữ như trước:
  * - Người gửi đề xuất: luôn được (đề xuất đã duyệt).
  * - Người theo dõi: chỉ khi nhóm đã bật `adjustmentApprovalRules` VÀ
  *   `allowFollowers === true` (ô "Cho phép người theo dõi cũng bấm Điều

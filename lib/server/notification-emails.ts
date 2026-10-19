@@ -162,7 +162,7 @@ export async function notifyFollowersFullyApproved(request: RequestInstance, gro
 }
 
 /** "Điều chỉnh đề nghị sau duyệt" (06/10/2026): báo đúng những người VỪA được
- * giao duyệt điều chỉnh — lúc gửi điều chỉnh (2 người được chọn) hoặc lúc 1
+ * giao duyệt điều chỉnh — lúc gửi điều chỉnh (1 hoặc 2 người được chọn) hoặc lúc 1
  * người chuyển tiếp cho người khác (chỉ người nhận). Theo công tắc email của
  * nhóm (`emailNotify`) và công tắc riêng "approver_pending" của từng người,
  * giống email "đang chờ bạn duyệt". Chuông thông báo trong app thì LUÔN có

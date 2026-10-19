@@ -6,7 +6,8 @@ import TagUserInput from "@/components/shared/TagUserInput";
 import NoteWithAttachments from "@/components/request/NoteWithAttachments";
 import { useDecisionAttachmentUploader } from "@/components/request/DecisionAttachmentInput";
 import {
-  ADJUSTMENT_APPROVER_COUNT,
+  ADJUSTMENT_APPROVER_MAX,
+  ADJUSTMENT_APPROVER_MIN,
   adjustmentFieldMode,
   checkAdjustmentContent,
   type AdjustmentFieldRules,
@@ -17,7 +18,9 @@ import type { TaggedUser } from "@/lib/types";
 interface AdjustmentContext {
   guide: string;
   fieldRules: AdjustmentFieldRules;
-  approverCount: number;
+  /** 1 / 2 — Sếp 17/10/2026 (trước đó máy chủ gửi `approverCount` = đúng 2). */
+  approverMin?: number;
+  approverMax?: number;
   suggestions: { key: string; label: string; user: { id: string; name: string } }[];
 }
 
@@ -30,8 +33,8 @@ function toTagged(u: { id: string; name: string }): TaggedUser {
  * dieu-chinh-tu-chon-nguoi-duyet-2026-10-06 (06/10/2026):
  * - Cảnh báo vàng = "Hướng dẫn điều chỉnh sau duyệt" (chung toàn app).
  * - Ô Ghi chú / Đính kèm tệp (nhiều tệp) theo cài đặt của nhóm.
- * - BẮT BUỘC chọn ĐÚNG 2 người duyệt (gõ @ tìm toàn công ty) + 2 nút gợi ý
- *   nhanh: Người duyệt cuối, Trưởng phòng Thu mua.
+ * - Chọn 1 HOẶC 2 người duyệt (Sếp 17/10/2026; 06/10 là đúng 2) — gõ @ tìm
+ *   toàn công ty + 2 nút gợi ý nhanh: Người duyệt cuối, Trưởng phòng Thu mua.
  * Gửi xong → điều chỉnh CHỜ DUYỆT (chưa có hiệu lực). Máy chủ kiểm lại mọi
  * điều kiện (route app/api/requests/[id]/adjustment).
  *
@@ -60,7 +63,8 @@ export default function AdjustmentControl({
   const [filesInvalid, setFilesInvalid] = useState(false);
   const uploadFiles = useDecisionAttachmentUploader();
 
-  const count = ctx?.approverCount ?? ADJUSTMENT_APPROVER_COUNT;
+  const minNguoi = ctx?.approverMin ?? ADJUSTMENT_APPROVER_MIN;
+  const maxNguoi = ctx?.approverMax ?? ADJUSTMENT_APPROVER_MAX;
 
   const openBox = async () => {
     setOpen(true);
@@ -94,8 +98,8 @@ export default function AdjustmentControl({
       setLoi("Không tự chọn chính mình làm người duyệt điều chỉnh.");
       return;
     }
-    if (next.length > count) {
-      setLoi(`Chỉ chọn đúng ${count} người duyệt điều chỉnh.`);
+    if (next.length > maxNguoi) {
+      setLoi(`Chỉ chọn tối đa ${maxNguoi} người duyệt điều chỉnh.`);
       return;
     }
     setApprovers(next);
@@ -109,8 +113,12 @@ export default function AdjustmentControl({
       setFilesInvalid(ctx.fieldRules.attachment.required && files.length === 0);
       return;
     }
-    if (approvers.length !== count) {
-      setLoi(`Chọn đúng ${count} người duyệt điều chỉnh (đang chọn ${approvers.length}).`);
+    if (approvers.length < minNguoi) {
+      setLoi(`Chọn ít nhất ${minNguoi} người duyệt điều chỉnh.`);
+      return;
+    }
+    if (approvers.length > maxNguoi) {
+      setLoi(`Chọn tối đa ${maxNguoi} người duyệt điều chỉnh (đang chọn ${approvers.length}).`);
       return;
     }
     setDangGui(true);
@@ -208,7 +216,7 @@ export default function AdjustmentControl({
             <p className="mb-1 text-[14px] font-medium text-gray-700">
               Người duyệt điều chỉnh <span className="text-[var(--color-danger-red)]">*</span>{" "}
               <span className="text-[12px] font-normal text-gray-400">
-                (chọn đúng {count} người — cả {count} cùng duyệt mới có hiệu lực)
+                (chọn {minNguoi} hoặc {maxNguoi} người — tất cả người đã chọn duyệt xong mới có hiệu lực)
               </span>
             </p>
             <TagUserInput
@@ -222,7 +230,7 @@ export default function AdjustmentControl({
                 <span className="text-[12px] text-gray-500">Gợi ý nhanh:</span>
                 {ctx.suggestions.map((s) => {
                   const picked = selectedIds.has(s.user.id);
-                  const full = approvers.length >= count;
+                  const full = approvers.length >= maxNguoi;
                   return (
                     <button
                       key={s.key}

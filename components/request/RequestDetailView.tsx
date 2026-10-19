@@ -328,7 +328,7 @@ export default function RequestDetailView({
   // `canSupplementAfterApproval` ở trên (vẫn giữ nguyên cho table-supplement/
   // attachments). Server đã tính sẵn qua `viewerAdjustmentAccess`; nơi CHƯA
   // truyền prop này (preview trong danh sách) rơi về đúng hành vi CŨ.
-  // Từ 06/10/2026 mọi điều chỉnh đều chờ 2 người duyệt do người điều chỉnh
+  // Từ 06/10/2026 mọi điều chỉnh đều chờ người duyệt (17/10/2026: 1 hoặc 2 người) do người điều chỉnh
   // chọn ("gated") — nơi không truyền prop (xem trong danh sách) rơi về: chỉ
   // người gửi được bấm (giống hành vi cũ), máy chủ vẫn kiểm lại.
   const resolvedAdjustmentAccess: "gated" | "none" =

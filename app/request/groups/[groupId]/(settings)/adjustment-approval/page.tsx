@@ -6,7 +6,8 @@ import { AlertTriangle } from "lucide-react";
 import RequireAdminRole from "@/components/request/RequireAdminRole";
 import { useRequestContext } from "@/context/RequestContext";
 import {
-  ADJUSTMENT_APPROVER_COUNT,
+  ADJUSTMENT_APPROVER_MAX,
+  ADJUSTMENT_APPROVER_MIN,
   ADJUSTMENT_GUIDE_MAX_LENGTH,
   resolveAdjustmentFieldRules,
   type AdjustmentFieldRules,
@@ -16,7 +17,8 @@ import type { AdjustmentApprovalRules, ProposalGroup } from "@/lib/types";
 /**
  * Tab "Điều chỉnh sau duyệt" của nhóm — từ 06/10/2026 (Sếp duyệt demo
  * dieu-chinh-tu-chon-nguoi-duyet) BỎ bảng "nhánh theo phòng ban → người duyệt"
- * (PR #68): người điều chỉnh tự chọn đúng 2 người duyệt. Ở đây có:
+ * (PR #68): người điều chỉnh tự chọn người duyệt (từ 17/10/2026: 1 hoặc 2 người,
+ * trước đó đúng 2). Ở đây có:
  * - "Hướng dẫn hiện cho người điều chỉnh" — RIÊNG từng nhóm (Sếp chốt
  *   06/10/2026, thay trang "Cài đặt chung" toàn app của PR #85).
  * - "Cho phép người theo dõi cũng bấm Điều chỉnh" (giữ theo nhóm như cũ).
@@ -81,9 +83,9 @@ function GroupAdjustmentApprovalPageInner() {
     <div className="max-w-[760px]">
       <h2 className="mb-1 text-[15px] font-semibold text-gray-800">Điều chỉnh sau duyệt</h2>
       <p className="mb-4 text-[12.5px] text-gray-500">
-        Mọi điều chỉnh đề nghị đã duyệt đều phải được duyệt lại: người điều chỉnh tự chọn đúng {ADJUSTMENT_APPROVER_COUNT}{" "}
-        người duyệt (gợi ý nhanh: Người duyệt cuối, Trưởng phòng Thu mua) — đủ cả {ADJUSTMENT_APPROVER_COUNT} người duyệt
-        thì điều chỉnh mới có hiệu lực.
+        Mọi điều chỉnh đề nghị đã duyệt đều phải được duyệt lại: người điều chỉnh tự chọn {ADJUSTMENT_APPROVER_MIN} hoặc{" "}
+        {ADJUSTMENT_APPROVER_MAX} người duyệt (gợi ý nhanh: Người duyệt cuối, Trưởng phòng Thu mua) — tất cả người đã chọn
+        duyệt xong thì điều chỉnh mới có hiệu lực.
       </p>
 
       <AdjustmentGuideEditor key={group.id} group={group} onSave={(value) => updateGroup(group.id, { adjustmentGuide: value })} />
@@ -216,7 +218,7 @@ function AdjustmentGuideEditor({
       <p className="mb-1 text-[14px] font-medium text-gray-700">Hướng dẫn hiện cho người điều chỉnh</p>
       <p className="mb-2 text-[12px] text-gray-400">
         Hiện thành cảnh báo vàng mỗi khi có người bấm &quot;Điều chỉnh đề nghị&quot; ở đề xuất của nhóm này — giúp họ
-        chọn đúng {ADJUSTMENT_APPROVER_COUNT} người duyệt. Để trống rồi lưu = không hiện cảnh báo.
+        chọn đúng người duyệt ({ADJUSTMENT_APPROVER_MIN} hoặc {ADJUSTMENT_APPROVER_MAX} người). Để trống rồi lưu = không hiện cảnh báo.
       </p>
       {draft === null ? (
         <p className="text-[13px] text-gray-400">{loadError ?? "Đang tải..."}</p>

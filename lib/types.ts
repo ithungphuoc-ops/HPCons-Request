@@ -578,7 +578,7 @@ export interface ProposalGroup {
   printOptions?: GroupPrintOptions;
   /** Tab "Điều chỉnh sau duyệt" — từ 06/10/2026 chỉ còn đọc `allowFollowers`
    * (người theo dõi có được bấm "Điều chỉnh" không). Thiếu field / `null` =
-   * chỉ người gửi bấm được. Mọi điều chỉnh đều phải qua 2 người duyệt do người
+   * chỉ người gửi bấm được. Mọi điều chỉnh đều phải qua người duyệt (1 hoặc 2 người, 17/10/2026) do người
    * điều chỉnh tự chọn. Xem `AdjustmentApprovalRules`. */
   adjustmentApprovalRules?: AdjustmentApprovalRules | null;
   /** "Điều chỉnh sau duyệt" — có ô Ghi chú / Đính kèm tệp không, có bắt buộc
@@ -1034,7 +1034,7 @@ export interface AdjustmentApprovalRules {
    * bấm được. Từ 06/10/2026 đây là phần DUY NHẤT còn được đọc. */
   allowFollowers: boolean;
   /** ⚠️ NGỪNG DÙNG từ 06/10/2026 (Sếp duyệt demo
-   * dieu-chinh-tu-chon-nguoi-duyet): người điều chỉnh tự chọn 2 người duyệt.
+   * dieu-chinh-tu-chon-nguoi-duyet): người điều chỉnh tự chọn người duyệt (17/10/2026: 1 hoặc 2 người).
    * Dữ liệu cũ còn trong Firestore, KHÔNG xoá, code không đọc nữa. */
   branches?: AdjustmentApprovalBranch[];
   /** ⚠️ NGỪNG DÙNG từ 06/10/2026 — xem `branches`. Áp dụng cho NGƯỜI THEO DÕI (không phải submitter) khi không khớp branch

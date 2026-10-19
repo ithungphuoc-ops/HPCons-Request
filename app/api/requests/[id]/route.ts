@@ -69,7 +69,7 @@ export async function GET(
     // Người xem có được bấm "Điều chỉnh" không — chỉ đọc nhóm khi THẬT SỰ cần
     // (đề xuất đã duyệt, người xem là người gửi/người theo dõi). Field phái
     // sinh theo người xem, KHÔNG lưu Firestore. Từ 06/10/2026 mọi điều chỉnh
-    // đều "gated" (chờ 2 người duyệt do người điều chỉnh chọn).
+    // đều "gated" (chờ 1 hoặc 2 người duyệt do người điều chỉnh chọn — 17/10/2026).
     let viewerAdjustmentAccess: "gated" | "none" = "none";
     if (found.status === "approved") {
       const isSubmitter = found.submittedBy.uid === session.uid;

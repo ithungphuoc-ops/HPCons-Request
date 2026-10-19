@@ -373,7 +373,7 @@ export function buildNotificationFeed(requests: RequestInstance[], ctx: Notifica
       );
     }
     // 2. Điều chỉnh sau duyệt đang chờ người xem duyệt.
-    // Mô hình PR #85: 2 người do người điều chỉnh chọn (hoặc người được chuyển
+    // Mô hình PR #85: 1 hoặc 2 người do người điều chỉnh chọn (hoặc người được chuyển
     // tiếp tới thay đúng phần đó), mỗi người 1 `approvedAt` — dùng chung hàm
     // với danh sách "Đến lượt duyệt" để 2 nơi không hiểu lệch nhau.
     const pa = r.pendingAdjustment;

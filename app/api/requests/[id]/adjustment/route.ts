@@ -18,7 +18,8 @@ import { ADJUSTMENT_MAX_LENGTH } from "@/lib/request-history-labels";
 import { MAX_DIRECT_UPLOAD_FILE_SIZE } from "@/lib/constants";
 import { verifyUploadedAttachment } from "@/lib/server/verify-upload";
 import {
-  ADJUSTMENT_APPROVER_COUNT,
+  ADJUSTMENT_APPROVER_MAX,
+  ADJUSTMENT_APPROVER_MIN,
   checkAdjustmentContent,
   resolveAdjustmentFieldRules,
   validateAdjustmentApproverPick,
@@ -26,7 +27,7 @@ import {
 import type { RequestAttachment, RequestInstance } from "@/lib/types";
 
 export const runtime = "nodejs";
-// Gửi email cho 2 người duyệt chạy trong after().
+// Gửi email cho người duyệt (1 hoặc 2 người) chạy trong after().
 export const maxDuration = 60;
 
 const NO_ACCESS = "Bạn không có quyền ghi điều chỉnh cho đề xuất này.";
@@ -57,7 +58,10 @@ export async function GET(
     return NextResponse.json({
       guide,
       fieldRules: resolveAdjustmentFieldRules(settings),
-      approverCount: ADJUSTMENT_APPROVER_COUNT,
+      approverMin: ADJUSTMENT_APPROVER_MIN,
+      approverMax: ADJUSTMENT_APPROVER_MAX,
+      // Client bản cũ còn cache đọc `approverCount` (đúng N người) — gửi MAX để nó vẫn chạy như trước.
+      approverCount: ADJUSTMENT_APPROVER_MAX,
       suggestions,
     });
   } catch (error) {
@@ -67,7 +71,7 @@ export async function GET(
 
 interface AdjustmentBody {
   noiDung?: unknown;
-  /** uid ĐÚNG 2 người duyệt điều chỉnh (máy chủ tự tra tên ở App Tổng). */
+  /** uid 1 hoặc 2 người duyệt điều chỉnh (máy chủ tự tra tên ở App Tổng). */
   approverIds?: unknown;
   /** Các tệp đã tải lên R2 TRƯỚC khi gọi route này (lib/upload-client.ts). */
   attachments?: unknown;
@@ -77,9 +81,10 @@ interface AdjustmentBody {
 
 /**
  * Gửi 1 "điều chỉnh sau duyệt" — từ 06/10/2026 (Sếp duyệt demo
- * dieu-chinh-tu-chon-nguoi-duyet) MỌI điều chỉnh đều chờ ĐÚNG 2 người duyệt
- * do người điều chỉnh tự chọn (AND, duyệt cùng lúc). Chưa ghi history, chưa
- * báo Kho/Thu mua — chỉ tạo `pendingAdjustment`; khi đủ 2 người duyệt route
+ * dieu-chinh-tu-chon-nguoi-duyet) MỌI điều chỉnh đều chờ người duyệt do người
+ * điều chỉnh tự chọn — từ 17/10/2026 là 1 HOẶC 2 người (trước đó đúng 2) — AND,
+ * duyệt cùng lúc. Chưa ghi history, chưa báo Kho/Thu mua — chỉ tạo
+ * `pendingAdjustment`; khi tất cả người đã chọn duyệt xong route
  * `adjustment/decision` mới ghi thật + báo Kho/Thu mua (giữ luồng cũ).
  *
  * 🔴 CỐ Ý KHÔNG SỬA `values` (bảng gốc là thứ người duyệt đã đồng ý) — nội
@@ -130,7 +135,7 @@ export async function POST(
       );
     }
 
-    // 2 người duyệt: đúng 2, khác nhau, không phải chính mình…
+    // Người duyệt: 1 hoặc 2 người, khác nhau, không phải chính mình…
     const pick = validateAdjustmentApproverPick(body.approverIds, session.uid);
     if (!pick.ok) return NextResponse.json({ error: pick.error }, { status: 400 });
     // …và còn hoạt động ở App Tổng (tên lấy từ App Tổng, không tin client).
@@ -210,7 +215,7 @@ export async function POST(
       return NextResponse.json({ error: ketQua.loi }, { status: ketQua.ma });
     }
     const saved = ketQua.request;
-    // Tính lại chuông của 2 người duyệt → họ thấy gần như ngay (onSnapshot).
+    // Tính lại chuông của người duyệt (1 hoặc 2 người) → họ thấy gần như ngay (onSnapshot).
     after(() => refreshNotificationFeedsForRequest(id));
     after(() =>
       notifyAdjustmentApprovers(

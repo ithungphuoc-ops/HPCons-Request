@@ -21,11 +21,13 @@ import type { RequestInstance, TaggedUser } from "./types";
 
 const u = (id: string, name: string): TaggedUser => ({ id, name, username: id, avatarInitial: name[0] });
 
-describe("validateAdjustmentApproverPick — bắt buộc ĐÚNG 2 người", () => {
-  it("0 / 1 / 3 người → chặn", () => {
+describe("validateAdjustmentApproverPick — 1 hoặc 2 người (Sếp 17/10/2026)", () => {
+  it("0 / 3 người → chặn", () => {
     expect(validateAdjustmentApproverPick([], "me").ok).toBe(false);
-    expect(validateAdjustmentApproverPick(["a"], "me").ok).toBe(false);
     expect(validateAdjustmentApproverPick(["a", "b", "c"], "me").ok).toBe(false);
+  });
+  it("1 người → hợp lệ (trước 17/10/2026 bị chặn)", () => {
+    expect(validateAdjustmentApproverPick(["a"], "me")).toEqual({ ok: true, uids: ["a"] });
   });
   it("không phải mảng / rỗng chuỗi → chặn", () => {
     expect(validateAdjustmentApproverPick(undefined, "me").ok).toBe(false);
