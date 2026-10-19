@@ -16,8 +16,8 @@ import { RefreshCw, Webhook } from "lucide-react";
 
 type Viec = {
   id: string;
-  dich: "kho" | "thumua" | "equi";
-  loai: "duyet" | "xoa" | "khoi_phuc" | "dieu_chinh" | "them_file";
+  dich: "kho" | "thumua" | "equi" | "ketoan";
+  loai: "duyet" | "xoa" | "khoi_phuc" | "dieu_chinh" | "them_file" | "duyet_buoc" | "tra_lai";
   trangThai: "cho" | "da_gui" | "dung" | "huy";
   soLanThu: number;
   taoLuc: number;
@@ -32,8 +32,10 @@ const NHAN_LOAI: Record<Viec["loai"], string> = {
   khoi_phuc: "Khôi phục",
   dieu_chinh: "Điều chỉnh sau duyệt",
   them_file: "Thêm tài liệu",
+  duyet_buoc: "Gửi Kế toán lên kế hoạch",
+  tra_lai: "Báo Kế toán: bị trả lại",
 };
-const NHAN_DICH: Record<Viec["dich"], string> = { kho: "App Kho", thumua: "App Thu mua", equi: "App EQUI" };
+const NHAN_DICH: Record<Viec["dich"], string> = { kho: "App Kho", thumua: "App Thu mua", equi: "App EQUI", ketoan: "App Kế toán" };
 
 function gio(ms: number | null): string {
   return ms ? new Date(ms).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" }) : "—";
@@ -109,7 +111,7 @@ export default function KhoiDongBo({ requestId, lamMoiKhi }: { requestId: string
 
   // Việc gần nhất của từng app đích lên trên cùng, CỘNG mọi việc đã dừng (QA 03/10: việc "gửi đề nghị"
   // đã dừng không được bị việc sau che mất nút "Gửi lại ngay"); còn lại gấp trong "Xem tất cả".
-  const ganNhatMoiApp = (["kho", "equi", "thumua"] as const)
+  const ganNhatMoiApp = (["kho", "equi", "thumua", "ketoan"] as const)
     .map((d) => viec.filter((v) => v.dich === d && v.trangThai !== "huy").at(-1))
     .filter((v): v is Viec => !!v);
   const ganNhat = [

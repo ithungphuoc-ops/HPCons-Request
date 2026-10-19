@@ -16,8 +16,8 @@
  * App đích. `"equi"` (16/10/2026, "Liên kết mua hàng EQUI" — Sếp duyệt 15/10): App EQUI (equi.hpcore.vn)
  * đóng đúng vai "App Kho" cho đề xuất các nhóm "(EQUI)" — xem `chonDichMacDinh`.
  */
-export type DichDongBo = "kho" | "thumua" | "equi";
-export type LoaiSuKien = "duyet" | "xoa" | "khoi_phuc" | "dieu_chinh" | "them_file";
+export type DichDongBo = "kho" | "thumua" | "equi" | "ketoan";
+export type LoaiSuKien = "duyet" | "xoa" | "khoi_phuc" | "dieu_chinh" | "them_file" | "duyet_buoc" | "tra_lai";
 export type TrangThaiViec = "cho" | "da_gui" | "dung" | "huy";
 export type LoaiLoi = "tam_thoi" | "vinh_vien";
 
@@ -34,8 +34,10 @@ export const NHAN_LOAI: Record<LoaiSuKien, string> = {
   khoi_phuc: "Khôi phục đề xuất",
   dieu_chinh: "Điều chỉnh sau duyệt",
   them_file: "Thêm tài liệu",
+  duyet_buoc: "Duyệt xong bước kỹ thuật (gửi Kế toán lên kế hoạch)",
+  tra_lai: "Đề xuất bị từ chối hoặc trả lại sau khi đã gửi Kế toán",
 };
-export const NHAN_DICH: Record<DichDongBo, string> = { kho: "App Kho", thumua: "App Thu mua", equi: "App EQUI" };
+export const NHAN_DICH: Record<DichDongBo, string> = { kho: "App Kho", thumua: "App Thu mua", equi: "App EQUI", ketoan: "App Kế toán" };
 
 /**
  * Nhóm đề xuất có thuộc EQUI không — tên nhóm (`groupNameSnapshot`) KẾT THÚC bằng "(EQUI)".
@@ -135,4 +137,92 @@ export function biChanBoiViecTruoc(
       (v.taoLuc < viec.taoLuc || (v.taoLuc === viec.taoLuc && v.id < viec.id)) &&
       (v.trangThai === "cho" || v.trangThai === "dung"),
   );
+}
+
+// ------------------------------------------------------------------------------------------------
+// ★ LIÊN KẾT APP KẾ TOÁN — "Kế hoạch thanh toán" (Sếp chốt 19/10/2026, làm thầu phụ trước)
+// ------------------------------------------------------------------------------------------------
+//
+// Khác Kho / Thu mua / EQUI (nhận khi đề xuất DUYỆT XONG toàn bộ), App Kế toán nhận khi người duyệt SẮP KẾ
+// NGƯỜI CUỐI CÙNG vừa duyệt (Sếp chốt 19/10/2026: "mặc định người duyệt sắp kế người cuối cùng duyệt thì đẩy
+// qua kế hoạch thanh toán"), tức còn đúng 1 người chưa duyệt. Nên cần sự kiện riêng `duyet_buoc` + luật dưới đây.
+//
+// Cấu hình bằng biến môi trường (KHÔNG cứng trong mã: tên nhóm đã đổi nhiều lần 3 → 4.0 → 5.0 nhưng id
+// nhóm thì không đổi; còn người duyệt đổi người là đổi uid):
+//   KETOAN_GROUP_IDS         id các nhóm đề xuất gửi Kế toán, cách nhau dấu phẩy
+//   KETOAN_NGUOI_DUYET_UIDS  (TUỲ CHỌN, ghi đè mặc định) uid những người mà việc DUYỆT của họ kích hoạt gửi.
+//                            Để trống = dùng luật mặc định "người duyệt sắp kế người cuối cùng".
+
+/** "a, b ,,c" → ["a","b","c"]. */
+export function tachDanhSach(raw: string | undefined | null): string[] {
+  return (raw ?? "")
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
+
+export type CauHinhKeToan = { nhomIds: readonly string[]; nguoiDuyetUids: readonly string[] };
+
+/** Phần tối thiểu của người duyệt mà luật cần — `ApproverState` đầy đủ thoả mãn kiểu này. */
+export type NguoiDuyetLuat = { id: string; decision: string };
+
+/**
+ * Luật MẶC ĐỊNH: người vừa duyệt là người duyệt SẮP KẾ NGƯỜI CUỐI CÙNG, tức SAU quyết định này đề xuất còn
+ * chờ đúng 1 người (người cuối). Tính theo trạng thái trước/sau nên đúng với cả duyệt lần lượt lẫn đồng
+ * thời, và với "duyệt và chuyển tiếp" (người được chuyển tới thành người còn lại duy nhất).
+ *   · Vừa duyệt = trước quyết định người này chưa duyệt, sau quyết định đã "approved".
+ *   · Đề xuất còn chờ (`trangThaiSau === "pending"`) và số người còn "pending" = 1.
+ *   · Không có người duyệt trước người cuối (chỉ 1 người duyệt, hoặc luồng "single" — 1 người duyệt là xong):
+ *     gửi khi đề xuất vừa DUYỆT XONG, vì không còn bước nào sớm hơn để kích hoạt.
+ */
+export function laNguoiDuyetSapKeCuoi(input: {
+  actorUid: string;
+  truoc: readonly NguoiDuyetLuat[];
+  sau: readonly NguoiDuyetLuat[];
+  trangThaiSau: string;
+  luong?: string;
+}): boolean {
+  const { actorUid, truoc, sau, trangThaiSau, luong } = input;
+  const duyetTruoc = truoc.find((a) => a.id === actorUid)?.decision === "approved";
+  const duyetSau = sau.find((a) => a.id === actorUid)?.decision === "approved";
+  if (duyetTruoc || !duyetSau) return false;
+  if (trangThaiSau === "pending") return sau.filter((a) => a.decision === "pending").length === 1;
+  if (trangThaiSau === "approved") return truoc.length <= 1 || luong === "single";
+  return false;
+}
+
+/**
+ * Sau 1 quyết định, có cần báo App Kế toán không, và báo gì:
+ *   · `duyet_buoc` — đề xuất thuộc nhóm gửi Kế toán và người vừa duyệt là người duyệt sắp kế người cuối
+ *     (luật mặc định, `laNguoiDuyetSapKeCuoi`). Nếu cấu hình `nguoiDuyetUids` KHÔNG rỗng thì dùng danh sách
+ *     uid đó thay luật mặc định (ghi đè): người trong danh sách duyệt là gửi.
+ *   · `tra_lai`    — đề xuất thuộc nhóm đó bị TỪ CHỐI / TRẢ LẠI (bởi bất kỳ ai) và ĐÃ từng gửi Kế toán
+ *     (`daTungGui`) → dòng bên Kế toán phải chuyển "Bị trả lại". Chưa từng gửi thì không báo (khỏi tạo
+ *     dòng rác bên Kế toán).
+ *   · `null`       — không báo.
+ */
+export function suKienKeToanSauQuyetDinh(input: {
+  groupId: string | null | undefined;
+  actorUid: string;
+  decision: string;
+  daTungGui: boolean;
+  cauHinh: CauHinhKeToan;
+  truoc: readonly NguoiDuyetLuat[];
+  sau: readonly NguoiDuyetLuat[];
+  trangThaiSau: string;
+  luong?: string;
+}): "duyet_buoc" | "tra_lai" | null {
+  const { groupId, actorUid, decision, daTungGui, cauHinh } = input;
+  if (!groupId || !cauHinh.nhomIds.includes(groupId)) return null;
+
+  const laDuyet = decision === "approved" || decision === "approve_and_forward";
+  if (laDuyet) {
+    if (cauHinh.nguoiDuyetUids.length > 0) {
+      if (cauHinh.nguoiDuyetUids.includes(actorUid)) return "duyet_buoc";
+    } else if (laNguoiDuyetSapKeCuoi(input)) {
+      return "duyet_buoc";
+    }
+  }
+  if ((decision === "rejected" || decision === "returned") && daTungGui) return "tra_lai";
+  return null;
 }

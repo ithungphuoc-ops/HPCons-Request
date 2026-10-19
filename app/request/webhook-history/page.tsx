@@ -19,8 +19,8 @@ type Viec = {
   id: string;
   requestId: string;
   requestCode: string | null;
-  dich: "kho" | "thumua" | "equi";
-  loai: "duyet" | "xoa" | "khoi_phuc" | "dieu_chinh" | "them_file";
+  dich: "kho" | "thumua" | "equi" | "ketoan";
+  loai: "duyet" | "xoa" | "khoi_phuc" | "dieu_chinh" | "them_file" | "duyet_buoc" | "tra_lai";
   nguoi: string | null;
   trangThai: "cho" | "da_gui" | "dung" | "huy";
   soLanThu: number;
@@ -37,13 +37,16 @@ const NHAN_LOAI: Record<Viec["loai"], string> = {
   khoi_phuc: "Khôi phục",
   dieu_chinh: "Điều chỉnh sau duyệt",
   them_file: "Thêm tài liệu",
+  duyet_buoc: "Duyệt bước kỹ thuật (gửi Kế toán)",
+  tra_lai: "Bị trả lại (báo Kế toán)",
 };
-const NHAN_DICH: Record<Viec["dich"], string> = { kho: "App Kho", thumua: "App Thu mua", equi: "App EQUI" };
+const NHAN_DICH: Record<Viec["dich"], string> = { kho: "App Kho", thumua: "App Thu mua", equi: "App EQUI", ketoan: "App Kế toán" };
 const LOC_DICH: { v: "" | Viec["dich"]; nhan: string }[] = [
   { v: "", nhan: "Mọi app" },
   { v: "kho", nhan: NHAN_DICH.kho },
   { v: "thumua", nhan: NHAN_DICH.thumua },
   { v: "equi", nhan: NHAN_DICH.equi },
+  { v: "ketoan", nhan: NHAN_DICH.ketoan },
 ];
 const BO_LOC: { v: "" | Viec["trangThai"]; nhan: string }[] = [
   { v: "dung", nhan: "Đã dừng — cần xử lý" },
