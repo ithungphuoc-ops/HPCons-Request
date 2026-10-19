@@ -143,14 +143,15 @@ export function biChanBoiViecTruoc(
 // ★ LIÊN KẾT APP KẾ TOÁN — "Kế hoạch thanh toán" (Sếp chốt 19/10/2026, làm thầu phụ trước)
 // ------------------------------------------------------------------------------------------------
 //
-// Khác Kho / Thu mua / EQUI (nhận khi đề xuất DUYỆT XONG toàn bộ), App Kế toán nhận ngay khi một bước
-// CỤ THỂ được duyệt (vd Phó TGĐ kỹ thuật thi công — Hồ Văn Thi), dù các bước sau (Kế toán thanh toán,
-// Kế toán trưởng…) chưa duyệt. Nên cần sự kiện riêng `duyet_buoc` + luật nhận diện dưới đây.
+// Khác Kho / Thu mua / EQUI (nhận khi đề xuất DUYỆT XONG toàn bộ), App Kế toán nhận khi người duyệt SẮP KẾ
+// NGƯỜI CUỐI CÙNG vừa duyệt (Sếp chốt 19/10/2026: "mặc định người duyệt sắp kế người cuối cùng duyệt thì đẩy
+// qua kế hoạch thanh toán"), tức còn đúng 1 người chưa duyệt. Nên cần sự kiện riêng `duyet_buoc` + luật dưới đây.
 //
 // Cấu hình bằng biến môi trường (KHÔNG cứng trong mã: tên nhóm đã đổi nhiều lần 3 → 4.0 → 5.0 nhưng id
 // nhóm thì không đổi; còn người duyệt đổi người là đổi uid):
 //   KETOAN_GROUP_IDS         id các nhóm đề xuất gửi Kế toán, cách nhau dấu phẩy
-//   KETOAN_NGUOI_DUYET_UIDS  uid những người mà việc DUYỆT của họ kích hoạt gửi (Hồ Văn Thi…)
+//   KETOAN_NGUOI_DUYET_UIDS  (TUỲ CHỌN, ghi đè mặc định) uid những người mà việc DUYỆT của họ kích hoạt gửi.
+//                            Để trống = dùng luật mặc định "người duyệt sắp kế người cuối cùng".
 
 /** "a, b ,,c" → ["a","b","c"]. */
 export function tachDanhSach(raw: string | undefined | null): string[] {
@@ -162,10 +163,39 @@ export function tachDanhSach(raw: string | undefined | null): string[] {
 
 export type CauHinhKeToan = { nhomIds: readonly string[]; nguoiDuyetUids: readonly string[] };
 
+/** Phần tối thiểu của người duyệt mà luật cần — `ApproverState` đầy đủ thoả mãn kiểu này. */
+export type NguoiDuyetLuat = { id: string; decision: string };
+
+/**
+ * Luật MẶC ĐỊNH: người vừa duyệt là người duyệt SẮP KẾ NGƯỜI CUỐI CÙNG, tức SAU quyết định này đề xuất còn
+ * chờ đúng 1 người (người cuối). Tính theo trạng thái trước/sau nên đúng với cả duyệt lần lượt lẫn đồng
+ * thời, và với "duyệt và chuyển tiếp" (người được chuyển tới thành người còn lại duy nhất).
+ *   · Vừa duyệt = trước quyết định người này chưa duyệt, sau quyết định đã "approved".
+ *   · Đề xuất còn chờ (`trangThaiSau === "pending"`) và số người còn "pending" = 1.
+ *   · Không có người duyệt trước người cuối (chỉ 1 người duyệt, hoặc luồng "single" — 1 người duyệt là xong):
+ *     gửi khi đề xuất vừa DUYỆT XONG, vì không còn bước nào sớm hơn để kích hoạt.
+ */
+export function laNguoiDuyetSapKeCuoi(input: {
+  actorUid: string;
+  truoc: readonly NguoiDuyetLuat[];
+  sau: readonly NguoiDuyetLuat[];
+  trangThaiSau: string;
+  luong?: string;
+}): boolean {
+  const { actorUid, truoc, sau, trangThaiSau, luong } = input;
+  const duyetTruoc = truoc.find((a) => a.id === actorUid)?.decision === "approved";
+  const duyetSau = sau.find((a) => a.id === actorUid)?.decision === "approved";
+  if (duyetTruoc || !duyetSau) return false;
+  if (trangThaiSau === "pending") return sau.filter((a) => a.decision === "pending").length === 1;
+  if (trangThaiSau === "approved") return truoc.length <= 1 || luong === "single";
+  return false;
+}
+
 /**
  * Sau 1 quyết định, có cần báo App Kế toán không, và báo gì:
- *   · `duyet_buoc` — đề xuất thuộc nhóm gửi Kế toán, người vừa DUYỆT nằm trong danh sách, và quyết định
- *     là duyệt (kể cả "chuyển tiếp và duyệt"). Gửi dù đề xuất còn chờ các bước sau.
+ *   · `duyet_buoc` — đề xuất thuộc nhóm gửi Kế toán và người vừa duyệt là người duyệt sắp kế người cuối
+ *     (luật mặc định, `laNguoiDuyetSapKeCuoi`). Nếu cấu hình `nguoiDuyetUids` KHÔNG rỗng thì dùng danh sách
+ *     uid đó thay luật mặc định (ghi đè): người trong danh sách duyệt là gửi.
  *   · `tra_lai`    — đề xuất thuộc nhóm đó bị TỪ CHỐI / TRẢ LẠI (bởi bất kỳ ai) và ĐÃ từng gửi Kế toán
  *     (`daTungGui`) → dòng bên Kế toán phải chuyển "Bị trả lại". Chưa từng gửi thì không báo (khỏi tạo
  *     dòng rác bên Kế toán).
@@ -177,11 +207,21 @@ export function suKienKeToanSauQuyetDinh(input: {
   decision: string;
   daTungGui: boolean;
   cauHinh: CauHinhKeToan;
+  truoc: readonly NguoiDuyetLuat[];
+  sau: readonly NguoiDuyetLuat[];
+  trangThaiSau: string;
+  luong?: string;
 }): "duyet_buoc" | "tra_lai" | null {
   const { groupId, actorUid, decision, daTungGui, cauHinh } = input;
   if (!groupId || !cauHinh.nhomIds.includes(groupId)) return null;
-  if ((decision === "approved" || decision === "forward_then_approve") && cauHinh.nguoiDuyetUids.includes(actorUid)) {
-    return "duyet_buoc";
+
+  const laDuyet = decision === "approved" || decision === "approve_and_forward";
+  if (laDuyet) {
+    if (cauHinh.nguoiDuyetUids.length > 0) {
+      if (cauHinh.nguoiDuyetUids.includes(actorUid)) return "duyet_buoc";
+    } else if (laNguoiDuyetSapKeCuoi(input)) {
+      return "duyet_buoc";
+    }
   }
   if ((decision === "rejected" || decision === "returned") && daTungGui) return "tra_lai";
   return null;

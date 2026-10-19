@@ -327,9 +327,9 @@ export async function POST(
       }
     }
 
-    // ★ (19/10/2026) App Kế toán — "Kế hoạch thanh toán". Gửi NGAY khi người được chỉ định (vd Phó TGĐ kỹ thuật
-    // thi công) duyệt, không đợi các bước sau; bị từ chối / trả lại sau đó thì báo "bị trả lại". Cấu hình bằng
-    // KETOAN_GROUP_IDS + KETOAN_NGUOI_DUYET_UIDS (xem lib/dong-bo/luat.ts). Bọc try/catch riêng: lỗi ở đây tuyệt
+    // ★ (19/10/2026) App Kế toán — "Kế hoạch thanh toán". Mặc định gửi khi NGƯỜI DUYỆT SẮP KẾ NGƯỜI CUỐI CÙNG
+    // vừa duyệt (còn đúng 1 người chưa duyệt); bị từ chối / trả lại sau đó thì báo "bị trả lại". Cấu hình bằng
+    // KETOAN_GROUP_IDS (+ KETOAN_NGUOI_DUYET_UIDS nếu muốn chỉ định người thay luật mặc định, xem lib/dong-bo/luat.ts). Bọc try/catch riêng: lỗi ở đây tuyệt
     // đối không làm hỏng response duyệt chính.
     {
       try {
@@ -344,6 +344,10 @@ export async function POST(
             decision: body.decision,
             daTungGui: await daTungGuiKeToan(id),
             cauHinh,
+            truoc: pre.approvers,
+            sau: updated.approvers,
+            trangThaiSau: status,
+            luong: pre.approvalFlow,
           });
           if (suKien) {
             const ids = await taoViecDongBo({
