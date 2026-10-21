@@ -186,9 +186,11 @@ export default function AppLauncher({ onClose }: { onClose: () => void }) {
         },
       ].filter((g) => g.apps.length > 0);
 
+  // Màn ≥ lg: bảng mở sát mép phải thanh chức năng theo độ rộng THẬT (kéo được/ẩn được, FuncBar.tsx
+  // đặt biến --funcbar-live) thay vì giả định cứng 200px; 92px = thanh đen 80 + lề 12.
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/40 flex items-start justify-start p-3 sm:py-4 sm:pl-[292px] sm:pr-4 overflow-y-auto"
+      className="fixed inset-0 z-50 bg-black/40 flex items-start justify-start p-3 sm:py-4 sm:pl-[292px] lg:pl-[calc(92px+var(--funcbar-live,200px))] sm:pr-4 overflow-y-auto"
       onMouseDown={onClose}
     >
       <div

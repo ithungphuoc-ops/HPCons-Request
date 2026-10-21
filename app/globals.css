@@ -147,6 +147,33 @@ body {
   }
 }
 
+/* Thanh chức năng (components/request/FuncBar.tsx) kéo rộng/hẹp + ẩn/hiện — CHỈ màn ≥ lg
+   (1024px), Sếp duyệt demo 19/10/2026. Màn nhỏ: khung bọc rộng 0, thanh bên vẫn mở trượt (fixed)
+   bằng nút ☰ như cũ. Độ rộng qua biến `--funcbar-w` (FuncBar đặt inline; trước khi React chạy thì
+   lấy từ thẻ <style> do FUNCBAR_PREPAINT_SCRIPT chèn, xem lib/funcbar-prefs.ts). */
+.funcbar-wrap {
+  width: 0;
+}
+@media (min-width: 1024px) {
+  .funcbar-wrap {
+    width: var(--funcbar-w, 200px);
+  }
+  .funcbar-wrap[data-collapsed="true"] {
+    width: 0;
+  }
+  .funcbar-wrap[data-collapsed="true"] > nav {
+    display: none;
+  }
+  .funcbar-wrap.funcbar-anim {
+    transition: width 0.2s ease;
+  }
+}
+@media (min-width: 1024px) and (prefers-reduced-motion: reduce) {
+  .funcbar-wrap.funcbar-anim {
+    transition: none;
+  }
+}
+
 /* Xem nhanh Excel trong popup tệp đính kèm (components/request/office/ExcelPreview.tsx).
    Bảng dựng bằng HTML thô (nhanh hơn React với vài nghìn ô) nên style đặt ở đây. Giữ
    nền trắng như giấy Excel ở cả giao diện tối. `table-layout: fixed` + `.spill`: độ
