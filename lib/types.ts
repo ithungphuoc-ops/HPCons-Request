@@ -952,8 +952,9 @@ export interface RequestInstance {
   qlkCtrRetryAt?: string;
   /**
    * Kết quả việc "gửi đề nghị" sang App EQUI (16/10/2026, "Liên kết mua hàng EQUI") — chỉ đề xuất nhóm
-   * "(EQUI)" là "Đề nghị lô hàng SX" mới có. Do hàng chờ đồng bộ ghi (lib/dong-bo/hang-cho.ts):
-   * `"synced"` = App EQUI đã có đề nghị · `"dung"` = thử hết lượt / lỗi vĩnh viễn, chờ Admin gửi lại tay.
+   * "(EQUI)" mới có. Từ 22/10/2026: "Đề nghị phòng ban" → Hàng cần nhập, "Đề nghị lô hàng SX" → Kế hoạch
+   * sản xuất (lib/equi-sync.ts). Do hàng chờ đồng bộ ghi (lib/dong-bo/hang-cho.ts):
+   * `"synced"` = App EQUI đã có đề nghị / kế hoạch · `"dung"` = thử hết lượt / lỗi vĩnh viễn, chờ Admin gửi lại tay.
    * Vắng mặt = chưa gửi xong hoặc không thuộc diện gửi.
    */
   equiSyncStatus?: "synced" | "dung";

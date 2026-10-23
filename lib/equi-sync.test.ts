@@ -7,7 +7,8 @@ vi.mock("@/lib/r2", () => ({
   createSignedReadUrl: vi.fn(async (path: string) => `https://signed.example/${path}?sig=test`),
 }));
 
-const { daToiEqui, guiSangEqui, trichXuatPayloadEqui } = await import("./equi-sync");
+const { congEquiCho, daToiEqui, giaTriLuaChonEqui, guiSangEqui, laLoHangSxEqui, phanLoaiDeNghiEqui, trichXuatPayloadEqui } =
+  await import("./equi-sync");
 
 function f(overrides: Partial<ProposalField>): ProposalField {
   return {
@@ -118,24 +119,47 @@ describe("trichXuatPayloadEqui — hợp đồng mục 1 (16/10/2026)", () => {
     expect(await trichXuatPayloadEqui(req({}, { f_lc: "De nghi lo hang SX" }))).not.toBeNull();
   });
 
-  it("Đề nghị phòng ban → null (không sang App EQUI)", async () => {
-    expect(await trichXuatPayloadEqui(req({}, { f_lc: "Đề nghị phòng ban" }))).toBeNull();
+  // ★ 22/10/2026 — Sếp đổi luật: phòng ban CŨNG sang App EQUI (Hàng cần nhập), lô hàng SX sang Kế hoạch SX.
+  it("Đề nghị phòng ban → CÓ payload, loaiDeNghi 'phong_ban' (vào Hàng cần nhập)", async () => {
+    const p = await trichXuatPayloadEqui(req({}, { f_lc: "Đề nghị phòng ban" }));
+    expect(p?.loaiDeNghi).toBe("phong_ban");
+    expect(congEquiCho(p!)).toBe("de-nghi-duyet");
   });
 
-  it("biểu mẫu CÓ ô Lựa chọn đề nghị mà bỏ trống → null (không đoán)", async () => {
+  it("Đề nghị lô hàng SX → loaiDeNghi 'lo_hang_sx', cổng Kế hoạch sản xuất", async () => {
+    const p = await trichXuatPayloadEqui(req());
+    expect(p?.loaiDeNghi).toBe("lo_hang_sx");
+    expect(congEquiCho(p!)).toBe("ke-hoach-moi");
+  });
+
+  it("biểu mẫu CÓ ô Lựa chọn đề nghị mà bỏ trống / chọn lạ → null + phân loại 'khong_ro' (không đoán)", async () => {
     expect(await trichXuatPayloadEqui(req({}, { f_lc: "" }))).toBeNull();
+    expect(phanLoaiDeNghiEqui(req({}, { f_lc: "" }))).toBe("khong_ro");
+    expect(phanLoaiDeNghiEqui(req({}, { f_lc: "Đề nghị khác" }))).toBe("khong_ro");
+    expect(giaTriLuaChonEqui(req({}, { f_lc: "Đề nghị khác" }))).toBe("Đề nghị khác");
   });
 
-  it("ô Lựa chọn đổi tên/mã vẫn nhận ra theo lựa chọn 'Đề nghị lô hàng SX' → phòng ban vẫn bị chặn", async () => {
+  it("ô Lựa chọn đổi tên/mã vẫn nhận ra theo các lựa chọn → phân loại đúng cả hai loại", async () => {
     const oDoiTen = { ...oLuaChon, code: "x_moi", name: "1. Loại phiếu" } as ProposalField;
     const fields = DU_FIELDS.map((x) => (x.id === "f_lc" ? oDoiTen : x));
-    expect(await trichXuatPayloadEqui(req({ fieldsSnapshot: fields }, { f_lc: "Đề nghị phòng ban" }))).toBeNull();
-    expect(await trichXuatPayloadEqui(req({ fieldsSnapshot: fields }))).not.toBeNull();
+    expect((await trichXuatPayloadEqui(req({ fieldsSnapshot: fields }, { f_lc: "Đề nghị phòng ban" })))?.loaiDeNghi).toBe("phong_ban");
+    expect((await trichXuatPayloadEqui(req({ fieldsSnapshot: fields })))?.loaiDeNghi).toBe("lo_hang_sx");
   });
 
-  it("biểu mẫu KHÔNG có ô Lựa chọn đề nghị → vẫn gửi (như bên Kho)", async () => {
+  it("biểu mẫu KHÔNG có ô Lựa chọn đề nghị → vẫn gửi Hàng cần nhập như trước (không mang loaiDeNghi)", async () => {
     const fields = DU_FIELDS.filter((x) => x.id !== "f_lc");
-    expect(await trichXuatPayloadEqui(req({ fieldsSnapshot: fields }))).not.toBeNull();
+    const p = await trichXuatPayloadEqui(req({ fieldsSnapshot: fields }));
+    expect(p).not.toBeNull();
+    expect(p?.loaiDeNghi).toBeUndefined();
+    expect(congEquiCho(p!)).toBe("de-nghi-duyet");
+    expect(phanLoaiDeNghiEqui(req({ fieldsSnapshot: fields }))).toBe("khong_co_o");
+  });
+
+  it("laLoHangSxEqui: chỉ đúng nhóm EQUI + 'Đề nghị lô hàng SX'", () => {
+    expect(laLoHangSxEqui(req())).toBe(true);
+    expect(laLoHangSxEqui(req({}, { f_lc: "Đề nghị phòng ban" }))).toBe(false);
+    expect(laLoHangSxEqui(req({ groupNameSnapshot: "1. Phiếu đề nghị (HP Cons)" }))).toBe(false);
+    expect(phanLoaiDeNghiEqui(req({ groupNameSnapshot: "1. Phiếu đề nghị (HP Cons)" }))).toBeNull();
   });
 
   it("thiếu bảng Chi tiết → null", async () => {
@@ -211,7 +235,23 @@ describe("guiSangEqui / daToiEqui", () => {
     expect(!kq.ok && kq.loaiLoi).toBe("vinh_vien");
   });
 
-  it("gọi đúng địa chỉ + header x-api-key; da_tao_de_nghi → tới nơi, có mã đề nghị", async () => {
+  it("lô hàng SX → cổng ke-hoach-moi; da_tao_ke_hoach → tới nơi, đọc được mã kế hoạch", async () => {
+    process.env.EQUI_API_URL = "https://equi.example/";
+    process.env.EQUI_API_KEY = "khoa-test";
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true, trangThai: "da_tao_ke_hoach", maKeHoach: ["KHSX-0000091", 5, "KHSX-0000092"] }),
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+    const kq = await guiSangEqui((await trichXuatPayloadEqui(req()))!);
+    expect(fetchSpy.mock.calls[0][0]).toBe("https://equi.example/api/app-request/ke-hoach-moi");
+    expect(JSON.parse(fetchSpy.mock.calls[0][1].body).loaiDeNghi).toBe("lo_hang_sx");
+    expect(kq).toEqual({ ok: true, trangThai: "da_tao_ke_hoach", maKeHoach: ["KHSX-0000091", "KHSX-0000092"] });
+    expect(daToiEqui(kq)).toBe(true);
+  });
+
+  it("phòng ban → cổng de-nghi-duyet + header x-api-key; da_tao_de_nghi → tới nơi, có mã đề nghị", async () => {
     process.env.EQUI_API_URL = "https://equi.example/";
     process.env.EQUI_API_KEY = "khoa-test";
     const fetchSpy = vi.fn().mockResolvedValue({
@@ -220,7 +260,7 @@ describe("guiSangEqui / daToiEqui", () => {
       json: async () => ({ ok: true, trangThai: "da_tao_de_nghi", deNghiId: "dn1", maDeNghi: "DN-EQ-260001" }),
     });
     vi.stubGlobal("fetch", fetchSpy);
-    const kq = await guiSangEqui((await trichXuatPayloadEqui(req()))!);
+    const kq = await guiSangEqui((await trichXuatPayloadEqui(req({}, { f_lc: "Đề nghị phòng ban" })))!);
     expect(fetchSpy.mock.calls[0][0]).toBe("https://equi.example/api/app-request/de-nghi-duyet");
     expect(fetchSpy.mock.calls[0][1].headers["x-api-key"]).toBe("khoa-test");
     expect(JSON.parse(fetchSpy.mock.calls[0][1].body).vatTu[0].stt).toBe(1);

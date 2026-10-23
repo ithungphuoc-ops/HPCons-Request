@@ -5,7 +5,14 @@ import { adminDb } from "@/lib/firebase/admin";
 import { createSignedReadUrl } from "@/lib/r2";
 import { loadRequest } from "@/lib/server/requests";
 import { cauNhatKyQlkCtr, daTaoDeNghiThat, guiSangQlkCtr, trichXuatPayload } from "@/lib/qlkctr-sync";
-import { daToiEqui, guiSangEqui, trichXuatPayloadEqui } from "@/lib/equi-sync";
+import {
+  daToiEqui,
+  giaTriLuaChonEqui,
+  guiSangEqui,
+  laLoHangSxEqui,
+  phanLoaiDeNghiEqui,
+  trichXuatPayloadEqui,
+} from "@/lib/equi-sync";
 import { guiSangThuMua, trichXuatPayloadThuMua } from "@/lib/thumua-sync";
 import { guiCapNhatSuKien } from "@/lib/dong-bo/gui";
 import {
@@ -268,20 +275,34 @@ async function thucHien(viec: ViecDongBo): Promise<KetQuaThucHien> {
     }
 
     // ★ 16/10/2026 — App EQUI (vai "App Kho" của nhóm "(EQUI)"), hợp đồng "Liên kết mua hàng EQUI" mục 1.
+    // ★ 22/10/2026 — phòng ban → Hàng cần nhập, lô hàng SX → Kế hoạch sản xuất (xem đầu `lib/equi-sync.ts`).
+    // Đề xuất nhóm "(EQUI)" có ô "Lựa chọn đề nghị" mà trống / chọn lạ → KHÔNG đoán, dừng cả hai đích
+    // (App EQUI lẫn Thu mua): đoán sai là phiếu đi nhầm luồng — Thu mua từng xếp nhầm 000000250.
+    if ((viec.dich === "equi" || viec.dich === "thumua") && phanLoaiDeNghiEqui(request) === "khong_ro") {
+      const chon = giaTriLuaChonEqui(request);
+      return {
+        loai: "loi",
+        loaiLoiBenNhan: "vinh_vien",
+        error:
+          `Không nhận ra loại đề nghị — ô "Lựa chọn đề nghị" ${chon ? `ghi "${chon}"` : "đang trống"}, ` +
+          'phải là "Đề nghị lô hàng SX" (→ Kế hoạch sản xuất) hoặc "Đề nghị phòng ban" (→ Hàng cần nhập + Thu mua).',
+      };
+    }
+
     if (viec.dich === "equi") {
       const payload = await trichXuatPayloadEqui(request);
       if (!payload) {
-        return {
-          loai: "huy",
-          lyDo: "Không thuộc diện gửi App EQUI (không phải Đề nghị lô hàng SX, hoặc thiếu bảng vật tư).",
-        };
+        return { loai: "huy", lyDo: "Không thuộc diện gửi App EQUI (không phải nhóm EQUI, hoặc thiếu bảng vật tư)." };
       }
       const kq = await guiSangEqui(payload);
       if (daToiEqui(kq) && kq.ok) {
+        const keHoach = payload.loaiDeNghi === "lo_hang_sx";
         return {
           loai: "thanh_cong",
           ketQua: kq.trangThai,
-          nhatKy: { action: "Đã đồng bộ sang App EQUI", note: `Mã đề nghị: ${kq.maDeNghi ?? "—"}` },
+          nhatKy: keHoach
+            ? { action: "Đã tạo kế hoạch sản xuất bên App EQUI", note: `Kế hoạch: ${kq.maKeHoach?.join(", ") || "—"}` }
+            : { action: "Đã đồng bộ sang App EQUI", note: `Mã đề nghị: ${kq.maDeNghi ?? "—"}` },
         };
       }
       // `ok: true` mà trạng thái lạ → CHƯA coi là tới nơi (bài học `daTaoDeNghiThat` bên Kho), thử lại.
@@ -291,6 +312,12 @@ async function thucHien(viec: ViecDongBo): Promise<KetQuaThucHien> {
       return { loai: "loi", error: kq.error, httpStatus: kq.httpStatus, loaiLoiBenNhan: kq.loaiLoi };
     }
 
+    // ★ 22/10/2026 — Sếp chốt: "Đề nghị lô hàng SX" nhóm EQUI CHỈ vào Kế hoạch sản xuất App EQUI, không
+    // sang Thu mua. Chỉ chặn việc GỬI ĐỀ NGHỊ (duyệt) — hồ sơ lô hàng SX đã sang Thu mua trước ngày này vẫn
+    // nhận xoá / điều chỉnh như cũ (Thu mua không có hồ sơ thì tự trả "không có đề nghị").
+    if (laLoHangSxEqui(request)) {
+      return { loai: "huy", lyDo: "Đề nghị lô hàng SX (nhóm EQUI) chỉ vào Kế hoạch sản xuất của App EQUI — không gửi Thu mua." };
+    }
     const payload = await trichXuatPayloadThuMua(request);
     if (!payload) return { loai: "huy", lyDo: "Không đủ dữ liệu gửi Thu mua (thiếu bộ phận hoặc bảng vật tư)." };
     if (!payload.loaiDeNghi) {

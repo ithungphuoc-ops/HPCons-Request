@@ -195,26 +195,42 @@ describe("taoViecDongBo — chọn app đích theo nhóm (16/10/2026)", () => {
 });
 
 describe("guiViec — đích App EQUI", () => {
-  it("duyệt 'Đề nghị lô hàng SX' → gửi App EQUI, ghi 'Đã đồng bộ sang App EQUI' + equiSyncStatus=synced", async () => {
+  // ★ 22/10/2026 — lô hàng SX → cổng Kế hoạch sản xuất; phòng ban → Hàng cần nhập (trước đó bị huỷ).
+  it("duyệt 'Đề nghị lô hàng SX' → cổng ke-hoach-moi, ghi 'Đã tạo kế hoạch sản xuất' + equiSyncStatus=synced", async () => {
     taoDeXuat("r6", "1.0. Phiếu đề nghị (EQUI)");
     const fetchSpy = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => ({ ok: true, trangThai: "da_tao_de_nghi", deNghiId: "d1", maDeNghi: "DNEQ-01" }),
+      json: async () => ({ ok: true, trangThai: "da_tao_ke_hoach", maKeHoach: ["KHSX-0000091", "KHSX-0000092"] }),
     });
     vi.stubGlobal("fetch", fetchSpy);
     await taoViecDongBo({ requestId: "r6", requestCode: "0000r6", loai: "duyet", dichs: ["equi"] });
 
     expect(await guiViec("duyet-equi-r6")).toBe("da_gui");
-    expect(fetchSpy.mock.calls[0][0]).toBe("https://equi.example/api/app-request/de-nghi-duyet");
+    expect(fetchSpy.mock.calls[0][0]).toBe("https://equi.example/api/app-request/ke-hoach-moi");
     expect(fetchSpy.mock.calls[0][1].headers["x-api-key"]).toBe("khoa-equi");
-    expect(bang("hang_cho_dong_bo").get("duyet-equi-r6")).toMatchObject({ trangThai: "da_gui", ketQua: "da_tao_de_nghi" });
+    expect(bang("hang_cho_dong_bo").get("duyet-equi-r6")).toMatchObject({ trangThai: "da_gui", ketQua: "da_tao_ke_hoach" });
     const rq = bang("requests").get("r6")!;
     expect(rq.equiSyncStatus).toBe("synced");
     expect(rq.qlkCtrSyncStatus).toBeUndefined();
     expect(rq.history).toEqual([
-      expect.objectContaining({ actor: "Hệ thống", action: "Đã đồng bộ sang App EQUI", note: "Mã đề nghị: DNEQ-01" }),
+      expect.objectContaining({ actor: "Hệ thống", action: "Đã tạo kế hoạch sản xuất bên App EQUI", note: "Kế hoạch: KHSX-0000091, KHSX-0000092" }),
     ]);
+  });
+
+  it("App EQUI báo còn dòng chưa khớp danh mục (422 vĩnh viễn) → dừng, giữ nguyên câu báo của EQUI", async () => {
+    taoDeXuat("r6b", "1.0. Phiếu đề nghị (EQUI)");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 422,
+        json: async () => ({ ok: false, loaiLoi: "vinh_vien", trangThai: "thieu_danh_muc", error: 'Chưa tạo được kế hoạch cho dòng 1 "Thép"' }),
+      }),
+    );
+    await taoViecDongBo({ requestId: "r6b", requestCode: null, loai: "duyet", dichs: ["equi"] });
+    expect(await guiViec("duyet-equi-r6b")).toBe("dung");
+    expect(String(bang("hang_cho_dong_bo").get("duyet-equi-r6b")?.loi)).toContain('dòng 1 "Thép"');
   });
 
   it("'da_ton_tai' (EQUI đã nhận từ trước) cũng là thành công", async () => {
@@ -227,14 +243,80 @@ describe("guiViec — đích App EQUI", () => {
     expect(await guiViec("duyet-equi-r7")).toBe("da_gui");
   });
 
-  it("phiếu 'Đề nghị phòng ban' → huỷ êm (không phải lỗi), không gọi mạng", async () => {
+  it("phiếu 'Đề nghị phòng ban' → gửi Hàng cần nhập (cổng de-nghi-duyet), loaiDeNghi phong_ban", async () => {
     taoDeXuat("r8", "1.0. Phiếu đề nghị (EQUI)", "Đề nghị phòng ban");
-    const fetchSpy = vi.fn();
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true, trangThai: "da_tao_de_nghi", maDeNghi: "0000r8" }),
+    });
     vi.stubGlobal("fetch", fetchSpy);
     await taoViecDongBo({ requestId: "r8", requestCode: null, loai: "duyet", dichs: ["equi"] });
-    expect(await guiViec("duyet-equi-r8")).toBe("huy");
-    expect(String(bang("hang_cho_dong_bo").get("duyet-equi-r8")?.loi)).toContain("Không thuộc diện gửi App EQUI");
+    expect(await guiViec("duyet-equi-r8")).toBe("da_gui");
+    expect(fetchSpy.mock.calls[0][0]).toBe("https://equi.example/api/app-request/de-nghi-duyet");
+    expect(JSON.parse(fetchSpy.mock.calls[0][1].body).loaiDeNghi).toBe("phong_ban");
+    expect((bang("requests").get("r8")!.history as { action: string; note?: string }[])[0]).toMatchObject({
+      action: "Đã đồng bộ sang App EQUI",
+      note: "Mã đề nghị: 0000r8",
+    });
+  });
+
+  it("ô 'Lựa chọn đề nghị' trống / chọn lạ → DỪNG với câu 'Không nhận ra loại đề nghị', không gọi mạng", async () => {
+    taoDeXuat("r8b", "1.0. Phiếu đề nghị (EQUI)", "");
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    await taoViecDongBo({ requestId: "r8b", requestCode: null, loai: "duyet", dichs: ["equi"] });
+    expect(await guiViec("duyet-equi-r8b")).toBe("dung");
+    expect(String(bang("hang_cho_dong_bo").get("duyet-equi-r8b")?.loi)).toContain('Không nhận ra loại đề nghị — ô "Lựa chọn đề nghị" đang trống');
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("… và đường Thu mua của chính phiếu đó cũng DỪNG (không để Thu mua tự đoán loại theo tên đề xuất)", async () => {
+    const goc = { url: process.env.THUMUA_API_URL };
+    process.env.THUMUA_API_URL = "https://thumua.example";
+    try {
+      taoDeXuat("r8e", "1.0. Phiếu đề nghị (EQUI)", "Đề nghị gì đó");
+      const fetchSpy = vi.fn();
+      vi.stubGlobal("fetch", fetchSpy);
+      await taoViecDongBo({ requestId: "r8e", requestCode: "0000r8e", loai: "duyet", dichs: ["thumua"] });
+      expect(await guiViec("duyet-thumua-r8e")).toBe("dung");
+      expect(String(bang("hang_cho_dong_bo").get("duyet-thumua-r8e")?.loi)).toContain('ô "Lựa chọn đề nghị" ghi "Đề nghị gì đó"');
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      if (goc.url === undefined) delete process.env.THUMUA_API_URL;
+      else process.env.THUMUA_API_URL = goc.url;
+    }
+  });
+
+  it("Thu mua: 'Đề nghị lô hàng SX' nhóm EQUI → KHÔNG gửi (huỷ êm, không gọi mạng); phòng ban EQUI vẫn gửi", async () => {
+    const goc = { url: process.env.THUMUA_API_URL, key: process.env.THUMUA_API_KEY };
+    process.env.THUMUA_API_URL = "https://thumua.example";
+    process.env.THUMUA_API_KEY = "khoa-tm";
+    try {
+      taoDeXuat("r8c", "1.0. Phiếu đề nghị (EQUI)");
+      const fetchSpy = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true, trangThai: "da_tao", maDeNghi: "TM-1" }) });
+      vi.stubGlobal("fetch", fetchSpy);
+      await taoViecDongBo({ requestId: "r8c", requestCode: null, loai: "duyet", dichs: ["thumua"] });
+      expect(await guiViec("duyet-thumua-r8c")).toBe("huy");
+      expect(String(bang("hang_cho_dong_bo").get("duyet-thumua-r8c")?.loi)).toContain("chỉ vào Kế hoạch sản xuất");
+      expect(fetchSpy).not.toHaveBeenCalled();
+
+      const dn = taoDeXuat("r8d", "1.0. Phiếu đề nghị (EQUI)", "Đề nghị phòng ban");
+      // Ô "Bộ phận" như biểu mẫu thật (department_select) — Thu mua bắt buộc có bộ phận.
+      dn.fieldsSnapshot.push({ id: "f_bp", code: "bo_phan", name: "Bộ phận", dataType: "department_select", required: false, order: 4 } as never);
+      (dn.values as Record<string, unknown>).f_bp = "Bộ phận sản xuất";
+      await taoViecDongBo({ requestId: "r8d", requestCode: "0000r8d", loai: "duyet", dichs: ["thumua"] });
+      const kqPB = await guiViec("duyet-thumua-r8d");
+      expect(String(bang("hang_cho_dong_bo").get("duyet-thumua-r8d")?.loi ?? "")).not.toContain("chỉ vào Kế hoạch sản xuất");
+      expect(kqPB).toBe("da_gui");
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(String(fetchSpy.mock.calls[0][0])).toContain("https://thumua.example");
+    } finally {
+      if (goc.url === undefined) delete process.env.THUMUA_API_URL;
+      else process.env.THUMUA_API_URL = goc.url;
+      if (goc.key === undefined) delete process.env.THUMUA_API_KEY;
+      else process.env.THUMUA_API_KEY = goc.key;
+    }
   });
 
   it("thiếu EQUI_API_URL → dừng ngay (lỗi vĩnh viễn), đề xuất ghi equiSyncStatus=dung + cảnh báo", async () => {

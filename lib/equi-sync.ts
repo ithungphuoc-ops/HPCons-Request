@@ -23,11 +23,21 @@ import type { ProposalField, RequestInstance } from "@/lib/types";
  * xuất các nhóm "(EQUI)", nên khuôn dữ liệu là NGUYÊN `QlkCtrPayload` cộng thêm vài trường EQUI (hợp đồng
  * mục 1). Đọc field / bảng bằng chính các helper của `qlkctr-sync.ts` để hai đường đọc giống hệt nhau.
  *
- *   POST {EQUI_API_URL}/api/app-request/de-nghi-duyet   (header `x-api-key: EQUI_API_KEY`)
+ * ★★ ĐỔI LUẬT 22/10/2026 — Sếp chốt sơ đồ liên kết EQUI ("chỉ sửa phần liên kết, vận hành trong
+ * App EQUI giữ nguyên"). Ô "Lựa chọn đề nghị" quyết định CỔNG nhận bên App EQUI:
  *
- * Chỉ gửi khi: nhóm "(EQUI)" · ô "Lựa chọn đề nghị" (nếu biểu mẫu có) = "Đề nghị lô hàng SX" · có bảng
- * "Chi tiết" với cột Tên hàng + Số lượng · ít nhất 1 dòng hợp lệ. Phiếu "Đề nghị phòng ban" KHÔNG sang
- * App EQUI (Thu mua tự ghi nhận giao hàng — y như HPCons).
+ *   · "Đề nghị phòng ban"   → POST {EQUI_API_URL}/api/app-request/de-nghi-duyet  (Kho vật tư → Hàng cần
+ *                             nhập). Thu mua kho EQUI vẫn nhận như cũ và nay đi đủ luồng như công trình.
+ *   · "Đề nghị lô hàng SX"  → POST {EQUI_API_URL}/api/app-request/ke-hoach-moi   (Sản xuất → Kế hoạch
+ *                             sản xuất, mỗi dòng Chi tiết một kế hoạch Nháp). KHÔNG gửi Thu mua nữa —
+ *                             chặn ở `hang-cho.ts` (`laLoHangSxEqui`).
+ *   · Biểu mẫu KHÔNG có ô đó → Hàng cần nhập như trước (đề xuất trực tiếp nhóm EQUI…).
+ *   · Có ô mà bỏ trống / chọn lạ → KHÔNG đoán: hàng chờ báo lỗi "Không nhận ra loại đề nghị" (trước
+ *     22/10 là "Không cần gửi" lặng lẽ — Sếp được hứa báo rõ).
+ *   (header `x-api-key: EQUI_API_KEY` cho cả hai cổng)
+ *
+ * Cả hai cổng nhận CÙNG một khuôn payload dưới đây; ngoài ra phải có bảng "Chi tiết" với cột Tên hàng +
+ * Số lượng và ít nhất 1 dòng hợp lệ.
  */
 
 const SO_LO_HANG_CODES = new Set(["so_lo_hang"]);
@@ -40,6 +50,7 @@ function soSanhNhan(s: string): string {
 }
 
 const GIA_TRI_LO_HANG_SX = soSanhNhan("Đề nghị lô hàng SX");
+const GIA_TRI_PHONG_BAN = soSanhNhan("Đề nghị phòng ban");
 
 /** Giá trị 1 ô thành chuỗi gọn (ô chọn nhiều → nối bằng ", "). Kiểu lạ → rỗng. */
 function giaTriChuoi(v: unknown): string {
@@ -67,6 +78,37 @@ function timOLuaChon(fields: ProposalField[]): ProposalField | null {
   );
 }
 
+/**
+ * Loại một đề xuất nhóm "(EQUI)" theo ô "Lựa chọn đề nghị" — 22/10/2026.
+ *   · `lo_hang_sx` / `phong_ban` — chọn đúng một trong hai lựa chọn của biểu mẫu;
+ *   · `khong_co_o` — biểu mẫu không có ô này (đi Hàng cần nhập như trước);
+ *   · `khong_ro`   — có ô mà bỏ trống / chọn lạ → không đoán, báo lỗi.
+ * Nhóm KHÔNG phải "(EQUI)" → `null`.
+ */
+export type LoaiDeNghiEqui = "lo_hang_sx" | "phong_ban" | "khong_co_o" | "khong_ro";
+
+export function phanLoaiDeNghiEqui(request: RequestInstance): LoaiDeNghiEqui | null {
+  const nhomDeXuat = typeof request.groupNameSnapshot === "string" ? request.groupNameSnapshot.trim() : "";
+  if (!laNhomEqui(nhomDeXuat)) return null;
+  const oLuaChon = timOLuaChon(request.fieldsSnapshot ?? []);
+  if (!oLuaChon) return "khong_co_o";
+  const chon = soSanhNhan(giaTriChuoi((request.values ?? {})[oLuaChon.id]));
+  if (chon === GIA_TRI_LO_HANG_SX) return "lo_hang_sx";
+  if (chon === GIA_TRI_PHONG_BAN) return "phong_ban";
+  return "khong_ro";
+}
+
+/** Đề xuất nhóm "(EQUI)" loại "Đề nghị lô hàng SX" — từ 22/10/2026 KHÔNG gửi Thu mua (chỉ vào Kế hoạch sản xuất). */
+export function laLoHangSxEqui(request: RequestInstance): boolean {
+  return phanLoaiDeNghiEqui(request) === "lo_hang_sx";
+}
+
+/** Giá trị đang chọn ở ô "Lựa chọn đề nghị" (để câu báo lỗi nói đúng thứ người dùng thấy). */
+export function giaTriLuaChonEqui(request: RequestInstance): string {
+  const o = timOLuaChon(request.fieldsSnapshot ?? []);
+  return o ? giaTriChuoi((request.values ?? {})[o.id]) : "";
+}
+
 export type EquiVatTu = QlkCtrVatTu & {
   /** Số thứ tự 1, 2, 3… theo dòng HỢP LỆ đã gửi (dòng trống / số lượng 0 bị bỏ, không chiếm số). */
   stt: number;
@@ -77,6 +119,11 @@ export type EquiVatTu = QlkCtrVatTu & {
 export type EquiDeNghiPayload = Omit<QlkCtrPayload, "vatTu"> & {
   /** `groupNameSnapshot`, vd "1.0. Phiếu đề nghị (EQUI)". */
   nhomDeXuat: string;
+  /**
+   * Loại đề nghị — 22/10/2026. Quyết định cổng nhận (`guiSangEqui`). Vắng mặt khi biểu mẫu không có ô
+   * "Lựa chọn đề nghị" (đi Hàng cần nhập như trước).
+   */
+  loaiDeNghi?: "lo_hang_sx" | "phong_ban";
   /** Ô "Số Lô hàng sản xuất" (mã `so_lo_hang`). */
   soLoHang?: string;
   /** Ô "Tên Lô Hàng" (mã `ten_lo_hang`). */
@@ -94,15 +141,13 @@ export type EquiDeNghiPayload = Omit<QlkCtrPayload, "vatTu"> & {
  */
 export async function trichXuatPayloadEqui(request: RequestInstance): Promise<EquiDeNghiPayload | null> {
   const nhomDeXuat = typeof request.groupNameSnapshot === "string" ? request.groupNameSnapshot.trim() : "";
-  if (!laNhomEqui(nhomDeXuat)) return null;
+  const loai = phanLoaiDeNghiEqui(request);
+  // Không phải nhóm EQUI, hoặc ô "Lựa chọn đề nghị" trống / lạ → không dựng payload (hàng chờ đọc
+  // `phanLoaiDeNghiEqui` trước để báo lỗi "không nhận ra loại" thay vì huỷ êm).
+  if (loai === null || loai === "khong_ro") return null;
 
   const fields = request.fieldsSnapshot ?? [];
   const values = request.values ?? {};
-
-  // Biểu mẫu CÓ ô "Lựa chọn đề nghị" thì phải chọn ĐÚNG "Đề nghị lô hàng SX" (bỏ trống / "Đề nghị phòng
-  // ban" / lựa chọn khác → không gửi). Biểu mẫu không có ô đó thì cho qua như bên Kho.
-  const oLuaChon = timOLuaChon(fields);
-  if (oLuaChon && soSanhNhan(giaTriChuoi(values[oLuaChon.id])) !== GIA_TRI_LO_HANG_SX) return null;
 
   const detailField = timField(fields, DETAIL_FIELD_CODES, ["Chi tiết", "Vật tư đề nghị"]);
   if (!detailField) return null;
@@ -156,9 +201,12 @@ export async function trichXuatPayloadEqui(request: RequestInstance): Promise<Eq
     // Giữ cho giống khuôn Kho (= tieuDe). Nhóm EQUI không bắt buộc "Tên đề xuất" nên có thể rỗng.
     congTrinhChuoi: tieuDe,
     nguoiGui: request.submittedBy.name,
-    ngayDuyet: new Date().toISOString().slice(0, 10),
+    // Ngày duyệt theo GIỜ VIỆT NAM (22/10/2026, QA): App EQUI dùng nó làm mốc dự phòng cho kỳ kế hoạch /
+    // hạn giao — lấy ngày UTC thì duyệt lúc 0–7 giờ sáng là lùi một ngày (có khi lùi cả một tuần kế hoạch).
+    ngayDuyet: new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10),
     ...(ngayCanGiao ? { ngayCanGiao } : {}),
     nhomDeXuat,
+    ...(loai === "lo_hang_sx" || loai === "phong_ban" ? { loaiDeNghi: loai } : {}),
     ...(soLoHang ? { soLoHang } : {}),
     ...(tenLoHang ? { tenLoHang } : {}),
     ...(boPhan ? { boPhan } : {}),
@@ -169,15 +217,24 @@ export async function trichXuatPayloadEqui(request: RequestInstance): Promise<Eq
 }
 
 export type KetQuaGuiEqui =
-  | { ok: true; trangThai: string; maDeNghi?: string; deNghiId?: string }
+  | { ok: true; trangThai: string; maDeNghi?: string; deNghiId?: string; maKeHoach?: string[] }
   | { ok: false; error: string; httpStatus?: number; loaiLoi?: string };
 
 /**
- * App EQUI ĐÃ CÓ đề nghị chưa. So ĐÚNG tên trạng thái (bài học `daTaoDeNghiThat` bên Kho): `ok: true`
- * với trạng thái lạ KHÔNG được coi là đã tới nơi. `da_ton_tai` = gửi lại sau khi EQUI đã nhận từ trước.
+ * App EQUI ĐÃ CÓ đề nghị / kế hoạch chưa. So ĐÚNG tên trạng thái (bài học `daTaoDeNghiThat` bên Kho):
+ * `ok: true` với trạng thái lạ KHÔNG được coi là đã tới nơi. `da_ton_tai` = gửi lại sau khi EQUI đã nhận
+ * từ trước. `da_tao_ke_hoach` = cổng Kế hoạch sản xuất (22/10/2026).
  */
 export function daToiEqui(ketQua: KetQuaGuiEqui): boolean {
-  return ketQua.ok && (ketQua.trangThai === "da_tao_de_nghi" || ketQua.trangThai === "da_ton_tai");
+  return (
+    ketQua.ok &&
+    (ketQua.trangThai === "da_tao_de_nghi" || ketQua.trangThai === "da_ton_tai" || ketQua.trangThai === "da_tao_ke_hoach")
+  );
+}
+
+/** Cổng nhận bên App EQUI theo loại đề nghị — 22/10/2026. */
+export function congEquiCho(payload: Pick<EquiDeNghiPayload, "loaiDeNghi">): "ke-hoach-moi" | "de-nghi-duyet" {
+  return payload.loaiDeNghi === "lo_hang_sx" ? "ke-hoach-moi" : "de-nghi-duyet";
 }
 
 /** Không throw — mọi lỗi (thiếu cấu hình, mạng, HTTP lỗi) trả qua `{ ok: false }` kèm `httpStatus`/`loaiLoi`. */
@@ -189,7 +246,7 @@ export async function guiSangEqui(payload: EquiDeNghiPayload): Promise<KetQuaGui
   if (!khoa) return { ok: false, loaiLoi: "vinh_vien", error: "Chưa cấu hình EQUI_API_KEY." };
 
   try {
-    const res = await fetch(`${url.replace(/\/$/, "")}/api/app-request/de-nghi-duyet`, {
+    const res = await fetch(`${url.replace(/\/$/, "")}/api/app-request/${congEquiCho(payload)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-key": khoa },
       body: JSON.stringify(payload),
@@ -201,16 +258,21 @@ export async function guiSangEqui(payload: EquiDeNghiPayload): Promise<KetQuaGui
       trangThai?: string;
       maDeNghi?: string;
       deNghiId?: string;
+      maKeHoach?: unknown;
       loaiLoi?: string;
     };
     if (!res.ok || !data.ok) {
       return { ok: false, error: data.error ?? `HTTP ${res.status}`, httpStatus: res.status, loaiLoi: data.loaiLoi };
     }
+    const maKeHoach = Array.isArray(data.maKeHoach)
+      ? data.maKeHoach.filter((x): x is string => typeof x === "string" && x.trim() !== "")
+      : [];
     return {
       ok: true,
       trangThai: data.trangThai ?? "",
       ...(data.maDeNghi ? { maDeNghi: data.maDeNghi } : {}),
       ...(data.deNghiId ? { deNghiId: data.deNghiId } : {}),
+      ...(maKeHoach.length ? { maKeHoach } : {}),
     };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Lỗi không xác định." };
