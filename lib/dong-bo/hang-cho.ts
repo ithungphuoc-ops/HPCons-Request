@@ -285,7 +285,7 @@ async function thucHien(viec: ViecDongBo): Promise<KetQuaThucHien> {
         loaiLoiBenNhan: "vinh_vien",
         error:
           `Không nhận ra loại đề nghị — ô "Lựa chọn đề nghị" ${chon ? `ghi "${chon}"` : "đang trống"}, ` +
-          'phải là "Đề nghị lô hàng SX" (→ Kế hoạch sản xuất) hoặc "Đề nghị phòng ban" (→ Hàng cần nhập + Thu mua).',
+          'phải là "Đề nghị sản xuất" (→ Kế hoạch sản xuất) hoặc "Đề nghị phòng ban" (→ Hàng cần nhập + Thu mua).',
       };
     }
 
@@ -316,7 +316,7 @@ async function thucHien(viec: ViecDongBo): Promise<KetQuaThucHien> {
     // sang Thu mua. Chỉ chặn việc GỬI ĐỀ NGHỊ (duyệt) — hồ sơ lô hàng SX đã sang Thu mua trước ngày này vẫn
     // nhận xoá / điều chỉnh như cũ (Thu mua không có hồ sơ thì tự trả "không có đề nghị").
     if (laLoHangSxEqui(request)) {
-      return { loai: "huy", lyDo: "Đề nghị lô hàng SX (nhóm EQUI) chỉ vào Kế hoạch sản xuất của App EQUI — không gửi Thu mua." };
+      return { loai: "huy", lyDo: "Đề nghị sản xuất (nhóm EQUI) chỉ vào Kế hoạch sản xuất của App EQUI — không gửi Thu mua." };
     }
     const payload = await trichXuatPayloadThuMua(request);
     if (!payload) return { loai: "huy", lyDo: "Không đủ dữ liệu gửi Thu mua (thiếu bộ phận hoặc bảng vật tư)." };

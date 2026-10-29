@@ -164,6 +164,25 @@ describe("retryThuMuaSyncNeuLoi", () => {
     vi.unstubAllGlobals();
   });
 
+  // ★ 29/10/2026 — QA chỉ ra: đường tự thử lại kiểu cũ chưa chặn "Đề nghị sản xuất" nhóm EQUI.
+  it("không gửi lại Thu mua phiếu 'Đề nghị sản xuất' nhóm (EQUI) dù đang 'failed' — không fetch, không ghi", async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    updateMock.mockClear();
+    const oLc = { id: "f_lc", code: "lua_chon_de_nghi", name: "Lựa chọn đề nghị", dataType: "single_choice", options: ["Đề nghị sản xuất", "Đề nghị phòng ban"] } as unknown as ProposalField;
+
+    await retryThuMuaSyncNeuLoi({
+      ...reqDaLoi,
+      groupNameSnapshot: "1.0. Phiếu đề nghị (EQUI)",
+      fieldsSnapshot: [...reqDaLoi.fieldsSnapshot, oLc],
+      values: { ...reqDaLoi.values, f_lc: "Đề nghị sản xuất" },
+    });
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(updateMock).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
   it("không làm gì nếu thuMuaSyncStatus khác 'failed' (đã đồng bộ xong, hoặc chưa từng thử)", async () => {
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
@@ -318,6 +337,16 @@ describe("xacDinhLoaiDeNghi — L02 luôn gửi loại đề nghị (03/10/2026)
   it("chọn lựa chọn lạ / mâu thuẫn → null (không đoán, để báo lỗi)", () => {
     const oLa = { id: "f_lc", options: ["Đề nghị công trình", "Đề nghị phòng ban", "Khác"] };
     expect(xacDinhLoaiDeNghi([oLa], { f_lc: "Khác" }, "30/2025/HĐXD")).toBeNull();
+  });
+  // ★ 29/10/2026 — biểu mẫu EQUI đổi chữ "Đề nghị lô hàng SX" → "Đề nghị sản xuất" (QA bắt lỗi tái phát 000000250).
+  it("biểu mẫu EQUI chữ MỚI 'Đề nghị sản xuất' / 'Đề nghị phòng ban': phòng ban có Tên đề xuất vẫn là phong_ban", () => {
+    const oMoi = { id: "f_lc", options: ["Đề nghị sản xuất", "Đề nghị phòng ban"] };
+    expect(xacDinhLoaiDeNghi([oMoi], { f_lc: "Đề nghị phòng ban" }, "Bộ phận sản xuất Equi")).toBe("phong_ban");
+    expect(layLoaiDeNghiGuiSangThuMua([oMoi], { f_lc: "Đề nghị sản xuất" })).toBe("cong_trinh");
+    expect(xacDinhLoaiDeNghi([{ ...oMoi, options: [...oMoi.options, "Khác"] }], { f_lc: "Khác" }, "X")).toBeNull();
+    // chữ cũ vẫn nhận như trước
+    const oCu = { id: "f_lc", options: ["Đề nghị lô hàng SX", "Đề nghị phòng ban"] };
+    expect(xacDinhLoaiDeNghi([oCu], { f_lc: "Đề nghị phòng ban" }, "Bộ phận sản xuất Equi")).toBe("phong_ban");
   });
   it("payload gửi Thu mua luôn kèm loại đề nghị", async () => {
     const req = baseRequest({

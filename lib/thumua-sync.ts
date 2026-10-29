@@ -133,10 +133,16 @@ function chuanNhan(x: string): string {
  * "Đề nghị phòng ban" (lô hàng SX tương đương công trình — hợp đồng "Liên kết mua hàng EQUI"). Trước đó ô này
  * KHÔNG được nhận là ô loại → rơi về phép suy theo "Tên đề xuất" → phiếu PHÒNG BAN 000000250 bị gửi là công
  * trình (Thu mua đặt mã "Bộ phận sản xuất Equi-001"). Chỉ MỞ RỘNG tập nhãn công trình, mọi luật khác giữ nguyên.
+ *
+ * ★ 29/10/2026 — thêm "Đề nghị sản xuất": Sếp đổi chữ "Đề nghị lô hàng SX" trên biểu mẫu EQUI thành "Đề nghị
+ * sản xuất". Thiếu nhãn này thì ô loại lại không được nhận ra → phiếu PHÒNG BAN (Tên đề xuất nay luôn tự ghép,
+ * không rỗng) bị suy thành công trình — đúng lỗi 000000250 (QA 29/10 bắt được). Bản thân phiếu "Đề nghị sản
+ * xuất" không sang Thu mua (hàng chờ chặn trước, `laLoHangSxEqui`); nhãn ở đây chỉ để NHẬN RA Ô.
  */
 const NHAN_CONG_TRINH: readonly { chuan: string; re: RegExp }[] = [
   { chuan: "đề nghị công trình", re: /^đề nghị\s*công trình/ },
   { chuan: "đề nghị lô hàng sx", re: /^đề nghị\s*lô hàng\s*sx/ },
+  { chuan: "đề nghị sản xuất", re: /^đề nghị\s*sản xuất/ },
 ];
 const NHAN_PHONG_BAN = { chuan: "đề nghị phòng ban", re: /^đề nghị\s*phòng ban/ };
 
@@ -445,6 +451,11 @@ export async function guiSangThuMua(payload: ThuMuaPayload): Promise<KetQuaGuiTh
  */
 export async function retryThuMuaSyncNeuLoi(request: RequestInstance): Promise<void> {
   if (request.status !== "approved" || request.thuMuaSyncStatus !== "failed") return;
+  /* ★ 29/10/2026 — "Đề nghị sản xuất" nhóm EQUI KHÔNG sang Thu mua (Sếp chốt 22/10). Hàng chờ đã chặn
+     (`hang-cho.ts`), đường tự thử lại kiểu cũ này cũng phải chặn — QA 29/10 chỉ ra. Nạp động để tránh vòng
+     import (equi-sync dùng `timOBoPhan` của tệp này). */
+  const { laLoHangSxEqui } = await import("@/lib/equi-sync");
+  if (laLoHangSxEqui(request)) return;
   /* ★ 08/10/2026 — tối đa 1 lần / 30 phút mỗi đề xuất (lib/sync-retry-guard.ts). */
   if (!duocThuLai(request.thuMuaRetryAt, Date.now())) return;
   if (!(await giuChoThuLai(request.id, "thuMuaRetryAt"))) return;

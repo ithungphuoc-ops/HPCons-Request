@@ -28,7 +28,8 @@ import type { ProposalField, RequestInstance } from "@/lib/types";
  *
  *   · "Đề nghị phòng ban"   → POST {EQUI_API_URL}/api/app-request/de-nghi-duyet  (Kho vật tư → Hàng cần
  *                             nhập). Thu mua kho EQUI vẫn nhận như cũ và nay đi đủ luồng như công trình.
- *   · "Đề nghị lô hàng SX"  → POST {EQUI_API_URL}/api/app-request/ke-hoach-moi   (Sản xuất → Kế hoạch
+ *   · "Đề nghị sản xuất" (chữ cũ "Đề nghị lô hàng SX", đổi 29/10/2026 — nhận cả hai)
+ *                           → POST {EQUI_API_URL}/api/app-request/ke-hoach-moi   (Sản xuất → Kế hoạch
  *                             sản xuất, mỗi dòng Chi tiết một kế hoạch Nháp). KHÔNG gửi Thu mua nữa —
  *                             chặn ở `hang-cho.ts` (`laLoHangSxEqui`).
  *   · Biểu mẫu KHÔNG có ô đó → Hàng cần nhập như trước (đề xuất trực tiếp nhóm EQUI…).
@@ -40,7 +41,11 @@ import type { ProposalField, RequestInstance } from "@/lib/types";
  * Số lượng và ít nhất 1 dòng hợp lệ.
  */
 
+/* Mã `so_lo_hang` / `ten_lo_hang` giữ từ đời biểu mẫu đầu — 29/10/2026 Sếp đổi TÊN ô thành "Số hợp đồng"
+   (tra cứu hợp đồng Công nợ) và "Tên công trình/Dự án"; mã không đổi nên vẫn đọc đúng ô. */
 const SO_LO_HANG_CODES = new Set(["so_lo_hang"]);
+/** Ô "Ngày đề nghị cấp ( giao đủ )" — thêm 29/10/2026; kỳ kế hoạch sản xuất = lần đầu → giao đủ. */
+const NGAY_GIAO_DU_CODES = new Set(["ngay_de_nghi_cap_giao_du"]);
 const TEN_LO_HANG_CODES = new Set(["ten_lo_hang"]);
 const NHOM_HANG_CODES = new Set(["nhom_de_xuat"]);
 
@@ -49,7 +54,12 @@ function soSanhNhan(s: string): string {
   return chuanHoaSoSanh(s.normalize("NFC")).replace(/đ/g, "d").replace(/\s+/g, " ");
 }
 
-const GIA_TRI_LO_HANG_SX = soSanhNhan("Đề nghị lô hàng SX");
+/**
+ * Các chữ của lựa chọn "sản xuất" (→ Kế hoạch sản xuất). 29/10/2026 Sếp đổi chữ trên biểu mẫu từ
+ * "Đề nghị lô hàng SX" thành "Đề nghị sản xuất" — nhận CẢ HAI: phiếu đã lập bằng chữ cũ (gửi lại, sự kiện
+ * sau duyệt) vẫn phải đi đúng đường. Đổi chữ lần nữa thì THÊM vào đây, đừng xoá chữ cũ.
+ */
+const CAC_GIA_TRI_SAN_XUAT = new Set(["Đề nghị lô hàng SX", "Đề nghị sản xuất"].map(soSanhNhan));
 const GIA_TRI_PHONG_BAN = soSanhNhan("Đề nghị phòng ban");
 
 /** Giá trị 1 ô thành chuỗi gọn (ô chọn nhiều → nối bằng ", "). Kiểu lạ → rỗng. */
@@ -68,12 +78,13 @@ function giaTriChuoi(v: unknown): string {
 
 /**
  * Ô "Lựa chọn đề nghị": theo mã `lua_chon_de_nghi` / tên như bên Kho; không thấy thì rơi về ô có lựa chọn
- * "Đề nghị lô hàng SX" (phòng khi biểu mẫu đổi tên ô — đọc hụt ô này là phiếu phòng ban lọt sang EQUI).
+ * "sản xuất" (`CAC_GIA_TRI_SAN_XUAT` — phòng khi biểu mẫu đổi tên ô; đọc hụt ô này là phiếu phòng ban lọt
+ * sang Kế hoạch sản xuất).
  */
 function timOLuaChon(fields: ProposalField[]): ProposalField | null {
   return (
     timField(fields, LUA_CHON_DE_NGHI_FIELD_CODES, ["Lựa chọn đề nghị"]) ??
-    fields.find((f) => Array.isArray(f.options) && f.options.some((o) => soSanhNhan(String(o)) === GIA_TRI_LO_HANG_SX)) ??
+    fields.find((f) => Array.isArray(f.options) && f.options.some((o) => CAC_GIA_TRI_SAN_XUAT.has(soSanhNhan(String(o))))) ??
     null
   );
 }
@@ -93,7 +104,7 @@ export function phanLoaiDeNghiEqui(request: RequestInstance): LoaiDeNghiEqui | n
   const oLuaChon = timOLuaChon(request.fieldsSnapshot ?? []);
   if (!oLuaChon) return "khong_co_o";
   const chon = soSanhNhan(giaTriChuoi((request.values ?? {})[oLuaChon.id]));
-  if (chon === GIA_TRI_LO_HANG_SX) return "lo_hang_sx";
+  if (CAC_GIA_TRI_SAN_XUAT.has(chon)) return "lo_hang_sx";
   if (chon === GIA_TRI_PHONG_BAN) return "phong_ban";
   return "khong_ro";
 }
@@ -119,6 +130,8 @@ export type EquiVatTu = QlkCtrVatTu & {
 export type EquiDeNghiPayload = Omit<QlkCtrPayload, "vatTu"> & {
   /** `groupNameSnapshot`, vd "1.0. Phiếu đề nghị (EQUI)". */
   nhomDeXuat: string;
+  /** Ô "Ngày đề nghị cấp ( giao đủ )" (29/10/2026). `ngayCanGiao` là ngày cấp LẦN ĐẦU. */
+  ngayGiaoDu?: string;
   /**
    * Loại đề nghị — 22/10/2026. Quyết định cổng nhận (`guiSangEqui`). Vắng mặt khi biểu mẫu không có ô
    * "Lựa chọn đề nghị" (đi Hàng cần nhập như trước).
@@ -181,6 +194,8 @@ export async function trichXuatPayloadEqui(request: RequestInstance): Promise<Eq
 
   const ngayCanCapField = timField(fields, NGAY_CAN_CAP_FIELD_CODES, ["Ngày đề nghị cấp"]);
   const ngayCanGiao = ngayCanCapField ? String(values[ngayCanCapField.id] ?? "").trim() : "";
+  const ngayGiaoDuField = timField(fields, NGAY_GIAO_DU_CODES, ["Ngày đề nghị cấp ( giao đủ )", "Ngày đề nghị cấp (giao đủ)"]);
+  const ngayGiaoDu = ngayGiaoDuField ? String(values[ngayGiaoDuField.id] ?? "").trim() : "";
 
   const docO = (codes: Set<string>, ten: string): string => {
     const f = timField(fields, codes, [ten]);
@@ -205,6 +220,7 @@ export async function trichXuatPayloadEqui(request: RequestInstance): Promise<Eq
     // hạn giao — lấy ngày UTC thì duyệt lúc 0–7 giờ sáng là lùi một ngày (có khi lùi cả một tuần kế hoạch).
     ngayDuyet: new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10),
     ...(ngayCanGiao ? { ngayCanGiao } : {}),
+    ...(ngayGiaoDu ? { ngayGiaoDu } : {}),
     nhomDeXuat,
     ...(loai === "lo_hang_sx" || loai === "phong_ban" ? { loaiDeNghi: loai } : {}),
     ...(soLoHang ? { soLoHang } : {}),

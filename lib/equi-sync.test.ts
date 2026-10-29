@@ -104,6 +104,13 @@ describe("trichXuatPayloadEqui — hợp đồng mục 1 (16/10/2026)", () => {
       taiLieuDinhKem: [{ ten: "a.pdf", url: "https://signed.example/requests/u1/a.pdf?sig=test" }],
     });
     expect(p?.ngayDuyet).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(p && "ngayGiaoDu" in p).toBe(false); // biểu mẫu cũ không có ô giao đủ → vắng mặt
+  });
+
+  it("biểu mẫu 29/10: 'Ngày đề nghị cấp ( giao đủ )' → gửi kèm ngayGiaoDu (kỳ kế hoạch = lần đầu → giao đủ)", async () => {
+    const oGiaoDu = f({ id: "f_gd", code: "ngay_de_nghi_cap_giao_du", name: "Ngày đề nghị cấp ( giao đủ )", dataType: "date" });
+    const p = await trichXuatPayloadEqui(req({ fieldsSnapshot: [...DU_FIELDS, oGiaoDu] }, { f_gd: "2026-11-30" }));
+    expect(p).toMatchObject({ ngayCanGiao: "2026-10-20", ngayGiaoDu: "2026-11-30" });
   });
 
   it("stt đánh lại 1, 2, … theo dòng HỢP LỆ (bỏ dòng trống / số lượng 0), có ghi chú, gộp xuống dòng", async () => {
@@ -130,6 +137,29 @@ describe("trichXuatPayloadEqui — hợp đồng mục 1 (16/10/2026)", () => {
     const p = await trichXuatPayloadEqui(req());
     expect(p?.loaiDeNghi).toBe("lo_hang_sx");
     expect(congEquiCho(p!)).toBe("ke-hoach-moi");
+  });
+
+  // ★ 29/10/2026 — Sếp đổi chữ lựa chọn "Đề nghị lô hàng SX" → "Đề nghị sản xuất": nhận cả hai.
+  it("chữ mới 'Đề nghị sản xuất' (biểu mẫu đã đổi) → cũng là lo_hang_sx, cổng Kế hoạch sản xuất, không gửi Thu mua", async () => {
+    const oMoi = { ...oLuaChon, options: ["Đề nghị sản xuất", "Đề nghị phòng ban"] } as ProposalField;
+    const fields = DU_FIELDS.map((x) => (x.id === "f_lc" ? oMoi : x));
+    const r = req({ fieldsSnapshot: fields }, { f_lc: "Đề nghị sản xuất" });
+    expect(phanLoaiDeNghiEqui(r)).toBe("lo_hang_sx");
+    expect(laLoHangSxEqui(r)).toBe(true);
+    const p = await trichXuatPayloadEqui(r);
+    expect(p?.loaiDeNghi).toBe("lo_hang_sx");
+    expect(congEquiCho(p!)).toBe("ke-hoach-moi");
+    // không phân biệt hoa thường / dấu như chữ cũ
+    expect(phanLoaiDeNghiEqui(req({ fieldsSnapshot: fields }, { f_lc: "de nghi SAN XUAT" }))).toBe("lo_hang_sx");
+    // phiếu lập trước khi đổi chữ (chữ cũ trong ảnh chụp biểu mẫu) vẫn đúng đường
+    expect(phanLoaiDeNghiEqui(req())).toBe("lo_hang_sx");
+  });
+
+  it("ô Lựa chọn đổi cả tên/mã lẫn chữ lựa chọn mới vẫn được nhận ra (dò theo lựa chọn 'Đề nghị sản xuất')", async () => {
+    const oLa = { ...oLuaChon, code: "x_moi", name: "1. Loại phiếu", options: ["Đề nghị sản xuất", "Đề nghị phòng ban"] } as ProposalField;
+    const fields = DU_FIELDS.map((x) => (x.id === "f_lc" ? oLa : x));
+    expect(phanLoaiDeNghiEqui(req({ fieldsSnapshot: fields }, { f_lc: "Đề nghị phòng ban" }))).toBe("phong_ban");
+    expect(phanLoaiDeNghiEqui(req({ fieldsSnapshot: fields }, { f_lc: "Đề nghị sản xuất" }))).toBe("lo_hang_sx");
   });
 
   it("biểu mẫu CÓ ô Lựa chọn đề nghị mà bỏ trống / chọn lạ → null + phân loại 'khong_ro' (không đoán)", async () => {
