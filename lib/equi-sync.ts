@@ -11,6 +11,7 @@ import {
   type QlkCtrVatTu,
 } from "@/lib/qlkctr-sync";
 import { TITLE_FIELD_CODES } from "@/lib/request-title";
+import { evaluateConditionGroup } from "@/lib/server/conditions";
 import { deserializeTableRows, flattenLineBreaks } from "@/lib/table-field";
 import { timOBoPhan } from "@/lib/thumua-sync";
 import type { ProposalField, RequestInstance } from "@/lib/types";
@@ -137,9 +138,9 @@ export type EquiDeNghiPayload = Omit<QlkCtrPayload, "vatTu"> & {
    * "Lựa chọn đề nghị" (đi Hàng cần nhập như trước).
    */
   loaiDeNghi?: "lo_hang_sx" | "phong_ban";
-  /** Ô "Số Lô hàng sản xuất" (mã `so_lo_hang`). */
+  /** Ô "Số hợp đồng" (mã `so_lo_hang`, tên cũ "Số Lô hàng sản xuất"). Ô đang ẩn → vắng mặt (30/10/2026). */
   soLoHang?: string;
-  /** Ô "Tên Lô Hàng" (mã `ten_lo_hang`). */
+  /** Ô "Tên công trình/Dự án" (mã `ten_lo_hang`, tên cũ "Tên Lô Hàng"). Ô đang ẩn → vắng mặt. */
   tenLoHang?: string;
   /** Ô "Bộ phận" (cùng luật tìm ô với đường Thu mua — `timOBoPhan`). */
   boPhan?: string;
@@ -192,20 +193,23 @@ export async function trichXuatPayloadEqui(request: RequestInstance): Promise<Eq
   const titleField = timField(fields, TITLE_FIELD_CODES, ["Tên đề xuất", "Tên đề nghị"]);
   const tieuDe = titleField ? String(values[titleField.id] ?? "").trim() : "";
 
-  const ngayCanCapField = timField(fields, NGAY_CAN_CAP_FIELD_CODES, ["Ngày đề nghị cấp"]);
-  const ngayCanGiao = ngayCanCapField ? String(values[ngayCanCapField.id] ?? "").trim() : "";
-  const ngayGiaoDuField = timField(fields, NGAY_GIAO_DU_CODES, ["Ngày đề nghị cấp ( giao đủ )", "Ngày đề nghị cấp (giao đủ)"]);
-  const ngayGiaoDu = ngayGiaoDuField ? String(values[ngayGiaoDuField.id] ?? "").trim() : "";
+  /* ★ 30/10/2026 — App Request GIỮ giá trị của ô đã bị ẩn (người lập chọn "Công trình ngoài", chọn số HĐ, rồi
+     đổi sang "Công trình nội bộ" → số HĐ cũ vẫn nằm trong `values`). Gửi nguyên thì kế hoạch nội bộ bị gắn
+     nhầm lô của HĐ đó. Ô đang ẩn (theo `visibleWhen` trên CHÍNH bản chụp biểu mẫu của phiếu) coi như trống —
+     cùng luật trang gửi đề xuất dùng để ẩn ô và bỏ "bắt buộc". Chỉ áp cho đường EQUI. */
+  const dangHien = (f: ProposalField): boolean => !f.visibleWhen || evaluateConditionGroup(f.visibleWhen, values, fields);
+  const giaTriO = (f: ProposalField | null | undefined): string => (f && dangHien(f) ? giaTriChuoi(values[f.id]) : "");
 
-  const docO = (codes: Set<string>, ten: string): string => {
-    const f = timField(fields, codes, [ten]);
-    return f ? giaTriChuoi(values[f.id]) : "";
-  };
+  const ngayCanGiao = giaTriO(timField(fields, NGAY_CAN_CAP_FIELD_CODES, ["Ngày đề nghị cấp"]));
+  const ngayGiaoDu = giaTriO(
+    timField(fields, NGAY_GIAO_DU_CODES, ["Ngày đề nghị cấp ( giao đủ )", "Ngày đề nghị cấp (giao đủ)"]),
+  );
+
+  const docO = (codes: Set<string>, ten: string): string => giaTriO(timField(fields, codes, [ten]));
   const soLoHang = docO(SO_LO_HANG_CODES, "Số Lô hàng sản xuất");
   const tenLoHang = docO(TEN_LO_HANG_CODES, "Tên Lô Hàng");
   const nhomHang = docO(NHOM_HANG_CODES, "Nhóm đề xuất");
-  const oBoPhan = timOBoPhan(request);
-  const boPhan = oBoPhan ? giaTriChuoi(values[oBoPhan.id]) : "";
+  const boPhan = giaTriO(timOBoPhan(request));
 
   const taiLieuDinhKem = await layTaiLieuDinhKem(request);
 

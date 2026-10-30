@@ -223,6 +223,86 @@ describe("trichXuatPayloadEqui — hợp đồng mục 1 (16/10/2026)", () => {
     }
   });
 
+  // ★ 30/10/2026 — Sếp chốt PA A: thêm ô "Loại công trình" (ngoài / nội bộ). App Request giữ giá trị ô đã ẩn
+  // → gửi sang EQUI phải bỏ qua ô đang ẩn, không thì kế hoạch nội bộ bị gắn nhầm lô của HĐ cũ.
+  describe("biểu mẫu 30/10 — ô 'Loại công trình', bỏ qua ô đang ẩn", () => {
+    const SX = "Đề nghị sản xuất";
+    const PB = "Đề nghị phòng ban";
+    const dk = (...rules: { fieldCode: string; operator: "equals" | "is_not_empty"; value?: string }[]) => ({
+      conjunction: "all" as const,
+      rules: rules.map((r) => ({ value: "", ...r })),
+    });
+    const oLc = { ...oLuaChon, options: [SX, PB] } as ProposalField;
+    const oLoai = f({
+      id: "f_loai",
+      code: "loai_cong_trinh",
+      name: "Loại công trình",
+      dataType: "single_choice",
+      options: ["Công trình ngoài", "Công trình nội bộ"],
+      visibleWhen: dk({ fieldCode: "lua_chon_de_nghi", operator: "equals", value: SX }),
+    });
+    const oHd = f({
+      ...oSoLo,
+      name: "Số hợp đồng",
+      visibleWhen: dk(
+        { fieldCode: "lua_chon_de_nghi", operator: "equals", value: SX },
+        { fieldCode: "loai_cong_trinh", operator: "equals", value: "Công trình ngoài" },
+      ),
+    });
+    const oCt = f({
+      ...oTenLo,
+      name: "Tên công trình/Dự án",
+      visibleWhen: dk(
+        { fieldCode: "lua_chon_de_nghi", operator: "equals", value: SX },
+        { fieldCode: "loai_cong_trinh", operator: "is_not_empty" },
+      ),
+    });
+    const oBp = f({
+      ...oBoPhan,
+      visibleWhen: {
+        conjunction: "any",
+        rules: [
+          { fieldCode: "lua_chon_de_nghi", operator: "equals", value: PB },
+          { fieldCode: "lua_chon_de_nghi", operator: "equals", value: SX },
+        ],
+      },
+    });
+    const FIELDS_3010 = [oTen, oLc, oLoai, oHd, oCt, oBp, oNhomHang, oNgay, oChiTiet, oTep];
+    const r3010 = (values: Record<string, unknown>) => req({ fieldsSnapshot: FIELDS_3010 }, { f_lc: SX, ...values });
+
+    it("công trình ngoài → gửi số HĐ + tên công trình như trước", async () => {
+      const p = await trichXuatPayloadEqui(r3010({ f_loai: "Công trình ngoài", f_solo: "15/2026/HĐKT", f_tenlo: "CTY AN PHÁT" }));
+      expect(p).toMatchObject({ loaiDeNghi: "lo_hang_sx", soLoHang: "15/2026/HĐKT", tenLoHang: "CTY AN PHÁT", boPhan: "Bộ phận sản xuất" });
+    });
+
+    it("công trình nội bộ mà còn sót số HĐ cũ (đã chọn 'ngoài' rồi đổi) → KHÔNG gửi số HĐ, vẫn gửi tên công trình", async () => {
+      const p = await trichXuatPayloadEqui(r3010({ f_loai: "Công trình nội bộ", f_solo: "15/2026/HĐKT", f_tenlo: "Nhà xưởng C" }));
+      expect(p?.loaiDeNghi).toBe("lo_hang_sx");
+      expect(p && "soLoHang" in p).toBe(false);
+      expect(p?.tenLoHang).toBe("Nhà xưởng C");
+      expect(congEquiCho(p!)).toBe("ke-hoach-moi");
+    });
+
+    it("phòng ban mà còn sót số HĐ / tên công trình của lần chọn 'sản xuất' trước → không gửi hai ô đó", async () => {
+      const p = await trichXuatPayloadEqui(r3010({ f_lc: PB, f_loai: "Công trình ngoài", f_solo: "15/2026/HĐKT", f_tenlo: "CTY AN PHÁT" }));
+      expect(p?.loaiDeNghi).toBe("phong_ban");
+      expect(p && "soLoHang" in p).toBe(false);
+      expect(p && "tenLoHang" in p).toBe(false);
+      expect(p?.boPhan).toBe("Bộ phận sản xuất");
+    });
+
+    it("chưa chọn loại công trình → không gửi số HĐ / tên công trình (cả hai đang ẩn)", async () => {
+      const p = await trichXuatPayloadEqui(r3010({ f_loai: "", f_solo: "15/2026/HĐKT", f_tenlo: "X" }));
+      expect(p && "soLoHang" in p).toBe(false);
+      expect(p && "tenLoHang" in p).toBe(false);
+    });
+
+    it("ô 'Loại công trình' KHÔNG bị nhận nhầm là ô Lựa chọn đề nghị", () => {
+      expect(phanLoaiDeNghiEqui(r3010({ f_loai: "Công trình nội bộ" }))).toBe("lo_hang_sx");
+      expect(phanLoaiDeNghiEqui(r3010({ f_lc: PB, f_loai: "Công trình nội bộ" }))).toBe("phong_ban");
+    });
+  });
+
   it("tìm ô theo TÊN khi không có mã", async () => {
     const theoTen = [
       oLuaChon,
